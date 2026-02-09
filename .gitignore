@@ -21,3 +21,4 @@ stats-cache.json
 /.claude.json.*
 /tasks/
 /teams/
+/plans/
