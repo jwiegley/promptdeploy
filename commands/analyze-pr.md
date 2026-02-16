@@ -1,1 +1,0 @@
-Analyze the changes in this branch from origin/main, and use nix-pro to determine how it might impact the Nix support found in flake.nix. Also, check the accuracy and correctness of the changes proposed for dependency against current Python community best practices. Produce your report in the form of a Markdown file that I can separately review.
