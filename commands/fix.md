@@ -2,9 +2,11 @@
 
 Think deeply to analyze the following query, construct a well thought out plan of action based on the following context, and then carefully execute that plan step by step.
 
-# Primary Activity
+Create a PR for each using my jwiegley user on GitHub. The author/committer for all new commits should be signed by johnw@newartisans.com.
 
-Please analyze and fix the GitHub issue: $ARGUMENTS.
+This series of jobs will take a long time, so make a comprehensive and effective plan and then execute step by step until you have completed them all and added new regression tests for each.
+
+Now, please analyze and fix the GitHub issue: $ARGUMENTS.
 
 # Follow these steps
 
@@ -112,11 +114,3 @@ If the working tree contains entangled changes:
 5. **Verify at each step** — ensure the repository works after each commit
 
 When changes are too entangled to separate cleanly, prefer a slightly larger commit with a clear message over a commit that leaves the repository in a broken state.
-
-# Create GitHub PR
-
-Create a PR for each using my jwiegley user on GitHub. The author/committer for all new commits should be signed by johnw@newartisans.com.
-
-# Final note
-
-This series of jobs will take a long time, so make a comprehensive and effective plan and then execute step by step until you have completed them all and added new regression tests for each.
