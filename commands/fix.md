@@ -21,7 +21,6 @@ Now, please analyze and fix the GitHub issue: $ARGUMENTS.
 Remember the following:
 
 - Use the claude-code skill to provide context for the rest of the task
-- Use beads to keep track of tasks you notice you work, and then complete those tasks in order to fully complete the initial task
 - Use the GitHub CLI (`gh`) for all GitHub-related tasks
 - Search the codebase for relevant files
 - Ensure code passes linting and type checking after doing any work
