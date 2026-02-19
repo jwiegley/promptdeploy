@@ -2,6 +2,7 @@
 /.claude.json
 /.claude.json.*
 /.credentials.json
+/backups/
 /cache/changelog.md
 /commands/cozempic.md
 /commands/gsd/
