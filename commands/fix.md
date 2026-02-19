@@ -19,7 +19,6 @@ Now, please analyze and fix the GitHub issue: $ARGUMENTS.
 7. Leave your work uncommitted in the working tree, so it can be reviewed.
 
 Remember the following:
-
 - Use the claude-code skill to provide context for the rest of the task
 - Use the GitHub CLI (`gh`) for all GitHub-related tasks
 - Search the codebase for relevant files
