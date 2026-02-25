@@ -42,6 +42,7 @@ Map file extensions to languages:
 | `.nix` | Nix | `nix-reviewer` |
 | `.el` | Emacs Lisp | `elisp-reviewer` |
 | `.sh`, `.bash`, `.zsh` | Bash/Shell | `bash-reviewer` |
+| `.ts`, `.tsx`, `.mts`, `.cts` | TypeScript | `typescript-reviewer` |
 | `.v` | Coq/Rocq | `coq-reviewer` |
 
 If a language has no specialist agent defined, use the `general-purpose` built-in
