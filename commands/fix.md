@@ -2,6 +2,8 @@
 
 Think deeply to analyze the following query, construct a well thought out plan of action based on the following context, and then carefully execute that plan step by step.
 
+If you find that the bug or feature you’re attempting to fix has already been addressed in an earlier commit, just add a regression test to demonstrate the item has been dealt with.
+
 Create a PR for each using my jwiegley user on GitHub. The author/committer for all new commits should be signed by johnw@newartisans.com.
 
 This series of jobs will take a long time, so make a comprehensive and effective plan and then execute step by step until you have completed them all and added new regression tests for each.
