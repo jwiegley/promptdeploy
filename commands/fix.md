@@ -10,6 +10,8 @@ This series of jobs will take a long time, so make a comprehensive and effective
 
 Now, please analyze and fix the GitHub issue: $ARGUMENTS.
 
+NOTE: Do not work on a bug that already has a PR open that addresses it. In that case, just give the PR number and stop immediately.
+
 # Follow these steps
 
 1. Use `gh issue view` to get the issue details
