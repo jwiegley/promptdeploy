@@ -1,0 +1,28 @@
+source_root: .
+
+targets:
+  claude-personal:
+    type: claude
+    path: ~/.config/claude/personal
+
+  claude-positron:
+    type: claude
+    path: ~/.config/claude/positron
+
+  claude-git-ai:
+    type: claude
+    path: ~/.config/claude/git-ai
+
+  droid:
+    type: droid
+    path: ~/.factory
+
+  opencode:
+    type: opencode
+    path: ~/.config/opencode
+
+groups:
+  claude:
+    - claude-personal
+    - claude-positron
+    - claude-git-ai

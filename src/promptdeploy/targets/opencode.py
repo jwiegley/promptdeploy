@@ -1,0 +1,150 @@
+"""OpenCode target implementation."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import tempfile
+from pathlib import Path
+
+from ..frontmatter import transform_for_target
+from ..manifest import MANIFEST_FILENAME
+from .base import Target
+
+# Keys that are deployment metadata, not part of the MCP server config.
+_MCP_STRIP_KEYS = frozenset(
+    {"name", "description", "scope", "enabled", "only", "except"}
+)
+
+
+class OpenCodeTarget(Target):
+    """Deploy prompts and MCP servers into an OpenCode configuration directory."""
+
+    def __init__(self, target_id: str, config_path: Path) -> None:
+        self._id = target_id
+        self._config_path = config_path.expanduser().resolve()
+
+    @property
+    def id(self) -> str:
+        return self._id
+
+    def exists(self) -> bool:
+        return self._config_path.is_dir()
+
+    def manifest_path(self) -> Path:
+        return self._config_path / MANIFEST_FILENAME
+
+    # ------------------------------------------------------------------
+    # Deploy
+    # ------------------------------------------------------------------
+
+    def deploy_agent(self, name: str, content: bytes) -> None:
+        dest = self._config_path / "agents" / f"{name}.md"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(transform_for_target(content, self._id))
+
+    def deploy_command(self, name: str, content: bytes) -> None:
+        dest = self._config_path / "commands" / f"{name}.md"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(transform_for_target(content, self._id))
+
+    def deploy_skill(self, name: str, source_dir: Path) -> None:
+        dest = self._config_path / "skills" / name
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(source_dir.resolve(), dest, symlinks=False)
+        skill_md = dest / "SKILL.md"
+        if skill_md.exists():
+            skill_md.write_bytes(
+                transform_for_target(skill_md.read_bytes(), self._id)
+            )
+
+    def deploy_mcp_server(self, name: str, config: dict) -> None:
+        oc_path = self._opencode_path()
+        data = self._load_json(oc_path)
+
+        # Disabled servers are not written at all.
+        if not config.get("enabled", True):
+            data.get("mcpServers", {}).pop(name, None)
+        else:
+            oc_config: dict = {}
+            # command is an array: command + args combined.
+            cmd = config.get("command")
+            args = config.get("args", [])
+            if cmd is not None:
+                oc_config["command"] = [cmd] + list(args)
+            # "environment" key, not "env".
+            env = config.get("env")
+            if env:
+                oc_config["environment"] = dict(env)
+            # Copy any remaining non-metadata, non-handled keys.
+            for k, v in config.items():
+                if k not in _MCP_STRIP_KEYS and k not in (
+                    "command",
+                    "args",
+                    "env",
+                ):
+                    oc_config[k] = v
+            data.setdefault("mcpServers", {})[name] = oc_config
+
+        self._save_json(oc_path, data)
+
+    # ------------------------------------------------------------------
+    # Remove
+    # ------------------------------------------------------------------
+
+    def remove_agent(self, name: str) -> None:
+        self._remove_file(self._config_path / "agents" / f"{name}.md")
+
+    def remove_command(self, name: str) -> None:
+        self._remove_file(self._config_path / "commands" / f"{name}.md")
+
+    def remove_skill(self, name: str) -> None:
+        dest = self._config_path / "skills" / name
+        if dest.exists():
+            shutil.rmtree(dest)
+
+    def remove_mcp_server(self, name: str) -> None:
+        path = self._opencode_path()
+        if not path.exists():
+            return
+        data = self._load_json(path)
+        data.get("mcpServers", {}).pop(name, None)
+        self._save_json(path, data)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _opencode_path(self) -> Path:
+        return self._config_path / "opencode.json"
+
+    @staticmethod
+    def _remove_file(path: Path) -> None:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+
+    @staticmethod
+    def _load_json(path: Path) -> dict:
+        if not path.exists():
+            return {}
+        return json.loads(path.read_text("utf-8"))
+
+    @staticmethod
+    def _save_json(path: Path, data: dict) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(data, f, indent=2)
+                f.write("\n")
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise

@@ -1,0 +1,72 @@
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, List, Optional
+
+import yaml
+
+
+@dataclass
+class TargetConfig:
+    id: str
+    type: str  # 'claude', 'droid', 'opencode'
+    path: Path
+
+
+@dataclass
+class Config:
+    source_root: Path
+    targets: Dict[str, TargetConfig]
+    groups: Dict[str, List[str]]
+
+
+def find_config_file(start_dir: Optional[Path] = None) -> Path:
+    if start_dir is None:
+        start_dir = Path.cwd()
+    current = start_dir.resolve()
+    while current != current.parent:
+        config_path = current / 'deploy.yaml'
+        if config_path.exists():
+            return config_path
+        current = current.parent
+    raise FileNotFoundError(
+        f"Could not find deploy.yaml in {start_dir} or any parent directory"
+    )
+
+
+def load_config(config_path: Optional[Path] = None) -> Config:
+    if config_path is None:
+        config_path = find_config_file()
+    with open(config_path, 'r') as f:
+        data = yaml.safe_load(f)
+
+    source_root = Path(data.get('source_root', config_path.parent))
+    if not source_root.is_absolute():
+        source_root = (config_path.parent / source_root).resolve()
+    else:
+        source_root = source_root.expanduser().resolve()
+
+    targets = {}
+    for target_id, target_data in data.get('targets', {}).items():
+        path = Path(target_data['path']).expanduser()
+        targets[target_id] = TargetConfig(
+            id=target_id, type=target_data['type'], path=path
+        )
+
+    groups = data.get('groups', {})
+    return Config(source_root=source_root, targets=targets, groups=groups)
+
+
+def expand_target_arg(
+    targets_arg: Optional[List[str]], config: Config
+) -> List[str]:
+    if targets_arg is None:
+        return list(config.targets.keys())
+    result = []
+    for t in targets_arg:
+        if t in config.groups:
+            result.extend(config.groups[t])
+        elif t in config.targets:
+            result.append(t)
+        else:
+            raise ValueError(f"Unknown target: {t}")
+    return result
