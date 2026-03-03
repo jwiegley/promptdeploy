@@ -1,0 +1,17 @@
+name: pal
+description: PAL MCP - Provider Abstraction Layer for multi-model AI collaboration
+command: uvx
+args:
+  - "--from"
+  - "git+https://github.com/BeehiveInnovations/pal-mcp-server.git"
+  - pal-mcp-server
+env:
+  ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+  GEMINI_API_KEY: "${GEMINI_API_KEY}"
+  OPENAI_API_KEY: "${OPENAI_API_KEY}"
+  DISABLED_TOOLS: "testgen,secaudit,docgen,tracer"
+  DEFAULT_MODEL: "auto"
+scope: user
+enabled: true
+only:
+  - claude
