@@ -1,0 +1,325 @@
+"""Tests for the Droid target implementation."""
+
+import json
+from pathlib import Path
+
+import pytest
+
+from promptdeploy.frontmatter import parse_frontmatter
+from promptdeploy.manifest import MANIFEST_FILENAME
+from promptdeploy.targets.droid import DroidTarget
+
+
+def _make_target(tmp_path: Path) -> DroidTarget:
+    config = tmp_path / ".droid"
+    config.mkdir()
+    return DroidTarget("my-target", config)
+
+
+# ------------------------------------------------------------------
+# Agents (deployed as "droids")
+# ------------------------------------------------------------------
+
+
+class TestDeployAgent:
+    def test_creates_file_in_droids_directory(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        content = b"---\nname: helper\nonly:\n  - other\n---\nAgent body.\n"
+        target.deploy_agent("helper", content)
+
+        dest = tmp_path / ".droid" / "droids" / "helper.md"
+        assert dest.exists()
+        meta, body = parse_frontmatter(dest.read_bytes())
+        assert meta is not None
+        assert "only" not in meta
+        assert meta["name"] == "helper"
+        assert body == b"Agent body.\n"
+
+    def test_creates_droids_directory(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_agent("a", b"plain content")
+        assert (tmp_path / ".droid" / "droids" / "a.md").exists()
+
+
+class TestRemoveAgent:
+    def test_removes_existing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_agent("a", b"content")
+        target.remove_agent("a")
+        assert not (tmp_path / ".droid" / "droids" / "a.md").exists()
+
+    def test_no_error_if_missing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.remove_agent("nonexistent")
+
+
+# ------------------------------------------------------------------
+# Commands (skipped by default, or deployed as skill)
+# ------------------------------------------------------------------
+
+
+class TestDeployCommand:
+    def test_command_skipped_by_default(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        content = b"---\nname: fix\n---\nFix things.\n"
+        target.deploy_command("fix", content)
+
+        # No commands directory should be created.
+        assert not (tmp_path / ".droid" / "commands").exists()
+        # Not deployed as a skill either.
+        assert not (tmp_path / ".droid" / "skills" / "fix").exists()
+
+    def test_command_without_frontmatter_skipped(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_command("plain", b"Just plain text")
+        assert not (tmp_path / ".droid" / "commands").exists()
+        assert not (tmp_path / ".droid" / "skills" / "plain").exists()
+
+    def test_command_with_droid_deploy_skill_wraps_as_skill(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        content = b"---\nname: fix\ndroid_deploy: skill\nonly:\n  - x\n---\nFix things.\n"
+        target.deploy_command("fix", content)
+
+        dest = tmp_path / ".droid" / "skills" / "fix"
+        assert dest.is_dir()
+        skill_md = dest / "SKILL.md"
+        assert skill_md.exists()
+        meta, body = parse_frontmatter(skill_md.read_bytes())
+        assert "only" not in meta
+        assert body == b"Fix things.\n"
+
+
+class TestRemoveCommand:
+    def test_removes_skill_deployed_command(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        content = b"---\nname: fix\ndroid_deploy: skill\n---\nBody.\n"
+        target.deploy_command("fix", content)
+        assert (tmp_path / ".droid" / "skills" / "fix").exists()
+        target.remove_command("fix")
+        assert not (tmp_path / ".droid" / "skills" / "fix").exists()
+
+    def test_no_error_if_missing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.remove_command("nonexistent")
+
+
+# ------------------------------------------------------------------
+# Skills
+# ------------------------------------------------------------------
+
+
+class TestDeploySkill:
+    def test_copies_directory_and_transforms_skill_md(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+
+        src = tmp_path / "src-skill"
+        src.mkdir()
+        (src / "SKILL.md").write_bytes(
+            b"---\nname: my-skill\nonly:\n  - t\n---\nSkill body.\n"
+        )
+        (src / "helper.py").write_text("print('hi')")
+
+        target.deploy_skill("my-skill", src)
+
+        dest = tmp_path / ".droid" / "skills" / "my-skill"
+        assert dest.is_dir()
+        assert (dest / "helper.py").read_text() == "print('hi')"
+
+        meta, body = parse_frontmatter((dest / "SKILL.md").read_bytes())
+        assert "only" not in meta
+        assert meta["name"] == "my-skill"
+        assert body == b"Skill body.\n"
+
+    def test_overwrites_existing_skill(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+
+        src_v1 = tmp_path / "v1"
+        src_v1.mkdir()
+        (src_v1 / "SKILL.md").write_bytes(b"v1")
+
+        src_v2 = tmp_path / "v2"
+        src_v2.mkdir()
+        (src_v2 / "SKILL.md").write_bytes(b"v2")
+
+        target.deploy_skill("s", src_v1)
+        target.deploy_skill("s", src_v2)
+        assert (tmp_path / ".droid" / "skills" / "s" / "SKILL.md").read_bytes() == b"v2"
+
+
+class TestRemoveSkill:
+    def test_removes_existing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "src-skill"
+        src.mkdir()
+        (src / "SKILL.md").write_bytes(b"body")
+        target.deploy_skill("s", src)
+        target.remove_skill("s")
+        assert not (tmp_path / ".droid" / "skills" / "s").exists()
+
+    def test_no_error_if_missing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.remove_skill("nonexistent")
+
+
+# ------------------------------------------------------------------
+# MCP Servers
+# ------------------------------------------------------------------
+
+
+class TestDeployMcpServer:
+    def test_merges_into_mcp_json(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+
+        config = {
+            "name": "my-server",
+            "description": "A server",
+            "scope": "project",
+            "enabled": True,
+            "command": "npx",
+            "args": ["-y", "my-server"],
+            "env": {"API_KEY": "xxx"},
+        }
+        target.deploy_mcp_server("my-server", config)
+
+        mcp_path = tmp_path / ".droid" / "mcp.json"
+        assert mcp_path.exists()
+        result = json.loads(mcp_path.read_text())
+        srv = result["mcpServers"]["my-server"]
+        assert srv["type"] == "stdio"
+        assert srv["command"] == "npx"
+        assert srv["args"] == ["-y", "my-server"]
+        assert srv["env"] == {"API_KEY": "xxx"}
+        assert srv["disabled"] is False
+        # Deployment metadata stripped.
+        for key in ("name", "description", "scope", "enabled", "only", "except"):
+            assert key not in srv
+
+    def test_url_based_server_gets_http_type(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {"url": "https://example.com/mcp", "enabled": True}
+        target.deploy_mcp_server("web-srv", config)
+
+        result = json.loads((tmp_path / ".droid" / "mcp.json").read_text())
+        srv = result["mcpServers"]["web-srv"]
+        assert srv["type"] == "http"
+        assert srv["url"] == "https://example.com/mcp"
+        assert srv["disabled"] is False
+
+    def test_creates_mcp_json_if_missing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_mcp_server("srv", {"command": "echo", "args": []})
+
+        mcp_path = tmp_path / ".droid" / "mcp.json"
+        assert mcp_path.exists()
+        result = json.loads(mcp_path.read_text())
+        assert "srv" in result["mcpServers"]
+
+    def test_disabled_server_not_written(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_mcp_server("srv", {"command": "echo", "enabled": False})
+
+        mcp_path = tmp_path / ".droid" / "mcp.json"
+        result = json.loads(mcp_path.read_text())
+        assert "srv" not in result.get("mcpServers", {})
+
+    def test_disabled_server_removed_if_exists(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_mcp_server("srv", {"command": "echo"})
+        target.deploy_mcp_server("srv", {"command": "echo", "enabled": False})
+
+        result = json.loads((tmp_path / ".droid" / "mcp.json").read_text())
+        assert "srv" not in result.get("mcpServers", {})
+
+    def test_preserves_other_servers(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        mcp_path = tmp_path / ".droid" / "mcp.json"
+        mcp_path.write_text(
+            json.dumps({"mcpServers": {"existing": {"command": "keep"}}})
+        )
+
+        target.deploy_mcp_server("new", {"command": "added"})
+
+        result = json.loads(mcp_path.read_text())
+        assert result["mcpServers"]["existing"] == {"command": "keep"}
+        assert "new" in result["mcpServers"]
+
+
+class TestRemoveMcpServer:
+    def test_removes_existing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_mcp_server("srv", {"command": "echo"})
+        target.remove_mcp_server("srv")
+
+        result = json.loads((tmp_path / ".droid" / "mcp.json").read_text())
+        assert "srv" not in result.get("mcpServers", {})
+
+    def test_no_error_if_missing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.remove_mcp_server("nonexistent")
+
+    def test_no_error_if_mcp_json_missing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.remove_mcp_server("anything")
+
+
+# ------------------------------------------------------------------
+# Properties / metadata
+# ------------------------------------------------------------------
+
+
+class TestSaveJsonError:
+    def test_cleanup_on_replace_failure(self, tmp_path: Path):
+        """When os.replace fails in _save_json, temp file is cleaned up."""
+        import os
+        from unittest.mock import patch
+
+        target = _make_target(tmp_path)
+
+        with patch("os.replace", side_effect=OSError("mock failure")):
+            with pytest.raises(OSError, match="mock failure"):
+                target.deploy_mcp_server("srv", {"command": "echo"})
+
+        config_dir = tmp_path / ".droid"
+        tmp_files = list(config_dir.glob("*.tmp"))
+        assert tmp_files == []
+
+    def test_cleanup_on_replace_failure_unlink_also_fails(self, tmp_path: Path):
+        """When both os.replace and os.unlink fail, original error propagates."""
+        import os
+        from unittest.mock import patch
+
+        target = _make_target(tmp_path)
+
+        original_unlink = os.unlink
+
+        def failing_unlink(p):
+            if str(p).endswith(".tmp"):
+                raise OSError("unlink failed")
+            return original_unlink(p)
+
+        with patch("os.replace", side_effect=OSError("replace failed")):
+            with patch("os.unlink", side_effect=failing_unlink):
+                with pytest.raises(OSError, match="replace failed"):
+                    target.deploy_mcp_server("srv", {"command": "echo"})
+
+
+class TestTargetProperties:
+    def test_id(self, tmp_path: Path):
+        target = DroidTarget("my-id", tmp_path)
+        assert target.id == "my-id"
+
+    def test_exists_true(self, tmp_path: Path):
+        config = tmp_path / ".droid"
+        config.mkdir()
+        target = DroidTarget("t", config)
+        assert target.exists()
+
+    def test_exists_false(self, tmp_path: Path):
+        target = DroidTarget("t", tmp_path / "nonexistent")
+        assert not target.exists()
+
+    def test_manifest_path(self, tmp_path: Path):
+        config = tmp_path / ".droid"
+        config.mkdir()
+        target = DroidTarget("t", config)
+        assert target.manifest_path() == config / MANIFEST_FILENAME

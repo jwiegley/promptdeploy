@@ -1,0 +1,204 @@
+"""Tests for promptdeploy validation."""
+
+from pathlib import Path
+
+import pytest
+
+from promptdeploy.config import Config, TargetConfig
+from promptdeploy.source import SourceItem
+from promptdeploy.validate import ValidationIssue, validate_all, validate_item
+
+
+@pytest.fixture
+def config() -> Config:
+    targets = {
+        "claude-personal": TargetConfig(
+            id="claude-personal", type="claude", path=Path("/tmp/claude-personal")
+        ),
+        "droid": TargetConfig(id="droid", type="droid", path=Path("/tmp/droid")),
+    }
+    groups = {"claude": ["claude-personal"]}
+    return Config(source_root=Path("/tmp/src"), targets=targets, groups=groups)
+
+
+class TestValidateItem:
+    def test_valid_agent_no_frontmatter(self, config: Config) -> None:
+        item = SourceItem("agent", "test", Path("/tmp/test.md"), None, b"No frontmatter")
+        issues = validate_item(item, config)
+        assert issues == []
+
+    def test_valid_agent_with_frontmatter(self, config: Config) -> None:
+        content = b"---\nname: test\ndescription: A test agent\n---\nBody text"
+        item = SourceItem("agent", "test", Path("/tmp/test.md"), {"name": "test"}, content)
+        issues = validate_item(item, config)
+        assert issues == []
+
+    def test_invalid_yaml_frontmatter(self, config: Config) -> None:
+        content = b"---\ninvalid: yaml: [broken\n---\n"
+        item = SourceItem("agent", "test", Path("/tmp/test.md"), None, content)
+        issues = validate_item(item, config)
+        assert len(issues) == 1
+        assert issues[0].level == "error"
+        assert "Invalid YAML" in issues[0].message
+
+    def test_both_only_and_except(self, config: Config) -> None:
+        content = b"---\nonly:\n  - droid\nexcept:\n  - claude-personal\n---\n"
+        item = SourceItem("agent", "test", Path("/tmp/test.md"), None, content)
+        issues = validate_item(item, config)
+        assert any("Cannot specify both" in i.message for i in issues)
+
+    def test_invalid_env_in_only(self, config: Config) -> None:
+        content = b"---\nonly:\n  - nonexistent\n---\n"
+        item = SourceItem("agent", "test", Path("/tmp/test.md"), None, content)
+        issues = validate_item(item, config)
+        assert len(issues) == 1
+        assert "Invalid environment ID 'nonexistent'" in issues[0].message
+        assert "'only'" in issues[0].message
+
+    def test_invalid_env_in_except(self, config: Config) -> None:
+        content = b"---\nexcept:\n  - bogus\n---\n"
+        item = SourceItem("agent", "test", Path("/tmp/test.md"), None, content)
+        issues = validate_item(item, config)
+        assert len(issues) == 1
+        assert "Invalid environment ID 'bogus'" in issues[0].message
+        assert "'except'" in issues[0].message
+
+    def test_only_not_a_list(self, config: Config) -> None:
+        content = b"---\nonly: not-a-list\n---\n"
+        item = SourceItem("agent", "test", Path("/tmp/test.md"), None, content)
+        issues = validate_item(item, config)
+        assert any("'only' must be a list" in i.message for i in issues)
+
+    def test_except_not_a_list(self, config: Config) -> None:
+        content = b"---\nexcept: not-a-list\n---\n"
+        item = SourceItem("agent", "test", Path("/tmp/test.md"), None, content)
+        issues = validate_item(item, config)
+        assert any("'except' must be a list" in i.message for i in issues)
+
+    def test_valid_only_with_group(self, config: Config) -> None:
+        content = b"---\nonly:\n  - claude\n---\n"
+        item = SourceItem("agent", "test", Path("/tmp/test.md"), None, content)
+        issues = validate_item(item, config)
+        assert issues == []
+
+    def test_valid_except_with_target(self, config: Config) -> None:
+        content = b"---\nexcept:\n  - droid\n---\n"
+        item = SourceItem("agent", "test", Path("/tmp/test.md"), None, content)
+        issues = validate_item(item, config)
+        assert issues == []
+
+
+class TestValidateItemMcp:
+    def test_valid_mcp_with_command(self, config: Config) -> None:
+        content = b"name: test-mcp\ncommand: npx\nargs:\n  - test-server\n"
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
+        issues = validate_item(item, config)
+        assert issues == []
+
+    def test_valid_mcp_with_url(self, config: Config) -> None:
+        content = b"name: test-mcp\nurl: https://example.com/mcp\n"
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
+        issues = validate_item(item, config)
+        assert issues == []
+
+    def test_mcp_missing_name(self, config: Config) -> None:
+        content = b"command: npx\nargs:\n  - test-server\n"
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
+        issues = validate_item(item, config)
+        assert any("missing 'name'" in i.message for i in issues)
+
+    def test_mcp_missing_command_and_url(self, config: Config) -> None:
+        content = b"name: test-mcp\nargs:\n  - test-server\n"
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
+        issues = validate_item(item, config)
+        assert any("missing 'command' or 'url'" in i.message for i in issues)
+
+    def test_mcp_invalid_yaml(self, config: Config) -> None:
+        content = b"name: [broken yaml\n"
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
+        issues = validate_item(item, config)
+        assert len(issues) == 1
+        assert issues[0].level == "error"
+        assert "Invalid YAML" in issues[0].message
+
+    def test_mcp_non_dict_yaml(self, config: Config) -> None:
+        content = b"just a string\n"
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
+        issues = validate_item(item, config)
+        # Non-dict metadata treated as None -> no issues (no metadata to validate)
+        assert issues == []
+
+    def test_mcp_with_only_filter(self, config: Config) -> None:
+        content = b"name: test-mcp\ncommand: npx\nonly:\n  - droid\n"
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
+        issues = validate_item(item, config)
+        assert issues == []
+
+    def test_mcp_with_invalid_only_filter(self, config: Config) -> None:
+        content = b"name: test-mcp\ncommand: npx\nonly:\n  - nonexistent\n"
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
+        issues = validate_item(item, config)
+        assert any("Invalid environment ID" in i.message for i in issues)
+
+
+class TestValidateAll:
+    def test_empty_source(self, tmp_path: Path) -> None:
+        config = Config(
+            source_root=tmp_path,
+            targets={"t": TargetConfig(id="t", type="claude", path=tmp_path)},
+            groups={},
+        )
+        issues = validate_all(config)
+        assert issues == []
+
+    def test_finds_issues_across_types(self, tmp_path: Path) -> None:
+        # Create an agent with invalid YAML frontmatter
+        # Discovery raises FrontmatterError for this, so validate_all catches it
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "bad.md").write_bytes(b"---\ninvalid: yaml: [broken\n---\n")
+        (agents_dir / "good.md").write_bytes(b"---\nname: good\n---\nBody")
+
+        config = Config(
+            source_root=tmp_path,
+            targets={"t": TargetConfig(id="t", type="claude", path=tmp_path)},
+            groups={},
+        )
+        issues = validate_all(config)
+        assert len(issues) == 1
+        assert issues[0].level == "error"
+        assert "Discovery failed" in issues[0].message
+
+    def test_finds_validation_issues_in_valid_items(self, tmp_path: Path) -> None:
+        # Create agents with parseable but invalid env references
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "bad-env.md").write_bytes(
+            b"---\nname: bad-env\nonly:\n  - nonexistent\n---\n"
+        )
+        (agents_dir / "good.md").write_bytes(b"---\nname: good\n---\nBody")
+
+        config = Config(
+            source_root=tmp_path,
+            targets={"t": TargetConfig(id="t", type="claude", path=tmp_path)},
+            groups={},
+        )
+        issues = validate_all(config)
+        assert len(issues) == 1
+        assert "Invalid environment ID" in issues[0].message
+        assert issues[0].file_path == agents_dir / "bad-env.md"
+
+
+class TestValidationIssue:
+    def test_fields(self) -> None:
+        issue = ValidationIssue(
+            level="error", message="test", file_path=Path("/tmp/x"), line=42
+        )
+        assert issue.level == "error"
+        assert issue.message == "test"
+        assert issue.file_path == Path("/tmp/x")
+        assert issue.line == 42
+
+    def test_line_optional(self) -> None:
+        issue = ValidationIssue(level="warning", message="warn", file_path=Path("/tmp/x"))
+        assert issue.line is None
