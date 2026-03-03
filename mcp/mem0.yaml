@@ -1,0 +1,27 @@
+name: mem0
+description: Persistent cross-session memory using mem0ai with local LLM inference and Qdrant vector store
+command: uvx
+args:
+  - "--from"
+  - "${HOME}/.config/claude/mem0-mcp-selfhosted"
+  - mem0-mcp-selfhosted
+env:
+  MEM0_USER_ID: johnw
+  MEM0_PROVIDER: openai
+  MEM0_LLM_MODEL: Qwen3.5-27B-Instruct
+  MEM0_LLM_OPENAI_BASE_URL: https://10.6.0.1/v1
+  MEM0_LLM_OPENAI_API_KEY: dummy-key
+  MEM0_EMBED_PROVIDER: openai
+  MEM0_EMBED_MODEL: bge-m3
+  MEM0_EMBED_DIMS: "1024"
+  OPENAI_BASE_URL: https://10.6.0.1/v1
+  OPENAI_API_KEY: dummy-key
+  MEM0_QDRANT_URL: https://qdrant.vulcan.lan:443
+  MEM0_QDRANT_API_KEY: "${MEM0_QDRANT_API_KEY}"
+  MEM0_ENABLE_GRAPH: "false"
+  MEM0_COLLECTION: mem0_mcp_selfhosted
+  SSL_CERT_FILE: "${HOME}/.config/ssl/ca-bundle-with-vulcan.pem"
+scope: user
+enabled: true
+only:
+  - claude

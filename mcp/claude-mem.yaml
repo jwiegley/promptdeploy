@@ -1,0 +1,10 @@
+name: claude-mem
+description: Semantic memory search for Claude sessions
+command: /etc/profiles/per-user/johnw/bin/mcp-server-claude-mem
+args: []
+env:
+  CLAUDE_MEM_DB: "${HOME}/.claude-mem/db.sqlite"
+scope: user
+enabled: true
+except:
+  - droid
