@@ -161,6 +161,27 @@ class TestRemoveSkill:
 
 
 # ------------------------------------------------------------------
+# Models (no-op for Claude)
+# ------------------------------------------------------------------
+
+
+class TestDeployModels:
+    def test_deploy_models_is_noop(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        # deploy_models should not create any files or raise
+        target.deploy_models({"providers": {"acme": {"models": {"m": {}}}}})
+        # No settings.json should be created
+        assert not (tmp_path / ".claude" / "settings.json").exists()
+
+
+class TestRemoveModelsNoop:
+    def test_remove_models_is_noop(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        # remove_models should not raise even with no prior deploy
+        target.remove_models()
+
+
+# ------------------------------------------------------------------
 # MCP Servers
 # ------------------------------------------------------------------
 

@@ -262,6 +262,317 @@ class TestRemoveMcpServer:
 # ------------------------------------------------------------------
 
 
+# ------------------------------------------------------------------
+# Models
+# ------------------------------------------------------------------
+
+
+class TestDeployModels:
+    def test_basic_provider_with_opencode_config(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("OC_KEY", "sk-oc")
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://api.acme.com/v1",
+                    "api_key": "${OC_KEY}",
+                    "opencode": {
+                        "npm": "@ai-sdk/openai",
+                        "name": "Acme Provider",
+                    },
+                    "models": {
+                        "gpt-4": {"display_name": "GPT-4"},
+                    },
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        oc_path = tmp_path / ".opencode" / "opencode.json"
+        result = json.loads(oc_path.read_text())
+        assert "acme" in result["provider"]
+        prov = result["provider"]["acme"]
+        assert prov["npm"] == "@ai-sdk/openai"
+        assert prov["name"] == "Acme Provider"
+        assert prov["options"]["baseURL"] == "https://api.acme.com/v1"
+        assert prov["options"]["apiKey"] == "sk-oc"
+        assert "gpt-4" in prov["models"]
+        assert prov["models"]["gpt-4"]["name"] == "GPT-4"
+
+    def test_provider_without_opencode_config_skipped(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "no-oc": {
+                    "display_name": "No OC",
+                    "base_url": "https://nooc.com",
+                    "api_key": "key",
+                    "models": {"m": {}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        oc_path = tmp_path / ".opencode" / "opencode.json"
+        result = json.loads(oc_path.read_text())
+        assert result["provider"] == {}
+
+    def test_npm_name_options_correctly_mapped(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "prov": {
+                    "display_name": "Prov",
+                    "base_url": "https://prov.com",
+                    "api_key": "key",
+                    "opencode": {
+                        "npm": "@custom/sdk",
+                        "name": "Custom Name",
+                    },
+                    "models": {"m": {}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        result = json.loads(
+            (tmp_path / ".opencode" / "opencode.json").read_text()
+        )
+        prov = result["provider"]["prov"]
+        assert prov["npm"] == "@custom/sdk"
+        assert prov["name"] == "Custom Name"
+        assert prov["options"]["baseURL"] == "https://prov.com"
+        assert prov["options"]["apiKey"] == "key"
+
+    def test_timeout_option_included(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "prov": {
+                    "display_name": "Prov",
+                    "base_url": "https://prov.com",
+                    "api_key": "key",
+                    "opencode": {"timeout": 30000},
+                    "models": {"m": {}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        result = json.loads(
+            (tmp_path / ".opencode" / "opencode.json").read_text()
+        )
+        assert result["provider"]["prov"]["options"]["timeout"] == 30000
+
+    def test_model_limits_context_and_output(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "prov": {
+                    "display_name": "Prov",
+                    "base_url": "https://prov.com",
+                    "api_key": "key",
+                    "opencode": {"npm": "@ai-sdk/openai-compatible"},
+                    "models": {
+                        "m": {
+                            "display_name": "M",
+                            "context_limit": 128000,
+                            "output_limit": 4096,
+                        },
+                    },
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        result = json.loads(
+            (tmp_path / ".opencode" / "opencode.json").read_text()
+        )
+        model = result["provider"]["prov"]["models"]["m"]
+        assert model["limit"]["context"] == 128000
+        assert model["limit"]["output"] == 4096
+
+    def test_model_with_only_context_limit(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "prov": {
+                    "display_name": "Prov",
+                    "base_url": "https://prov.com",
+                    "api_key": "key",
+                    "opencode": {"npm": "@ai-sdk/openai-compatible"},
+                    "models": {
+                        "m": {"context_limit": 64000},
+                    },
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        result = json.loads(
+            (tmp_path / ".opencode" / "opencode.json").read_text()
+        )
+        model = result["provider"]["prov"]["models"]["m"]
+        assert model["limit"]["context"] == 64000
+        assert "output" not in model["limit"]
+
+    def test_model_without_limits_has_no_limit_key(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "prov": {
+                    "display_name": "Prov",
+                    "base_url": "https://prov.com",
+                    "api_key": "key",
+                    "opencode": {"npm": "@ai-sdk/openai-compatible"},
+                    "models": {"m": {"display_name": "M"}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        result = json.loads(
+            (tmp_path / ".opencode" / "opencode.json").read_text()
+        )
+        model = result["provider"]["prov"]["models"]["m"]
+        assert "limit" not in model
+
+    def test_env_var_expansion_in_api_key(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("OC_SECRET", "real-key")
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "prov": {
+                    "display_name": "Prov",
+                    "base_url": "https://prov.com",
+                    "api_key": "${OC_SECRET}",
+                    "opencode": {"npm": "@ai-sdk/openai-compatible"},
+                    "models": {"m": {}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        result = json.loads(
+            (tmp_path / ".opencode" / "opencode.json").read_text()
+        )
+        assert result["provider"]["prov"]["options"]["apiKey"] == "real-key"
+
+    def test_empty_providers_dict(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_models({"providers": {}})
+
+        result = json.loads(
+            (tmp_path / ".opencode" / "opencode.json").read_text()
+        )
+        assert result["provider"] == {}
+
+    def test_none_model_value_handled(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "prov": {
+                    "display_name": "Prov",
+                    "base_url": "https://prov.com",
+                    "api_key": "key",
+                    "opencode": {"npm": "@ai-sdk/openai-compatible"},
+                    "models": {"m": None},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        result = json.loads(
+            (tmp_path / ".opencode" / "opencode.json").read_text()
+        )
+        assert "m" in result["provider"]["prov"]["models"]
+
+    def test_existing_opencode_json_fields_preserved(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        oc_path = tmp_path / ".opencode" / "opencode.json"
+        oc_path.write_text(json.dumps({"theme": "dark", "editor": "vim"}))
+
+        config = {
+            "providers": {
+                "prov": {
+                    "display_name": "Prov",
+                    "base_url": "https://prov.com",
+                    "api_key": "key",
+                    "opencode": {"npm": "@ai-sdk/openai-compatible"},
+                    "models": {"m": {}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        result = json.loads(oc_path.read_text())
+        assert result["theme"] == "dark"
+        assert result["editor"] == "vim"
+        assert "prov" in result["provider"]
+
+    def test_default_npm_and_name(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "prov": {
+                    "display_name": "My Provider",
+                    "base_url": "https://prov.com",
+                    "api_key": "key",
+                    "opencode": {"npm": "@ai-sdk/openai-compatible"},
+                    "models": {"m": {}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        result = json.loads(
+            (tmp_path / ".opencode" / "opencode.json").read_text()
+        )
+        prov = result["provider"]["prov"]
+        # Default npm from opencode config
+        assert prov["npm"] == "@ai-sdk/openai-compatible"
+        # Name falls back to display_name from provider
+        assert prov["name"] == "My Provider"
+
+
+class TestRemoveModels:
+    def test_removes_provider_section(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        oc_path = tmp_path / ".opencode" / "opencode.json"
+        oc_path.write_text(json.dumps({
+            "provider": {"acme": {"npm": "test"}},
+            "theme": "dark",
+        }))
+
+        target.remove_models()
+
+        result = json.loads(oc_path.read_text())
+        assert "provider" not in result
+        assert result["theme"] == "dark"
+
+    def test_no_op_when_opencode_json_missing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        # Should not raise
+        target.remove_models()
+
+    def test_preserves_other_config_keys(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        oc_path = tmp_path / ".opencode" / "opencode.json"
+        oc_path.write_text(json.dumps({
+            "provider": {},
+            "mcpServers": {"srv": {}},
+            "theme": "light",
+        }))
+
+        target.remove_models()
+
+        result = json.loads(oc_path.read_text())
+        assert "provider" not in result
+        assert result["mcpServers"] == {"srv": {}}
+        assert result["theme"] == "light"
+
+
 class TestExtraConfigKeys:
     def test_extra_keys_copied_to_config(self, tmp_path: Path):
         """Non-metadata, non-command/args/env keys are copied to the output."""

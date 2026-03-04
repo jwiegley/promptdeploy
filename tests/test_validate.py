@@ -141,6 +141,258 @@ class TestValidateItemMcp:
         assert any("Invalid environment ID" in i.message for i in issues)
 
 
+class TestValidateItemModels:
+    def _make_models_item(self, content_dict: dict) -> SourceItem:
+        import yaml
+        content = yaml.dump(content_dict).encode("utf-8")
+        return SourceItem(
+            "models", "models", Path("/tmp/models.yaml"), content_dict, content
+        )
+
+    def test_valid_models_yaml(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "sk-test",
+                    "models": {"gpt-4": {"display_name": "GPT-4"}},
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        assert issues == []
+
+    def test_missing_providers_key(self, config: Config) -> None:
+        item = self._make_models_item({"something_else": "value"})
+        issues = validate_item(item, config)
+        assert any("missing or empty 'providers'" in i.message for i in issues)
+
+    def test_empty_providers(self, config: Config) -> None:
+        item = self._make_models_item({"providers": {}})
+        issues = validate_item(item, config)
+        assert any("missing or empty 'providers'" in i.message for i in issues)
+
+    def test_provider_not_a_dict(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {"bad": "not-a-dict"},
+        })
+        issues = validate_item(item, config)
+        assert any("must be a mapping" in i.message for i in issues)
+
+    def test_missing_required_fields(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "models": {"m": {}},
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        messages = [i.message for i in issues]
+        assert any("'display_name'" in m for m in messages)
+        assert any("'base_url'" in m for m in messages)
+        assert any("'api_key'" in m for m in messages)
+
+    def test_empty_models_in_provider(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "key",
+                    "models": {},
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("no models defined" in i.message for i in issues)
+
+    def test_provider_level_only_and_except_mutually_exclusive(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "key",
+                    "models": {"m": {}},
+                    "only": ["droid"],
+                    "except": ["claude-personal"],
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("cannot specify both 'only' and 'except'" in i.message for i in issues)
+
+    def test_provider_level_only_not_a_list(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "key",
+                    "models": {"m": {}},
+                    "only": "droid",
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("'only' must be a list" in i.message for i in issues)
+
+    def test_provider_level_invalid_environment_id(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "key",
+                    "models": {"m": {}},
+                    "only": ["nonexistent-env"],
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("invalid environment ID 'nonexistent-env'" in i.message for i in issues)
+
+    def test_provider_level_except_not_a_list(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "key",
+                    "models": {"m": {}},
+                    "except": "droid",
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("'except' must be a list" in i.message for i in issues)
+
+    def test_model_level_only_and_except_mutually_exclusive(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "key",
+                    "models": {
+                        "m": {
+                            "only": ["droid"],
+                            "except": ["claude-personal"],
+                        },
+                    },
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("cannot specify both 'only' and 'except'" in i.message for i in issues)
+
+    def test_model_level_only_not_a_list(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "key",
+                    "models": {
+                        "m": {"only": "droid"},
+                    },
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("'only' must be a list" in i.message for i in issues)
+
+    def test_model_level_invalid_environment_id(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "key",
+                    "models": {
+                        "m": {"only": ["bogus-env"]},
+                    },
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("invalid environment ID 'bogus-env'" in i.message for i in issues)
+
+    def test_model_level_except_not_a_list(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "key",
+                    "models": {
+                        "m": {"except": "droid"},
+                    },
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("'except' must be a list" in i.message for i in issues)
+
+    def test_model_level_except_invalid_environment_id(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "key",
+                    "models": {
+                        "m": {"except": ["nonexistent"]},
+                    },
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("invalid environment ID 'nonexistent'" in i.message for i in issues)
+
+    def test_model_not_a_dict_skipped_gracefully(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "key",
+                    "models": {
+                        "m": "not-a-dict",
+                    },
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        # Should not crash; no model-level only/except errors for non-dict models
+        model_issues = [i for i in issues if "Model " in i.message]
+        assert model_issues == []
+
+    def test_providers_is_none(self, config: Config) -> None:
+        item = self._make_models_item({"providers": None})
+        issues = validate_item(item, config)
+        assert any("missing or empty 'providers'" in i.message for i in issues)
+
+    def test_valid_provider_level_only_with_group(self, config: Config) -> None:
+        item = self._make_models_item({
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "key",
+                    "models": {"m": {}},
+                    "only": ["claude"],
+                },
+            },
+        })
+        issues = validate_item(item, config)
+        # "claude" is a valid group, so no environment ID errors
+        env_issues = [i for i in issues if "invalid environment ID" in i.message]
+        assert env_issues == []
+
+
 class TestValidateAll:
     def test_empty_source(self, tmp_path: Path) -> None:
         config = Config(

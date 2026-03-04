@@ -303,6 +303,309 @@ class TestSaveJsonError:
                     target.deploy_mcp_server("srv", {"command": "echo"})
 
 
+# ------------------------------------------------------------------
+# Models
+# ------------------------------------------------------------------
+
+
+class TestDeployModels:
+    def test_basic_model_with_all_fields(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("ACME_KEY", "sk-secret")
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://api.acme.com/v1",
+                    "api_key": "${ACME_KEY}",
+                    "droid": {
+                        "provider_type": "openai",
+                    },
+                    "models": {
+                        "gpt-4": {
+                            "display_name": "GPT-4",
+                            "max_output_tokens": 4096,
+                        },
+                    },
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        settings = json.loads((tmp_path / ".droid" / "settings.json").read_text())
+        assert len(settings["customModels"]) == 1
+        m = settings["customModels"][0]
+        assert m["apiKey"] == "sk-secret"
+        assert m["baseUrl"] == "https://api.acme.com/v1"
+        assert m["displayName"] == "[Acme] GPT-4"
+        assert m["model"] == "gpt-4"
+        assert m["provider"] == "openai"
+        assert m["index"] == 0
+        assert m["id"].startswith("custom:")
+        assert m["maxOutputTokens"] == 4096
+        assert m["noImageSupport"] is False
+
+    def test_multiple_providers_multiple_models(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "prov_a": {
+                    "display_name": "A",
+                    "base_url": "https://a.com",
+                    "api_key": "key-a",
+                    "models": {
+                        "m1": {"display_name": "Model 1"},
+                        "m2": {"display_name": "Model 2"},
+                    },
+                },
+                "prov_b": {
+                    "display_name": "B",
+                    "base_url": "https://b.com",
+                    "api_key": "key-b",
+                    "models": {
+                        "m3": {},
+                    },
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        settings = json.loads((tmp_path / ".droid" / "settings.json").read_text())
+        models = settings["customModels"]
+        assert len(models) == 3
+        # Check sequential indices
+        indices = [m["index"] for m in models]
+        assert indices == [0, 1, 2]
+
+    def test_auto_generated_id_and_index(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "acme": {
+                    "display_name": "Acme",
+                    "base_url": "https://acme.com",
+                    "api_key": "key",
+                    "models": {
+                        "gpt-4": {},
+                    },
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        settings = json.loads((tmp_path / ".droid" / "settings.json").read_text())
+        m = settings["customModels"][0]
+        assert m["id"] == "custom:[Acme]-gpt-4-0"
+        assert m["index"] == 0
+
+    def test_env_var_expansion_in_api_key(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("SECRET_KEY", "expanded-key")
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "p": {
+                    "display_name": "P",
+                    "base_url": "https://p.com",
+                    "api_key": "${SECRET_KEY}",
+                    "models": {"m": {}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        settings = json.loads((tmp_path / ".droid" / "settings.json").read_text())
+        assert settings["customModels"][0]["apiKey"] == "expanded-key"
+
+    def test_max_output_tokens_included_when_present(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "p": {
+                    "display_name": "P",
+                    "base_url": "https://p.com",
+                    "api_key": "key",
+                    "models": {"m": {"max_output_tokens": 8192}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        settings = json.loads((tmp_path / ".droid" / "settings.json").read_text())
+        assert settings["customModels"][0]["maxOutputTokens"] == 8192
+
+    def test_max_output_tokens_omitted_when_not_present(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "p": {
+                    "display_name": "P",
+                    "base_url": "https://p.com",
+                    "api_key": "key",
+                    "models": {"m": {}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        settings = json.loads((tmp_path / ".droid" / "settings.json").read_text())
+        assert "maxOutputTokens" not in settings["customModels"][0]
+
+    def test_extra_args_included(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "p": {
+                    "display_name": "P",
+                    "base_url": "https://p.com",
+                    "api_key": "key",
+                    "droid": {"extra_args": {"temperature": 0.7}},
+                    "models": {"m": {}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        settings = json.loads((tmp_path / ".droid" / "settings.json").read_text())
+        assert settings["customModels"][0]["extraArgs"] == {"temperature": 0.7}
+
+    def test_extra_headers_included(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "p": {
+                    "display_name": "P",
+                    "base_url": "https://p.com",
+                    "api_key": "key",
+                    "droid": {"extra_headers": {"X-Custom": "value"}},
+                    "models": {"m": {}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        settings = json.loads((tmp_path / ".droid" / "settings.json").read_text())
+        assert settings["customModels"][0]["extraHeaders"] == {"X-Custom": "value"}
+
+    def test_no_image_support_flag(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "p": {
+                    "display_name": "P",
+                    "base_url": "https://p.com",
+                    "api_key": "key",
+                    "droid": {"no_image_support": True},
+                    "models": {"m": {}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        settings = json.loads((tmp_path / ".droid" / "settings.json").read_text())
+        assert settings["customModels"][0]["noImageSupport"] is True
+
+    def test_empty_providers_dict(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_models({"providers": {}})
+
+        settings = json.loads((tmp_path / ".droid" / "settings.json").read_text())
+        assert settings["customModels"] == []
+
+    def test_none_model_value(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "p": {
+                    "display_name": "P",
+                    "base_url": "https://p.com",
+                    "api_key": "key",
+                    "models": {"m": None},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        settings = json.loads((tmp_path / ".droid" / "settings.json").read_text())
+        assert len(settings["customModels"]) == 1
+        assert settings["customModels"][0]["model"] == "m"
+
+    def test_existing_settings_preserved(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        settings_path = tmp_path / ".droid" / "settings.json"
+        settings_path.write_text(json.dumps({"theme": "dark", "fontSize": 14}))
+
+        config = {
+            "providers": {
+                "p": {
+                    "display_name": "P",
+                    "base_url": "https://p.com",
+                    "api_key": "key",
+                    "models": {"m": {}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        settings = json.loads(settings_path.read_text())
+        assert settings["theme"] == "dark"
+        assert settings["fontSize"] == 14
+        assert "customModels" in settings
+
+    def test_default_provider_type(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "p": {
+                    "display_name": "P",
+                    "base_url": "https://p.com",
+                    "api_key": "key",
+                    "models": {"m": {}},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        settings = json.loads((tmp_path / ".droid" / "settings.json").read_text())
+        assert settings["customModels"][0]["provider"] == "generic-chat-completion-api"
+
+
+class TestRemoveModels:
+    def test_removes_custom_models_from_settings(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        settings_path = tmp_path / ".droid" / "settings.json"
+        settings_path.write_text(json.dumps({
+            "customModels": [{"id": "test"}],
+            "theme": "dark",
+        }))
+
+        target.remove_models()
+
+        settings = json.loads(settings_path.read_text())
+        assert "customModels" not in settings
+        assert settings["theme"] == "dark"
+
+    def test_no_op_when_settings_missing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        # Should not raise even if settings.json does not exist
+        target.remove_models()
+
+    def test_preserves_other_keys(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        settings_path = tmp_path / ".droid" / "settings.json"
+        settings_path.write_text(json.dumps({
+            "customModels": [],
+            "theme": "light",
+            "fontSize": 12,
+        }))
+
+        target.remove_models()
+
+        settings = json.loads(settings_path.read_text())
+        assert "customModels" not in settings
+        assert settings["theme"] == "light"
+        assert settings["fontSize"] == 12
+
+
 class TestTargetProperties:
     def test_id(self, tmp_path: Path):
         target = DroidTarget("my-id", tmp_path)

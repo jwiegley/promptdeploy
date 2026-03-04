@@ -273,6 +273,41 @@ class TestNonDirInSkills:
         assert skills[0].name == "real"
 
 
+class TestDiscoverModels:
+    def test_models_yaml_with_invalid_yaml(self, tmp_path):
+        (tmp_path / "models.yaml").write_bytes(b"invalid: yaml: [broken\n")
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_models())
+        assert len(items) == 1
+        assert items[0].metadata is None
+        assert items[0].name == "models"
+
+    def test_models_yaml_with_non_dict_content(self, tmp_path):
+        (tmp_path / "models.yaml").write_bytes(b"just a string\n")
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_models())
+        assert len(items) == 1
+        assert items[0].metadata is None
+        assert items[0].name == "models"
+
+    def test_models_yaml_missing(self, tmp_path):
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_models())
+        assert items == []
+
+    def test_models_yaml_valid(self, tmp_path):
+        (tmp_path / "models.yaml").write_bytes(
+            b"providers:\n  acme:\n    display_name: Acme\n"
+        )
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_models())
+        assert len(items) == 1
+        assert items[0].item_type == "models"
+        assert items[0].name == "models"
+        assert items[0].metadata is not None
+        assert "providers" in items[0].metadata
+
+
 class TestNameFallback:
     def test_agent_name_from_stem_when_no_frontmatter(self, tmp_path):
         agents_dir = tmp_path / "agents"
