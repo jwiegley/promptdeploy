@@ -15,7 +15,7 @@ from promptdeploy.frontmatter import parse_frontmatter
 class SourceItem:
     """A discovered source item ready for deployment."""
 
-    item_type: str  # 'agent', 'command', 'skill', 'mcp'
+    item_type: str  # 'agent', 'command', 'skill', 'mcp', 'models'
     name: str
     path: Path
     metadata: Optional[dict]
@@ -34,6 +34,7 @@ class SourceDiscovery:
         yield from self.discover_commands()
         yield from self.discover_skills()
         yield from self.discover_mcp_servers()
+        yield from self.discover_models()
 
     def discover_agents(self) -> Iterator[SourceItem]:
         """Discover agent definitions from agents/*.md."""
@@ -105,6 +106,26 @@ class SourceDiscovery:
                 metadata=metadata,
                 content=content,
             )
+
+    def discover_models(self) -> Iterator[SourceItem]:
+        """Discover model definitions from models.yaml."""
+        models_path = self.source_root / "models.yaml"
+        if not models_path.exists():
+            return
+        content = models_path.read_bytes()
+        try:
+            metadata = yaml.safe_load(content)
+        except yaml.YAMLError:
+            metadata = None
+        if not isinstance(metadata, dict):
+            metadata = None
+        yield SourceItem(
+            item_type="models",
+            name="models",
+            path=models_path,
+            metadata=metadata,
+            content=content,
+        )
 
     def _load_markdown_item(self, item_type: str, path: Path) -> SourceItem:
         """Load a markdown file as a SourceItem, parsing frontmatter for metadata."""

@@ -23,6 +23,9 @@ class Target(ABC):
     def deploy_mcp_server(self, name: str, config: dict) -> None: ...
 
     @abstractmethod
+    def deploy_models(self, config: dict) -> None: ...
+
+    @abstractmethod
     def remove_agent(self, name: str) -> None: ...
 
     @abstractmethod
@@ -33,6 +36,9 @@ class Target(ABC):
 
     @abstractmethod
     def remove_mcp_server(self, name: str) -> None: ...
+
+    @abstractmethod
+    def remove_models(self) -> None: ...
 
     @abstractmethod
     def manifest_path(self) -> Path: ...

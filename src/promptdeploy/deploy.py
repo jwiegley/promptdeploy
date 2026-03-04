@@ -27,6 +27,7 @@ _TYPE_TO_CATEGORY = {
     "command": "commands",
     "skill": "skills",
     "mcp": "mcp_servers",
+    "models": "models",
 }
 
 # Maps CLI --only-type values (plural) -> SourceItem.item_type (singular)
@@ -35,6 +36,7 @@ _CLI_TYPE_TO_ITEM_TYPE = {
     "commands": "command",
     "skills": "skill",
     "mcp": "mcp",
+    "models": "models",
 }
 
 
@@ -49,13 +51,46 @@ class DeployAction:
     source_path: Optional[str] = None
 
 
+def _filter_models_config(
+    config_dict: dict, target_id: str, config: Config
+) -> dict:
+    """Filter a models.yaml config dict, keeping only matching providers/models.
+
+    Applies should_deploy_to() at both provider and model level so that
+    only/except filtering works for the models item type (which is a single
+    SourceItem containing many providers and models).
+    """
+    filtered_providers: dict = {}
+    for prov_key, prov in config_dict.get("providers", {}).items():
+        if not should_deploy_to(target_id, prov, config, "models.yaml"):
+            continue
+        # Filter individual models within the provider
+        filtered_models: dict = {}
+        for model_id, model in prov.get("models", {}).items():
+            if model is None:
+                model = {}
+            if not should_deploy_to(target_id, model, config, "models.yaml"):
+                continue
+            filtered_models[model_id] = model
+        if filtered_models:
+            filtered_prov = dict(prov)
+            filtered_prov["models"] = filtered_models
+            filtered_providers[prov_key] = filtered_prov
+    return {"providers": filtered_providers}
+
+
 def _compute_hash(item: SourceItem) -> str:
     if item.item_type == "skill":
         return compute_directory_hash(item.path.parent.resolve())
     return compute_file_hash(item.content)
 
 
-def _deploy_item(target: Target, item: SourceItem) -> None:
+def _deploy_item(
+    target: Target,
+    item: SourceItem,
+    *,
+    filtered_models_config: Optional[dict] = None,
+) -> None:
     """Deploy a single source item to a target."""
     if item.item_type == "agent":
         target.deploy_agent(item.name, item.content)
@@ -65,6 +100,8 @@ def _deploy_item(target: Target, item: SourceItem) -> None:
         target.deploy_skill(item.name, item.path.parent)
     elif item.item_type == "mcp":
         target.deploy_mcp_server(item.name, item.metadata or {})
+    elif item.item_type == "models":
+        target.deploy_models(filtered_models_config or {})
 
 
 def _remove_item(target: Target, category: str, name: str) -> None:
@@ -77,6 +114,8 @@ def _remove_item(target: Target, category: str, name: str) -> None:
         target.remove_skill(name)
     elif category == "mcp_servers":
         target.remove_mcp_server(name)
+    elif category == "models":
+        target.remove_models()
 
 
 def deploy(
@@ -148,7 +187,13 @@ def deploy(
                 action_type = "update" if is_update else "create"
 
                 if not dry_run:
-                    _deploy_item(target, item)
+                    if item.item_type == "models":
+                        filtered = _filter_models_config(
+                            item.metadata or {}, target_id, config
+                        )
+                        _deploy_item(target, item, filtered_models_config=filtered)
+                    else:
+                        _deploy_item(target, item)
 
                 actions.append(
                     DeployAction(

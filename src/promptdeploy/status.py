@@ -32,6 +32,7 @@ _TYPE_TO_CATEGORY = {
     "command": "commands",
     "skill": "skills",
     "mcp": "mcp_servers",
+    "models": "models",
 }
 
 _CATEGORY_TO_TYPE = {v: k for k, v in _TYPE_TO_CATEGORY.items()}
