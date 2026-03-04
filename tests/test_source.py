@@ -178,20 +178,20 @@ class TestDiscoverAll:
     def test_yields_all_types(self, discovery):
         items = list(discovery.discover_all())
         types = {item.item_type for item in items}
-        assert types == {"agent", "command", "skill", "mcp"}
+        assert types == {"agent", "command", "skill", "mcp", "models"}
 
     def test_total_count(self, discovery):
         items = list(discovery.discover_all())
         assert len(items) >= 60
 
     def test_order(self, discovery):
-        """Items appear in order: agents, commands, skills, mcp."""
+        """Items appear in order: agents, commands, skills, mcp, models."""
         items = list(discovery.discover_all())
         types_seen = []
         for item in items:
             if not types_seen or types_seen[-1] != item.item_type:
                 types_seen.append(item.item_type)
-        assert types_seen == ["agent", "command", "skill", "mcp"]
+        assert types_seen == ["agent", "command", "skill", "mcp", "models"]
 
 
 class TestNonExistentDirectories:
