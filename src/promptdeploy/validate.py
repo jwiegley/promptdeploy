@@ -34,6 +34,7 @@ def validate_all(config: Config) -> List[ValidationIssue]:
         (discovery.discover_commands, "commands"),
         (discovery.discover_skills, "skills"),
         (discovery.discover_mcp_servers, "mcp"),
+        (discovery.discover_models, "models"),
     ]:
         try:
             for item in discover_fn():
@@ -56,7 +57,7 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
 
     # Parse metadata
     try:
-        if item.item_type == "mcp":
+        if item.item_type in ("mcp", "models"):
             metadata = yaml.safe_load(item.content.decode("utf-8"))
             if not isinstance(metadata, dict):
                 metadata = None
@@ -127,5 +128,112 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                     file_path=item.path,
                 )
             )
+
+    # Models-specific validations
+    if item.item_type == "models":
+        providers = metadata.get("providers")
+        if not isinstance(providers, dict) or not providers:
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message="models.yaml missing or empty 'providers'",
+                    file_path=item.path,
+                )
+            )
+        else:
+            for prov_key, prov in providers.items():
+                if not isinstance(prov, dict):
+                    issues.append(
+                        ValidationIssue(
+                            level="error",
+                            message=f"Provider '{prov_key}' must be a mapping",
+                            file_path=item.path,
+                        )
+                    )
+                    continue
+                for required in ("display_name", "base_url", "api_key"):
+                    if required not in prov:
+                        issues.append(
+                            ValidationIssue(
+                                level="error",
+                                message=f"Provider '{prov_key}' missing required field '{required}'",
+                                file_path=item.path,
+                            )
+                        )
+                models = prov.get("models")
+                if not isinstance(models, dict) or not models:
+                    issues.append(
+                        ValidationIssue(
+                            level="error",
+                            message=f"Provider '{prov_key}' has no models defined",
+                            file_path=item.path,
+                        )
+                    )
+                # Validate provider-level only/except
+                p_only = prov.get("only")
+                p_except = prov.get("except")
+                if p_only is not None and p_except is not None:
+                    issues.append(
+                        ValidationIssue(
+                            level="error",
+                            message=f"Provider '{prov_key}': cannot specify both 'only' and 'except'",
+                            file_path=item.path,
+                        )
+                    )
+                for env_list, field_name in [(p_only, "only"), (p_except, "except")]:
+                    if env_list is not None:
+                        if not isinstance(env_list, list):
+                            issues.append(
+                                ValidationIssue(
+                                    level="error",
+                                    message=f"Provider '{prov_key}': '{field_name}' must be a list",
+                                    file_path=item.path,
+                                )
+                            )
+                        else:
+                            for env_id in env_list:
+                                if env_id not in valid_ids:
+                                    issues.append(
+                                        ValidationIssue(
+                                            level="error",
+                                            message=f"Provider '{prov_key}': invalid environment ID '{env_id}' in '{field_name}'",
+                                            file_path=item.path,
+                                        )
+                                    )
+                # Validate model-level only/except
+                if isinstance(models, dict):
+                    for model_id, model in models.items():
+                        if not isinstance(model, dict):
+                            continue
+                        m_only = model.get("only")
+                        m_except = model.get("except")
+                        if m_only is not None and m_except is not None:
+                            issues.append(
+                                ValidationIssue(
+                                    level="error",
+                                    message=f"Model '{model_id}' in '{prov_key}': cannot specify both 'only' and 'except'",
+                                    file_path=item.path,
+                                )
+                            )
+                        for env_list, field_name in [(m_only, "only"), (m_except, "except")]:
+                            if env_list is not None:
+                                if not isinstance(env_list, list):
+                                    issues.append(
+                                        ValidationIssue(
+                                            level="error",
+                                            message=f"Model '{model_id}' in '{prov_key}': '{field_name}' must be a list",
+                                            file_path=item.path,
+                                        )
+                                    )
+                                else:
+                                    for env_id in env_list:
+                                        if env_id not in valid_ids:
+                                            issues.append(
+                                                ValidationIssue(
+                                                    level="error",
+                                                    message=f"Model '{model_id}' in '{prov_key}': invalid environment ID '{env_id}' in '{field_name}'",
+                                                    file_path=item.path,
+                                                )
+                                            )
 
     return issues
