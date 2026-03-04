@@ -53,9 +53,6 @@ def main():
         _run_status(args)
     elif args.command == "list":
         _run_list(args)
-    else:
-        print(f"Not implemented: {args.command}", file=sys.stderr)
-        sys.exit(1)
 
 
 def _run_deploy(args):

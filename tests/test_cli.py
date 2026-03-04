@@ -470,27 +470,6 @@ class TestRunStatus:
 
 
 # ===================================================================
-# Unreachable command branch (lines 57-58)
-# ===================================================================
-
-
-class TestUnknownCommand:
-    def test_unknown_command_exits(self, monkeypatch, capsys):
-        """The else branch prints error and exits when command is unrecognized."""
-        # Monkey-patch parse_args to return an unknown command, bypassing
-        # argparse's own validation of subcommand choices.
-        fake_args = argparse.Namespace(command="nonexistent")
-        monkeypatch.setattr(
-            "argparse.ArgumentParser.parse_args", lambda *a, **kw: fake_args
-        )
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-        assert exc_info.value.code == 1
-        captured = capsys.readouterr()
-        assert "Not implemented: nonexistent" in captured.err
-
-
-# ===================================================================
 # cli.py __name__ == "__main__" guard (line 190)
 # ===================================================================
 
