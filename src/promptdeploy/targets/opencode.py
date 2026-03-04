@@ -60,6 +60,61 @@ class OpenCodeTarget(Target):
                 transform_for_target(skill_md.read_bytes(), self._id)
             )
 
+    def deploy_models(self, config: dict) -> None:
+        from ..envsubst import expand_env_vars
+
+        oc_path = self._opencode_path()
+        data = self._load_json(oc_path)
+
+        providers: dict = {}
+
+        for prov_key, prov in config.get("providers", {}).items():
+            oc_cfg = prov.get("opencode", {})
+            if not oc_cfg:
+                continue
+
+            api_key = expand_env_vars(prov.get("api_key", ""))
+            base_url = prov.get("base_url", "")
+
+            provider_entry: dict = {
+                "npm": oc_cfg.get("npm", "@ai-sdk/openai-compatible"),
+                "name": oc_cfg.get("name", prov.get("display_name", prov_key)),
+                "options": {
+                    "baseURL": base_url,
+                    "apiKey": api_key,
+                },
+            }
+            # Add timeout option if specified
+            timeout = oc_cfg.get("timeout")
+            if timeout is not None:
+                provider_entry["options"]["timeout"] = timeout
+
+            models_dict: dict = {}
+            for model_id, model in prov.get("models", {}).items():
+                if model is None:
+                    model = {}
+                model_entry: dict = {
+                    "name": model.get("display_name", model_id),
+                }
+                # Add limits if specified
+                context_limit = model.get("context_limit")
+                output_limit = model.get("output_limit")
+                if context_limit is not None or output_limit is not None:
+                    limit: dict = {}
+                    if context_limit is not None:
+                        limit["context"] = context_limit
+                    if output_limit is not None:
+                        limit["output"] = output_limit
+                    model_entry["limit"] = limit
+                models_dict[model_id] = model_entry
+
+            if models_dict:
+                provider_entry["models"] = models_dict
+                providers[prov_key] = provider_entry
+
+        data["provider"] = providers
+        self._save_json(oc_path, data)
+
     def deploy_mcp_server(self, name: str, config: dict) -> None:
         oc_path = self._opencode_path()
         data = self._load_json(oc_path)
@@ -104,6 +159,14 @@ class OpenCodeTarget(Target):
         dest = self._config_path / "skills" / name
         if dest.exists():
             shutil.rmtree(dest)
+
+    def remove_models(self) -> None:
+        path = self._opencode_path()
+        if not path.exists():
+            return
+        data = self._load_json(path)
+        data.pop("provider", None)
+        self._save_json(path, data)
 
     def remove_mcp_server(self, name: str) -> None:
         path = self._opencode_path()

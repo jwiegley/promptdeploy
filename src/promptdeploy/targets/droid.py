@@ -67,6 +67,58 @@ class DroidTarget(Target):
                 transform_for_target(skill_md.read_bytes(), self._id)
             )
 
+    def deploy_models(self, config: dict) -> None:
+        from ..envsubst import expand_env_vars
+
+        settings_path = self._config_path / "settings.json"
+        data = self._load_json(settings_path)
+
+        custom_models = []
+        index = 0
+
+        for prov_key, prov in config.get("providers", {}).items():
+            display_prefix = prov.get("display_name", prov_key)
+            base_url = prov.get("base_url", "")
+            api_key = expand_env_vars(prov.get("api_key", ""))
+            droid_cfg = prov.get("droid", {})
+            provider_type = droid_cfg.get(
+                "provider_type", "generic-chat-completion-api"
+            )
+            no_image_support = droid_cfg.get("no_image_support", False)
+            extra_args = droid_cfg.get("extra_args")
+            extra_headers = droid_cfg.get("extra_headers")
+
+            for model_id, model in prov.get("models", {}).items():
+                if model is None:
+                    model = {}
+                display_name = (
+                    f"[{display_prefix}] {model.get('display_name', model_id)}"
+                )
+                slug = display_name.replace(" ", "-")
+                entry: dict = {
+                    "apiKey": api_key,
+                    "baseUrl": base_url,
+                    "displayName": display_name,
+                    "id": f"custom:{slug}-{index}",
+                    "index": index,
+                    "model": model_id,
+                    "noImageSupport": no_image_support,
+                    "provider": provider_type,
+                }
+                max_output = model.get("max_output_tokens")
+                if max_output is not None:
+                    entry["maxOutputTokens"] = max_output
+                if extra_args is not None:
+                    entry["extraArgs"] = dict(extra_args)
+                if extra_headers is not None:
+                    entry["extraHeaders"] = dict(extra_headers)
+
+                custom_models.append(entry)
+                index += 1
+
+        data["customModels"] = custom_models
+        self._save_json(settings_path, data)
+
     def deploy_mcp_server(self, name: str, config: dict) -> None:
         mcp_path = self._mcp_path()
         data = self._load_json(mcp_path)
@@ -110,6 +162,14 @@ class DroidTarget(Target):
         dest = self._config_path / "skills" / name
         if dest.exists():
             shutil.rmtree(dest)
+
+    def remove_models(self) -> None:
+        settings_path = self._config_path / "settings.json"
+        if not settings_path.exists():
+            return
+        data = self._load_json(settings_path)
+        data.pop("customModels", None)
+        self._save_json(settings_path, data)
 
     def remove_mcp_server(self, name: str) -> None:
         path = self._mcp_path()

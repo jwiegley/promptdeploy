@@ -62,6 +62,9 @@ class ClaudeTarget(Target):
                 transform_for_target(skill_md.read_bytes(), self._id)
             )
 
+    def deploy_models(self, config: dict) -> None:
+        pass  # Claude Code does not support custom models
+
     def deploy_mcp_server(self, name: str, config: dict) -> None:
         settings = self._load_json(self._settings_path())
 
@@ -89,6 +92,9 @@ class ClaudeTarget(Target):
         dest = self._config_path / "skills" / name
         if dest.exists():
             shutil.rmtree(dest)
+
+    def remove_models(self) -> None:
+        pass  # Claude Code does not support custom models
 
     def remove_mcp_server(self, name: str) -> None:
         path = self._settings_path()
