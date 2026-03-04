@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Only run coverage check when promptdeploy source or tests changed.
+changed=$(git diff --cached --name-only -- 'src/promptdeploy/**' 'tests/**' 'models.yaml' 'pyproject.toml')
+if [ -z "$changed" ]; then
+    exit 0
+fi
+
+echo "Running promptdeploy test suite with 100% coverage gate..."
+PYTHONPATH=src python3 -m pytest tests/ -x -q --cov --cov-report=term-missing

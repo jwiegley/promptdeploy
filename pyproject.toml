@@ -25,5 +25,5 @@ testpaths = ["tests"]
 source = ["promptdeploy"]
 
 [tool.coverage.report]
-fail_under = 98
+fail_under = 100
 show_missing = true
