@@ -9,9 +9,9 @@ pre-commit:
     mypy:
       glob: "*.py"
       run: PYTHONPATH=src mypy {staged_files}
-    nix-build:
+    nix-check:
       glob: "*.{py,nix,toml,yaml}"
-      run: nix build --no-warn-dirty 2>&1
+      run: nix flake check --no-warn-dirty 2>&1
     pytest:
       glob: "*.{py,yaml,toml}"
       run: PYTHONPATH=src python -m pytest tests/ -x -q --cov --cov-report=term-missing
