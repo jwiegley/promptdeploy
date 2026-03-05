@@ -63,18 +63,21 @@ PYTHONPATH=src python -m pytest tests/test_deploy.py -v
 # Run a single test
 PYTHONPATH=src python -m pytest tests/test_deploy.py::TestDeploy::test_name -v
 
-# Build Nix package
+# Run all Nix flake checks (ruff, mypy, pytest, build)
+nix flake check
+
+# Build Nix package only
 nix build
 
 # Install editable with pip (alternative to Nix)
 pip install -e ".[dev]"
 ```
 
-The Nix dev shell also provides `mypy` and `ruff`, though neither is configured in `pyproject.toml` or enforced in CI.
+The Nix dev shell also provides `mypy` and `ruff`, configured in `pyproject.toml` and enforced via `nix flake check`.
 
 ## CI
 
-`.github/workflows/ci.yml` runs pytest with coverage on Python 3.11, 3.12, and 3.13. `lefthook.yml` defines pre-commit checks: `ruff format --check`, `ruff check`, `mypy`, `nix build`, and `pytest` with 100% coverage gate. These run when staged files match `*.py` (lint/format/type-check) or `*.{py,yaml,toml,nix}` (build/test).
+`.github/workflows/ci.yml` runs `nix flake check` which executes all 5 checks defined in `flake.nix`: `ruff format --check`, `ruff check`, `mypy`, `pytest` with 100% coverage gate, and `nix build`. `lefthook.yml` mirrors these as pre-commit checks with fast staged-file feedback, plus `nix flake check` as the authoritative full-tree gate.
 
 ## deploy.yaml
 
