@@ -21,6 +21,10 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[[tool.mypy.overrides]]
+module = "yaml"
+ignore_missing_imports = true
+
 [tool.coverage.run]
 source = ["promptdeploy"]
 
