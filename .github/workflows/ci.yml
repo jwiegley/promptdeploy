@@ -6,15 +6,11 @@ on:
   pull_request:
 
 jobs:
-  test:
+  check:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: cachix/install-nix-action@v30
         with:
-          python-version: ${{ matrix.python-version }}
-      - run: pip install -e '.[dev]'
-      - run: python -m pytest --cov --cov-report=term-missing
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: nix flake check
