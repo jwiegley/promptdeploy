@@ -35,6 +35,7 @@ def validate_all(config: Config) -> List[ValidationIssue]:
         (discovery.discover_skills, "skills"),
         (discovery.discover_mcp_servers, "mcp"),
         (discovery.discover_models, "models"),
+        (discovery.discover_hooks, "hooks"),
     ]:
         try:
             for item in discover_fn():
@@ -55,9 +56,30 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
     """Validate a single source item."""
     issues: List[ValidationIssue] = []
 
+    _VALID_HOOK_EVENTS = frozenset({
+        "PreToolUse",
+        "PostToolUse",
+        "PostToolUseFailure",
+        "PermissionRequest",
+        "Notification",
+        "SubagentStart",
+        "SubagentStop",
+        "Stop",
+        "TeammateIdle",
+        "TaskCompleted",
+        "SessionStart",
+        "SessionEnd",
+        "PreCompact",
+        "UserPromptSubmit",
+        "InstructionsLoaded",
+        "ConfigChange",
+        "WorktreeCreate",
+        "WorktreeRemove",
+    })
+
     # Parse metadata
     try:
-        if item.item_type in ("mcp", "models"):
+        if item.item_type in ("mcp", "models", "hook"):
             metadata = yaml.safe_load(item.content.decode("utf-8"))
             if not isinstance(metadata, dict):
                 metadata = None
@@ -128,6 +150,44 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                     file_path=item.path,
                 )
             )
+
+    # Hook-specific validations
+    if item.item_type == "hook":
+        if "name" not in metadata:
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message="Hook group missing 'name' field",
+                    file_path=item.path,
+                )
+            )
+        hooks_field = metadata.get("hooks")
+        if not isinstance(hooks_field, dict):
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message="Hook group missing or invalid 'hooks' field (must be a dict)",
+                    file_path=item.path,
+                )
+            )
+        else:
+            for event_type, entries in hooks_field.items():
+                if event_type not in _VALID_HOOK_EVENTS:
+                    issues.append(
+                        ValidationIssue(
+                            level="error",
+                            message=f"Invalid hook event type '{event_type}'",
+                            file_path=item.path,
+                        )
+                    )
+                if not isinstance(entries, list) or len(entries) == 0:
+                    issues.append(
+                        ValidationIssue(
+                            level="error",
+                            message=f"Hook event '{event_type}' must be a non-empty list",
+                            file_path=item.path,
+                        )
+                    )
 
     # Models-specific validations
     if item.item_type == "models":

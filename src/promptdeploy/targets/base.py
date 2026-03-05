@@ -26,6 +26,9 @@ class Target(ABC):
     def deploy_models(self, config: dict) -> None: ...
 
     @abstractmethod
+    def deploy_hook(self, name: str, config: dict) -> None: ...
+
+    @abstractmethod
     def remove_agent(self, name: str) -> None: ...
 
     @abstractmethod
@@ -39,6 +42,9 @@ class Target(ABC):
 
     @abstractmethod
     def remove_models(self) -> None: ...
+
+    @abstractmethod
+    def remove_hook(self, name: str) -> None: ...
 
     @abstractmethod
     def manifest_path(self) -> Path: ...

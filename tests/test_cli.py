@@ -211,6 +211,27 @@ class TestRunDeploy:
         assert "agent" in captured.out
         assert "command" not in captured.out
 
+    def test_deploy_with_only_type_hooks(self, tmp_path, monkeypatch, capsys):
+        """--only-type hooks is a valid choice."""
+        src = tmp_path / "source"
+        src.mkdir()
+        hooks_dir = src / "hooks"
+        hooks_dir.mkdir()
+        (hooks_dir / "my-hook.yaml").write_bytes(
+            b"name: my-hook\nhooks:\n  Stop:\n    - matcher: ''\n      hooks:\n        - command: echo\n          type: command\n"
+        )
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        args = argparse.Namespace(
+            verbose=False, quiet=False, dry_run=True,
+            target=None, only_type=["hooks"],
+        )
+        _run_deploy(args)
+        captured = capsys.readouterr()
+        assert "hook" in captured.out
+
     def test_deploy_filter_error_exits(self, tmp_path, monkeypatch, capsys):
         """FilterError from deploy causes sys.exit(1)."""
         # Create a source with both 'only' and 'except' which triggers FilterError

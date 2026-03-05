@@ -60,6 +60,12 @@ class OpenCodeTarget(Target):
                 transform_for_target(skill_md.read_bytes(), self._id)
             )
 
+    def deploy_hook(self, name: str, config: dict) -> None:
+        pass
+
+    def remove_hook(self, name: str) -> None:
+        pass
+
     def deploy_models(self, config: dict) -> None:
         from ..envsubst import expand_env_vars
 

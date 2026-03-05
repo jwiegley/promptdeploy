@@ -28,6 +28,7 @@ _TYPE_TO_CATEGORY = {
     "skill": "skills",
     "mcp": "mcp_servers",
     "models": "models",
+    "hook": "hooks",
 }
 
 # Maps CLI --only-type values (plural) -> SourceItem.item_type (singular)
@@ -37,6 +38,7 @@ _CLI_TYPE_TO_ITEM_TYPE = {
     "skills": "skill",
     "mcp": "mcp",
     "models": "models",
+    "hooks": "hook",
 }
 
 
@@ -102,6 +104,8 @@ def _deploy_item(
         target.deploy_mcp_server(item.name, item.metadata or {})
     elif item.item_type == "models":
         target.deploy_models(filtered_models_config or {})
+    elif item.item_type == "hook":
+        target.deploy_hook(item.name, item.metadata or {})
 
 
 def _remove_item(target: Target, category: str, name: str) -> None:
@@ -116,6 +120,8 @@ def _remove_item(target: Target, category: str, name: str) -> None:
         target.remove_mcp_server(name)
     elif category == "models":
         target.remove_models()
+    elif category == "hooks":
+        target.remove_hook(name)
 
 
 def deploy(

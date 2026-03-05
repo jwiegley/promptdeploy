@@ -1,0 +1,15 @@
+name: git-ai
+description: Git AI checkpoint hooks for file modifications
+only:
+  - claude
+hooks:
+  PostToolUse:
+    - matcher: "Write|Edit|MultiEdit"
+      hooks:
+        - command: "git-ai checkpoint claude --hook-input stdin"
+          type: command
+  PreToolUse:
+    - matcher: "Write|Edit|MultiEdit"
+      hooks:
+        - command: "git-ai checkpoint claude --hook-input stdin"
+          type: command

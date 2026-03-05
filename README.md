@@ -181,6 +181,34 @@ Filtering with `only`/`except` works at both the provider and model level, allow
 
 Claude Code does not support custom models and is skipped during model deployment.
 
+## Hooks
+
+`hooks/*.yaml` -- Claude Code hook groups that fire shell commands on tool events. Each YAML file defines a named hook group with handlers for one or more event types.
+
+```yaml
+name: git-ai
+description: Git AI checkpoint hooks for file modifications
+only:
+  - claude
+hooks:
+  PostToolUse:
+    - matcher: "Write|Edit|MultiEdit"
+      hooks:
+        - command: "git-ai checkpoint claude --hook-input stdin"
+          type: command
+  PreToolUse:
+    - matcher: "Write|Edit|MultiEdit"
+      hooks:
+        - command: "git-ai checkpoint claude --hook-input stdin"
+          type: command
+```
+
+Valid event types are: `PreToolUse`, `PostToolUse`, `Notification`, `Stop`, `SessionStart`, `PreCompact`, `UserPromptSubmit`.
+
+Each entry under an event type must be a non-empty list of matcher/hooks objects. When deployed, each entry is tagged with `_source: <hook-group-name>` so that entries can be cleanly updated or removed without affecting hooks from other sources.
+
+Droid and OpenCode targets ignore hooks (no-op).
+
 ## Environment Filtering
 
 Any item can be restricted to specific targets using `only` or `except` in its YAML frontmatter or metadata:

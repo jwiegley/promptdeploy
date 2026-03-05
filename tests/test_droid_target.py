@@ -626,3 +626,29 @@ class TestTargetProperties:
         config.mkdir()
         target = DroidTarget("t", config)
         assert target.manifest_path() == config / MANIFEST_FILENAME
+
+
+# ------------------------------------------------------------------
+# Hooks (no-op for Droid)
+# ------------------------------------------------------------------
+
+
+class TestDeployHookNoop:
+    def test_deploy_hook_is_noop(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "name": "git-ai",
+            "hooks": {
+                "PostToolUse": [{"matcher": "Write", "hooks": [{"command": "echo", "type": "command"}]}],
+            },
+        }
+        # Should not raise or create any files
+        target.deploy_hook("git-ai", config)
+        assert not (tmp_path / ".droid" / "settings.json").exists()
+
+
+class TestRemoveHookNoop:
+    def test_remove_hook_is_noop(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        # Should not raise
+        target.remove_hook("git-ai")

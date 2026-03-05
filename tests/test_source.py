@@ -178,20 +178,20 @@ class TestDiscoverAll:
     def test_yields_all_types(self, discovery):
         items = list(discovery.discover_all())
         types = {item.item_type for item in items}
-        assert types == {"agent", "command", "skill", "mcp", "models"}
+        assert types == {"agent", "command", "skill", "mcp", "models", "hook"}
 
     def test_total_count(self, discovery):
         items = list(discovery.discover_all())
         assert len(items) >= 60
 
     def test_order(self, discovery):
-        """Items appear in order: agents, commands, skills, mcp, models."""
+        """Items appear in order: agents, commands, skills, mcp, models, hooks."""
         items = list(discovery.discover_all())
         types_seen = []
         for item in items:
             if not types_seen or types_seen[-1] != item.item_type:
                 types_seen.append(item.item_type)
-        assert types_seen == ["agent", "command", "skill", "mcp", "models"]
+        assert types_seen == ["agent", "command", "skill", "mcp", "models", "hook"]
 
 
 class TestNonExistentDirectories:
@@ -348,3 +348,86 @@ class TestNameFallback:
         assert len(mcps) == 1
         assert mcps[0].name == "scalar"
         assert mcps[0].metadata is None
+
+
+class TestDiscoverHooks:
+    def test_discovers_hooks(self, discovery):
+        hooks = list(discovery.discover_hooks())
+        assert len(hooks) >= 1
+        names = {h.name for h in hooks}
+        assert "git-ai" in names
+
+    def test_hook_properties(self, discovery):
+        hooks = list(discovery.discover_hooks())
+        for hook in hooks:
+            assert hook.item_type == "hook"
+            assert hook.path.suffix == ".yaml"
+            assert hook.path.parent.name == "hooks"
+            assert len(hook.content) > 0
+
+    def test_hook_full_yaml_parse(self, discovery):
+        hooks = {h.name: h for h in discovery.discover_hooks()}
+        git_ai = hooks["git-ai"]
+        assert git_ai.metadata is not None
+        assert "hooks" in git_ai.metadata
+        assert "PostToolUse" in git_ai.metadata["hooks"]
+
+    def test_hook_name_from_frontmatter(self, discovery):
+        hooks = {h.name: h for h in discovery.discover_hooks()}
+        git_ai = hooks["git-ai"]
+        assert git_ai.metadata["name"] == "git-ai"
+        assert git_ai.path.name == "git-ai.yaml"
+
+    def test_missing_hooks_dir(self, tmp_path):
+        d = SourceDiscovery(tmp_path)
+        assert list(d.discover_hooks()) == []
+
+    def test_skips_dotfiles(self, tmp_path):
+        hooks_dir = tmp_path / "hooks"
+        hooks_dir.mkdir()
+        (hooks_dir / ".hidden.yaml").write_bytes(b"name: hidden\nhooks: {}\n")
+        (hooks_dir / "visible.yaml").write_bytes(b"name: visible\nhooks:\n  Stop:\n    - matcher: ''\n      hooks: []\n")
+        d = SourceDiscovery(tmp_path)
+        names = [h.name for h in d.discover_hooks()]
+        assert "visible" in names
+        assert "hidden" not in names
+
+    def test_skips_non_yaml(self, tmp_path):
+        hooks_dir = tmp_path / "hooks"
+        hooks_dir.mkdir()
+        (hooks_dir / "hook.yaml").write_bytes(b"name: myhook\nhooks: {}\n")
+        (hooks_dir / "readme.md").write_bytes(b"# readme")
+        d = SourceDiscovery(tmp_path)
+        hooks = list(d.discover_hooks())
+        assert len(hooks) == 1
+        assert hooks[0].name == "myhook"
+
+    def test_hook_name_fallback_to_stem(self, tmp_path):
+        hooks_dir = tmp_path / "hooks"
+        hooks_dir.mkdir()
+        (hooks_dir / "no-name.yaml").write_bytes(b"hooks: {}\n")
+        d = SourceDiscovery(tmp_path)
+        hooks = list(d.discover_hooks())
+        assert len(hooks) == 1
+        assert hooks[0].name == "no-name"
+        assert hooks[0].metadata is not None
+
+    def test_hook_invalid_yaml(self, tmp_path):
+        hooks_dir = tmp_path / "hooks"
+        hooks_dir.mkdir()
+        (hooks_dir / "broken.yaml").write_bytes(b"not: valid: yaml: [broken\n")
+        d = SourceDiscovery(tmp_path)
+        hooks = list(d.discover_hooks())
+        assert len(hooks) == 1
+        assert hooks[0].name == "broken"
+        assert hooks[0].metadata is None
+
+    def test_hook_non_dict_yaml(self, tmp_path):
+        hooks_dir = tmp_path / "hooks"
+        hooks_dir.mkdir()
+        (hooks_dir / "scalar.yaml").write_bytes(b"just a string\n")
+        d = SourceDiscovery(tmp_path)
+        hooks = list(d.discover_hooks())
+        assert len(hooks) == 1
+        assert hooks[0].name == "scalar"
+        assert hooks[0].metadata is None

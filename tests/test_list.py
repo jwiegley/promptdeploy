@@ -143,7 +143,7 @@ class TestRunListIntegration:
         import argparse
         from promptdeploy.cli import _run_list
 
-        args = argparse.Namespace(target=None)
+        args = argparse.Namespace(target=None, target_root=None)
         _run_list(args)
 
         captured = capsys.readouterr()
@@ -154,6 +154,33 @@ class TestRunListIntegration:
         assert "fix" in captured.out
         assert "Skills:" in captured.out
         assert "my-skill" in captured.out
+
+    def test_cli_list_shows_hooks(self, tmp_path: Path, capsys, monkeypatch) -> None:
+        """Hooks deployed to target appear in the list output."""
+        src = tmp_path / "source"
+        src.mkdir()
+        hooks_dir = src / "hooks"
+        hooks_dir.mkdir()
+        (hooks_dir / "my-hook.yaml").write_bytes(
+            b"name: my-hook\nhooks:\n  Stop:\n    - matcher: ''\n      hooks:\n        - command: echo\n          type: command\n"
+        )
+        tc = _make_claude_target(tmp_path, "hook-target")
+        config = _make_config(src, {tc.id: tc})
+        deploy(config)
+
+        monkeypatch.setattr(
+            "promptdeploy.cli.load_config", lambda *a, **kw: config
+        )
+
+        import argparse
+        from promptdeploy.cli import _run_list
+
+        args = argparse.Namespace(target=None, target_root=None)
+        _run_list(args)
+
+        captured = capsys.readouterr()
+        assert "Hooks:" in captured.out
+        assert "my-hook" in captured.out
 
     def test_cli_list_not_installed(self, tmp_path: Path, capsys, monkeypatch) -> None:
         src = _make_source(tmp_path)
@@ -167,7 +194,7 @@ class TestRunListIntegration:
         import argparse
         from promptdeploy.cli import _run_list
 
-        args = argparse.Namespace(target=None)
+        args = argparse.Namespace(target=None, target_root=None)
         _run_list(args)
 
         captured = capsys.readouterr()
@@ -184,7 +211,7 @@ class TestRunListIntegration:
         import argparse
         from promptdeploy.cli import _run_list
 
-        args = argparse.Namespace(target=None)
+        args = argparse.Namespace(target=None, target_root=None)
         _run_list(args)
 
         captured = capsys.readouterr()

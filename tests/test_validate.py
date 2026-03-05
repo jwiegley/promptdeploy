@@ -441,6 +441,130 @@ class TestValidateAll:
         assert issues[0].file_path == agents_dir / "bad-env.md"
 
 
+class TestValidateItemHook:
+    def _make_hook_item(self, content_dict: dict) -> SourceItem:
+        import yaml
+        content = yaml.dump(content_dict).encode("utf-8")
+        return SourceItem(
+            "hook", content_dict.get("name", "test-hook"),
+            Path("/tmp/hooks/test.yaml"), content_dict, content
+        )
+
+    def test_valid_hook(self, config: Config) -> None:
+        item = self._make_hook_item({
+            "name": "my-hook",
+            "hooks": {
+                "PostToolUse": [{"matcher": "Write", "hooks": [{"command": "echo", "type": "command"}]}],
+            },
+        })
+        issues = validate_item(item, config)
+        assert issues == []
+
+    def test_hook_missing_name(self, config: Config) -> None:
+        item = self._make_hook_item({
+            "hooks": {
+                "PostToolUse": [{"matcher": "Write", "hooks": []}],
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("missing 'name'" in i.message for i in issues)
+
+    def test_hook_missing_hooks_field(self, config: Config) -> None:
+        item = self._make_hook_item({"name": "my-hook"})
+        issues = validate_item(item, config)
+        assert any("missing or invalid 'hooks'" in i.message for i in issues)
+
+    def test_hook_hooks_not_a_dict(self, config: Config) -> None:
+        item = self._make_hook_item({"name": "my-hook", "hooks": "not-a-dict"})
+        issues = validate_item(item, config)
+        assert any("missing or invalid 'hooks'" in i.message for i in issues)
+
+    def test_hook_invalid_event_type(self, config: Config) -> None:
+        item = self._make_hook_item({
+            "name": "my-hook",
+            "hooks": {
+                "InvalidEvent": [{"matcher": "Write", "hooks": []}],
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("Invalid hook event type 'InvalidEvent'" in i.message for i in issues)
+
+    def test_hook_empty_event_list(self, config: Config) -> None:
+        item = self._make_hook_item({
+            "name": "my-hook",
+            "hooks": {
+                "PostToolUse": [],
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("must be a non-empty list" in i.message for i in issues)
+
+    def test_hook_event_not_a_list(self, config: Config) -> None:
+        item = self._make_hook_item({
+            "name": "my-hook",
+            "hooks": {
+                "PostToolUse": "not-a-list",
+            },
+        })
+        issues = validate_item(item, config)
+        assert any("must be a non-empty list" in i.message for i in issues)
+
+    def test_hook_all_valid_event_types(self, config: Config) -> None:
+        for event in ["PreToolUse", "PostToolUse", "PostToolUseFailure",
+                      "PermissionRequest", "Notification", "SubagentStart",
+                      "SubagentStop", "Stop", "TeammateIdle", "TaskCompleted",
+                      "SessionStart", "SessionEnd", "PreCompact",
+                      "UserPromptSubmit", "InstructionsLoaded", "ConfigChange",
+                      "WorktreeCreate", "WorktreeRemove"]:
+            item = self._make_hook_item({
+                "name": "my-hook",
+                "hooks": {
+                    event: [{"matcher": "", "hooks": []}],
+                },
+            })
+            issues = validate_item(item, config)
+            event_issues = [i for i in issues if "Invalid hook event type" in i.message]
+            assert event_issues == [], f"Unexpected error for event {event}: {event_issues}"
+
+    def test_hook_with_only_filter(self, config: Config) -> None:
+        item = self._make_hook_item({
+            "name": "my-hook",
+            "only": ["claude-personal"],
+            "hooks": {
+                "Stop": [{"matcher": "", "hooks": []}],
+            },
+        })
+        issues = validate_item(item, config)
+        assert issues == []
+
+    def test_hook_invalid_yaml(self, config: Config) -> None:
+        content = b"name: [broken yaml\n"
+        item = SourceItem("hook", "test-hook", Path("/tmp/hooks/test.yaml"), None, content)
+        issues = validate_item(item, config)
+        assert len(issues) == 1
+        assert "Invalid YAML" in issues[0].message
+
+    def test_hook_non_dict_yaml(self, config: Config) -> None:
+        content = b"just a string\n"
+        item = SourceItem("hook", "test-hook", Path("/tmp/hooks/test.yaml"), None, content)
+        issues = validate_item(item, config)
+        # Non-dict metadata -> None -> no issues
+        assert issues == []
+
+    def test_validate_all_includes_hooks(self, tmp_path: Path) -> None:
+        hooks_dir = tmp_path / "hooks"
+        hooks_dir.mkdir()
+        (hooks_dir / "bad.yaml").write_bytes(b"name: bad\nhooks: not-a-dict\n")
+
+        config = Config(
+            source_root=tmp_path,
+            targets={"t": TargetConfig(id="t", type="claude", path=tmp_path)},
+            groups={},
+        )
+        issues = validate_all(config)
+        assert any("missing or invalid 'hooks'" in i.message for i in issues)
+
+
 class TestValidationIssue:
     def test_fields(self) -> None:
         issue = ValidationIssue(

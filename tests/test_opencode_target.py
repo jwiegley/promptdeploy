@@ -648,3 +648,34 @@ class TestTargetProperties:
         config.mkdir()
         target = OpenCodeTarget("t", config)
         assert target.manifest_path() == config / MANIFEST_FILENAME
+
+
+# ------------------------------------------------------------------
+# Hooks (no-op for OpenCode)
+# ------------------------------------------------------------------
+
+
+class TestDeployHookNoop:
+    def test_deploy_hook_is_noop(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "name": "git-ai",
+            "hooks": {
+                "PostToolUse": [{"matcher": "Write", "hooks": [{"command": "echo", "type": "command"}]}],
+            },
+        }
+        # Should not raise or create any files related to hooks
+        target.deploy_hook("git-ai", config)
+        # opencode.json may or may not exist but should not have hooks
+        oc_path = tmp_path / ".opencode" / "opencode.json"
+        if oc_path.exists():
+            import json
+            data = json.loads(oc_path.read_text())
+            assert "hooks" not in data
+
+
+class TestRemoveHookNoop:
+    def test_remove_hook_is_noop(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        # Should not raise
+        target.remove_hook("git-ai")

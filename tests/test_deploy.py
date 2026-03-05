@@ -405,3 +405,48 @@ class TestUnmanagedFiles:
         # Unmanaged file should still be there
         assert unmanaged.exists()
         assert unmanaged.read_text() == "my custom agent"
+
+
+class TestHookDeploy:
+    """Deploy hook items through the deploy orchestration."""
+
+    def test_deploys_hook(self, tmp_path: Path):
+        src = tmp_path / "source"
+        src.mkdir()
+        hooks_dir = src / "hooks"
+        hooks_dir.mkdir()
+        (hooks_dir / "my-hook.yaml").write_bytes(
+            b"name: my-hook\nhooks:\n  PostToolUse:\n    - matcher: 'Write'\n      hooks:\n        - command: 'echo hi'\n          type: command\n"
+        )
+
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        actions = deploy(config)
+
+        creates = [a for a in actions if a.action == "create"]
+        assert any(a.name == "my-hook" and a.item_type == "hook" for a in creates)
+
+        # Verify hook was written to settings.json
+        settings = json.loads((tc.path / "settings.json").read_text())
+        assert "hooks" in settings
+        assert "PostToolUse" in settings["hooks"]
+
+    def test_removes_stale_hook(self, tmp_path: Path):
+        src = tmp_path / "source"
+        src.mkdir()
+        hooks_dir = src / "hooks"
+        hooks_dir.mkdir()
+        (hooks_dir / "hook.yaml").write_bytes(
+            b"name: hook\nhooks:\n  Stop:\n    - matcher: ''\n      hooks:\n        - command: 'echo'\n          type: command\n"
+        )
+
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        deploy(config)
+
+        # Remove hook source
+        (hooks_dir / "hook.yaml").unlink()
+        actions = deploy(config)
+
+        removes = [a for a in actions if a.action == "remove"]
+        assert any(a.name == "hook" and a.item_type == "hook" for a in removes)

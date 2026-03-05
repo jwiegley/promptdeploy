@@ -65,6 +65,38 @@ class ClaudeTarget(Target):
     def deploy_models(self, config: dict) -> None:
         pass  # Claude Code does not support custom models
 
+    def deploy_hook(self, name: str, config: dict) -> None:
+        settings = self._load_json(self._settings_path())
+        hooks_config = config.get("hooks", {})
+        settings_hooks = settings.setdefault("hooks", {})
+
+        # Remove ALL existing entries from this hook group across every
+        # event type -- not just the ones in the new config.  This handles
+        # the case where a hook group previously contributed to an event
+        # type that is no longer present in the updated YAML.
+        empty_event_types = []
+        for event_type, entries in settings_hooks.items():
+            filtered = [e for e in entries if e.get("_source") != name]
+            if filtered:
+                settings_hooks[event_type] = filtered
+            else:
+                empty_event_types.append(event_type)
+        for event_type in empty_event_types:
+            del settings_hooks[event_type]
+
+        # Add new entries with _source tag
+        for event_type, matchers in hooks_config.items():
+            event_list = settings_hooks.setdefault(event_type, [])
+            for entry in matchers:
+                new_entry = dict(entry)
+                new_entry["_source"] = name
+                event_list.append(new_entry)
+
+        if not settings_hooks:
+            settings.pop("hooks", None)
+
+        self._save_json(self._settings_path(), settings)
+
     def deploy_mcp_server(self, name: str, config: dict) -> None:
         settings = self._load_json(self._settings_path())
 
@@ -95,6 +127,27 @@ class ClaudeTarget(Target):
 
     def remove_models(self) -> None:
         pass  # Claude Code does not support custom models
+
+    def remove_hook(self, name: str) -> None:
+        path = self._settings_path()
+        if not path.exists():
+            return
+        settings = self._load_json(path)
+        hooks = settings.get("hooks")
+        if not isinstance(hooks, dict):
+            return
+        empty_event_types = []
+        for event_type, entries in hooks.items():
+            filtered = [e for e in entries if e.get("_source") != name]
+            if filtered:
+                hooks[event_type] = filtered
+            else:
+                empty_event_types.append(event_type)
+        for event_type in empty_event_types:
+            del hooks[event_type]
+        if not hooks:
+            del settings["hooks"]
+        self._save_json(path, settings)
 
     def remove_mcp_server(self, name: str) -> None:
         path = self._settings_path()

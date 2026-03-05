@@ -15,7 +15,7 @@ from promptdeploy.frontmatter import parse_frontmatter
 class SourceItem:
     """A discovered source item ready for deployment."""
 
-    item_type: str  # 'agent', 'command', 'skill', 'mcp', 'models'
+    item_type: str  # 'agent', 'command', 'skill', 'mcp', 'models', 'hook'
     name: str
     path: Path
     metadata: Optional[dict]
@@ -35,6 +35,7 @@ class SourceDiscovery:
         yield from self.discover_skills()
         yield from self.discover_mcp_servers()
         yield from self.discover_models()
+        yield from self.discover_hooks()
 
     def discover_agents(self) -> Iterator[SourceItem]:
         """Discover agent definitions from agents/*.md."""
@@ -126,6 +127,30 @@ class SourceDiscovery:
             metadata=metadata,
             content=content,
         )
+
+    def discover_hooks(self) -> Iterator[SourceItem]:
+        """Discover hook group configs from hooks/*.yaml."""
+        hooks_dir = self.source_root / "hooks"
+        if not hooks_dir.is_dir():
+            return
+        for path in sorted(hooks_dir.iterdir()):
+            if path.name.startswith(".") or path.suffix != ".yaml":
+                continue
+            content = path.read_bytes()
+            try:
+                metadata = yaml.safe_load(content)
+            except yaml.YAMLError:
+                metadata = None
+            if not isinstance(metadata, dict):
+                metadata = None
+            name = (metadata or {}).get("name", path.stem)
+            yield SourceItem(
+                item_type="hook",
+                name=name,
+                path=path,
+                metadata=metadata,
+                content=content,
+            )
 
     def _load_markdown_item(self, item_type: str, path: Path) -> SourceItem:
         """Load a markdown file as a SourceItem, parsing frontmatter for metadata."""
