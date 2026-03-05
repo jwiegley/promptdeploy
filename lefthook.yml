@@ -1,0 +1,17 @@
+pre-commit:
+  commands:
+    ruff-format:
+      glob: "*.py"
+      run: ruff format --check {staged_files}
+    ruff-lint:
+      glob: "*.py"
+      run: ruff check {staged_files}
+    mypy:
+      glob: "*.py"
+      run: PYTHONPATH=src mypy {staged_files}
+    nix-build:
+      glob: "*.{py,nix,toml,yaml}"
+      run: nix build --no-warn-dirty 2>&1
+    pytest:
+      glob: "*.{py,yaml,toml}"
+      run: PYTHONPATH=src python -m pytest tests/ -x -q --cov --cov-report=term-missing

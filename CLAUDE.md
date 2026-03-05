@@ -14,7 +14,7 @@ A single-source repository of AI coding prompts (agents, commands, skills, MCP s
 | Commands | `commands/*.md` | Plain Markdown, `$ARGUMENTS` placeholder | Some have frontmatter for filtering |
 | Skills | `skills/*/SKILL.md` | Directory with `SKILL.md` (YAML frontmatter) + optional files | `humanizer` is a git submodule |
 | MCP Servers | `mcp/*.yaml` | YAML with `name`, transport (`command`+`args` or `url`), `env`, `scope` | Schema in `mcp/schema.md` |
-| Hooks | `hooks/*.yaml` | YAML with `name`, event handlers, matchers | Claude-only; `hooks/pre-commit` is a separate git hook |
+| Hooks | `hooks/*.yaml` | YAML with `name`, event handlers, matchers | Claude-only |
 | Models | `models.yaml` | Single YAML file, providers with nested models | Droid and OpenCode only; Claude skipped |
 
 All content items support `only`/`except` filtering by target or group name (defined in `deploy.yaml`).
@@ -74,7 +74,7 @@ The Nix dev shell also provides `mypy` and `ruff`, though neither is configured 
 
 ## CI
 
-`.github/workflows/ci.yml` runs pytest with coverage on Python 3.11, 3.12, and 3.13. The git pre-commit hook (`hooks/pre-commit`) runs the full test suite with coverage when `src/promptdeploy/`, `tests/`, `models.yaml`, or `pyproject.toml` files are staged.
+`.github/workflows/ci.yml` runs pytest with coverage on Python 3.11, 3.12, and 3.13. `lefthook.yml` defines pre-commit checks: `ruff format --check`, `ruff check`, `mypy`, `nix build`, and `pytest` with 100% coverage gate. These run when staged files match `*.py` (lint/format/type-check) or `*.{py,yaml,toml,nix}` (build/test).
 
 ## deploy.yaml
 
