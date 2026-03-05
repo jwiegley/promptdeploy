@@ -24,7 +24,7 @@ def find_config_file(start_dir: Optional[Path] = None) -> Path:
         start_dir = Path.cwd()
     current = start_dir.resolve()
     while current != current.parent:
-        config_path = current / 'deploy.yaml'
+        config_path = current / "deploy.yaml"
         if config_path.exists():
             return config_path
         current = current.parent
@@ -36,23 +36,23 @@ def find_config_file(start_dir: Optional[Path] = None) -> Path:
 def load_config(config_path: Optional[Path] = None) -> Config:
     if config_path is None:
         config_path = find_config_file()
-    with open(config_path, 'r') as f:
+    with open(config_path, "r") as f:
         data = yaml.safe_load(f)
 
-    source_root = Path(data.get('source_root', config_path.parent))
+    source_root = Path(data.get("source_root", config_path.parent))
     if not source_root.is_absolute():
         source_root = (config_path.parent / source_root).resolve()
     else:
         source_root = source_root.expanduser().resolve()
 
     targets = {}
-    for target_id, target_data in data.get('targets', {}).items():
-        path = Path(target_data['path']).expanduser()
+    for target_id, target_data in data.get("targets", {}).items():
+        path = Path(target_data["path"]).expanduser()
         targets[target_id] = TargetConfig(
-            id=target_id, type=target_data['type'], path=path
+            id=target_id, type=target_data["type"], path=path
         )
 
-    groups = data.get('groups', {})
+    groups = data.get("groups", {})
     return Config(source_root=source_root, targets=targets, groups=groups)
 
 
@@ -85,9 +85,7 @@ def remap_targets_to_root(config: Config, root: Path) -> Config:
     )
 
 
-def expand_target_arg(
-    targets_arg: Optional[List[str]], config: Config
-) -> List[str]:
+def expand_target_arg(targets_arg: Optional[List[str]], config: Config) -> List[str]:
     if targets_arg is None:
         return list(config.targets.keys())
     result = []

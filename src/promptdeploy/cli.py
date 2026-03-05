@@ -15,7 +15,9 @@ def main():
     # deploy subcommand
     deploy_parser = subparsers.add_parser("deploy", help="Deploy items to targets")
     deploy_parser.add_argument(
-        "--dry-run", action="store_true", help="Show what would be done without making changes"
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without making changes",
     )
     deploy_parser.add_argument(
         "--target", action="append", help="Target environment(s) to deploy to"
@@ -92,6 +94,7 @@ def _run_deploy(args):
     config = load_config()
     if args.target_root:
         from .config import remap_targets_to_root
+
         config = remap_targets_to_root(config, args.target_root.resolve())
     target_ids = expand_target_arg(args.target, config)
 
@@ -153,6 +156,7 @@ def _run_status(args):
     config = load_config()
     if args.target_root:
         from .config import remap_targets_to_root
+
         config = remap_targets_to_root(config, args.target_root.resolve())
     target_ids = expand_target_arg(args.target, config)
     entries = get_status(config, target_ids)
@@ -170,12 +174,13 @@ def _run_status(args):
 
 
 def _run_list(args):
-    from .manifest import MANIFEST_FILENAME, load_manifest
+    from .manifest import load_manifest
     from .targets import create_target
 
     config = load_config()
     if args.target_root:
         from .config import remap_targets_to_root
+
         config = remap_targets_to_root(config, args.target_root.resolve())
     target_ids = expand_target_arg(args.target, config)
 
@@ -203,7 +208,14 @@ def _run_list(args):
             "models": "Models",
             "hooks": "Hooks",
         }
-        for category in ("agents", "commands", "skills", "mcp_servers", "models", "hooks"):
+        for category in (
+            "agents",
+            "commands",
+            "skills",
+            "mcp_servers",
+            "models",
+            "hooks",
+        ):
             items = manifest.items.get(category, {})
             if not items:
                 continue

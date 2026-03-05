@@ -67,6 +67,7 @@ class TestDeployCommand:
         dest = tmp_path / ".opencode" / "commands" / "fix.md"
         assert dest.exists()
         meta, body = parse_frontmatter(dest.read_bytes())
+        assert meta is not None
         assert "except" not in meta
         assert body == b"Fix things.\n"
 
@@ -106,6 +107,7 @@ class TestDeploySkill:
         assert (dest / "helper.py").read_text() == "print('hi')"
 
         meta, body = parse_frontmatter((dest / "SKILL.md").read_bytes())
+        assert meta is not None
         assert "only" not in meta
         assert meta["name"] == "my-skill"
         assert body == b"Skill body.\n"
@@ -183,9 +185,7 @@ class TestDeployMcpServer:
         target = _make_target(tmp_path)
         target.deploy_mcp_server("srv", {"command": "echo"})
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         assert result["mcp"]["srv"]["command"] == ["echo"]
 
     def test_creates_opencode_json_if_missing(self, tmp_path: Path):
@@ -210,18 +210,14 @@ class TestDeployMcpServer:
         target.deploy_mcp_server("srv", {"command": "echo"})
         target.deploy_mcp_server("srv", {"command": "echo", "enabled": False})
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         assert "srv" not in result.get("mcp", {})
 
     def test_no_environment_key_when_env_empty(self, tmp_path: Path):
         target = _make_target(tmp_path)
         target.deploy_mcp_server("srv", {"command": "echo", "env": {}})
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         srv = result["mcp"]["srv"]
         assert "environment" not in srv
 
@@ -233,9 +229,7 @@ class TestDeployMcpServer:
         }
         target.deploy_mcp_server("remote", config)
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         srv = result["mcp"]["remote"]
         assert srv["type"] == "remote"
         assert srv["url"] == "https://mcp.example.com/mcp"
@@ -244,9 +238,7 @@ class TestDeployMcpServer:
     def test_preserves_other_servers(self, tmp_path: Path):
         target = _make_target(tmp_path)
         oc_path = tmp_path / ".opencode" / "opencode.json"
-        oc_path.write_text(
-            json.dumps({"mcp": {"existing": {"command": ["keep"]}}})
-        )
+        oc_path.write_text(json.dumps({"mcp": {"existing": {"command": ["keep"]}}}))
 
         target.deploy_mcp_server("new", {"command": "added"})
 
@@ -261,9 +253,7 @@ class TestRemoveMcpServer:
         target.deploy_mcp_server("srv", {"command": "echo"})
         target.remove_mcp_server("srv")
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         assert "srv" not in result.get("mcp", {})
 
     def test_no_error_if_missing(self, tmp_path: Path):
@@ -354,9 +344,7 @@ class TestDeployModels:
         }
         target.deploy_models(config)
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         prov = result["provider"]["prov"]
         assert prov["npm"] == "@custom/sdk"
         assert prov["name"] == "Custom Name"
@@ -378,9 +366,7 @@ class TestDeployModels:
         }
         target.deploy_models(config)
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         assert result["provider"]["prov"]["options"]["timeout"] == 30000
 
     def test_model_limits_context_and_output(self, tmp_path: Path):
@@ -404,9 +390,7 @@ class TestDeployModels:
         }
         target.deploy_models(config)
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         model = result["provider"]["prov"]["models"]["m"]
         assert model["limit"]["context"] == 128000
         assert model["limit"]["output"] == 4096
@@ -428,9 +412,7 @@ class TestDeployModels:
         }
         target.deploy_models(config)
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         model = result["provider"]["prov"]["models"]["m"]
         assert model["limit"]["context"] == 64000
         assert "output" not in model["limit"]
@@ -450,9 +432,7 @@ class TestDeployModels:
         }
         target.deploy_models(config)
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         model = result["provider"]["prov"]["models"]["m"]
         assert "limit" not in model
 
@@ -472,18 +452,14 @@ class TestDeployModels:
         }
         target.deploy_models(config)
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         assert result["provider"]["prov"]["options"]["apiKey"] == "real-key"
 
     def test_empty_providers_dict(self, tmp_path: Path):
         target = _make_target(tmp_path)
         target.deploy_models({"providers": {}})
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         assert result["provider"] == {}
 
     def test_none_model_value_handled(self, tmp_path: Path):
@@ -501,9 +477,7 @@ class TestDeployModels:
         }
         target.deploy_models(config)
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         assert "m" in result["provider"]["prov"]["models"]
 
     def test_existing_opencode_json_fields_preserved(self, tmp_path: Path):
@@ -544,9 +518,7 @@ class TestDeployModels:
         }
         target.deploy_models(config)
 
-        result = json.loads(
-            (tmp_path / ".opencode" / "opencode.json").read_text()
-        )
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         prov = result["provider"]["prov"]
         # Default npm from opencode config
         assert prov["npm"] == "@ai-sdk/openai-compatible"
@@ -558,10 +530,14 @@ class TestRemoveModels:
     def test_removes_provider_section(self, tmp_path: Path):
         target = _make_target(tmp_path)
         oc_path = tmp_path / ".opencode" / "opencode.json"
-        oc_path.write_text(json.dumps({
-            "provider": {"acme": {"npm": "test"}},
-            "theme": "dark",
-        }))
+        oc_path.write_text(
+            json.dumps(
+                {
+                    "provider": {"acme": {"npm": "test"}},
+                    "theme": "dark",
+                }
+            )
+        )
 
         target.remove_models()
 
@@ -577,11 +553,15 @@ class TestRemoveModels:
     def test_preserves_other_config_keys(self, tmp_path: Path):
         target = _make_target(tmp_path)
         oc_path = tmp_path / ".opencode" / "opencode.json"
-        oc_path.write_text(json.dumps({
-            "provider": {},
-            "mcp": {"srv": {}},
-            "theme": "light",
-        }))
+        oc_path.write_text(
+            json.dumps(
+                {
+                    "provider": {},
+                    "mcp": {"srv": {}},
+                    "theme": "light",
+                }
+            )
+        )
 
         target.remove_models()
 
@@ -613,7 +593,6 @@ class TestExtraConfigKeys:
 class TestSaveJsonError:
     def test_cleanup_on_replace_failure(self, tmp_path: Path):
         """When os.replace fails in _save_json, temp file is cleaned up."""
-        import os
         from unittest.mock import patch
 
         target = _make_target(tmp_path)
@@ -679,7 +658,12 @@ class TestDeployHookNoop:
         config = {
             "name": "git-ai",
             "hooks": {
-                "PostToolUse": [{"matcher": "Write", "hooks": [{"command": "echo", "type": "command"}]}],
+                "PostToolUse": [
+                    {
+                        "matcher": "Write",
+                        "hooks": [{"command": "echo", "type": "command"}],
+                    }
+                ],
             },
         }
         # Should not raise or create any files related to hooks
@@ -688,6 +672,7 @@ class TestDeployHookNoop:
         oc_path = tmp_path / ".opencode" / "opencode.json"
         if oc_path.exists():
             import json
+
             data = json.loads(oc_path.read_text())
             assert "hooks" not in data
 

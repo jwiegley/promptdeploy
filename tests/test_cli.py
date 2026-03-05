@@ -1,18 +1,14 @@
 """Tests for the CLI entry point and all _run_* functions."""
 
 import argparse
-import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 import yaml
 
 from promptdeploy.cli import _run_deploy, _run_list, _run_status, _run_validate, main
 from promptdeploy.config import Config, TargetConfig
-from promptdeploy.deploy import DeployAction, deploy
-from promptdeploy.filters import FilterError
-from promptdeploy.status import StatusEntry
+from promptdeploy.deploy import deploy
 
 
 # ---- helpers ----
@@ -74,9 +70,7 @@ class TestMainDeploy:
         tc = _make_claude_target(tmp_path)
         config = _make_config(src, {tc.id: tc})
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
-        monkeypatch.setattr(
-            "sys.argv", ["promptdeploy", "deploy", "--dry-run"]
-        )
+        monkeypatch.setattr("sys.argv", ["promptdeploy", "deploy", "--dry-run"])
         main()
         captured = capsys.readouterr()
         assert "created" in captured.out
@@ -109,7 +103,11 @@ class TestMainDeploy:
         monkeypatch.setattr("sys.argv", ["promptdeploy", "list"])
         main()
         captured = capsys.readouterr()
-        assert "no managed items" in captured.out or "not installed" in captured.out or captured.out != ""
+        assert (
+            "no managed items" in captured.out
+            or "not installed" in captured.out
+            or captured.out != ""
+        )
 
     def test_main_no_command_exits(self, monkeypatch):
         monkeypatch.setattr("sys.argv", ["promptdeploy"])
@@ -131,8 +129,12 @@ class TestRunDeploy:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         args = argparse.Namespace(
-            verbose=False, quiet=False, dry_run=False,
-            target=None, only_type=None, target_root=None,
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -146,8 +148,12 @@ class TestRunDeploy:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         args = argparse.Namespace(
-            verbose=True, quiet=False, dry_run=False,
-            target=None, only_type=None, target_root=None,
+            verbose=True,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -160,8 +166,12 @@ class TestRunDeploy:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         args = argparse.Namespace(
-            verbose=False, quiet=True, dry_run=False,
-            target=None, only_type=None, target_root=None,
+            verbose=False,
+            quiet=True,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -175,8 +185,12 @@ class TestRunDeploy:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         args = argparse.Namespace(
-            verbose=False, quiet=False, dry_run=True,
-            target=None, only_type=None, target_root=None,
+            verbose=False,
+            quiet=False,
+            dry_run=True,
+            target=None,
+            only_type=None,
+            target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -189,8 +203,12 @@ class TestRunDeploy:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         args = argparse.Namespace(
-            verbose=False, quiet=False, dry_run=True,
-            target=["test-claude"], only_type=None, target_root=None,
+            verbose=False,
+            quiet=False,
+            dry_run=True,
+            target=["test-claude"],
+            only_type=None,
+            target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -203,8 +221,12 @@ class TestRunDeploy:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         args = argparse.Namespace(
-            verbose=False, quiet=False, dry_run=True,
-            target=None, only_type=["agents"], target_root=None,
+            verbose=False,
+            quiet=False,
+            dry_run=True,
+            target=None,
+            only_type=["agents"],
+            target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -225,8 +247,12 @@ class TestRunDeploy:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         args = argparse.Namespace(
-            verbose=False, quiet=False, dry_run=True,
-            target=None, only_type=["hooks"], target_root=None,
+            verbose=False,
+            quiet=False,
+            dry_run=True,
+            target=None,
+            only_type=["hooks"],
+            target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -249,8 +275,12 @@ class TestRunDeploy:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         args = argparse.Namespace(
-            verbose=False, quiet=False, dry_run=False,
-            target=None, only_type=None, target_root=None,
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=None,
         )
         with pytest.raises(SystemExit) as exc_info:
             _run_deploy(args)
@@ -268,14 +298,22 @@ class TestRunDeploy:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         args = argparse.Namespace(
-            verbose=False, quiet=False, dry_run=False,
-            target=None, only_type=None, target_root=None,
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
         assert "3 unchanged" in captured.out
         # No action lines printed for skip in normal verbosity
-        lines = [ln for ln in captured.out.strip().split("\n") if ln.strip().startswith("A") or ln.strip().startswith("M")]
+        lines = [
+            ln
+            for ln in captured.out.strip().split("\n")
+            if ln.strip().startswith("A") or ln.strip().startswith("M")
+        ]
         assert len(lines) == 0
 
     def test_deploy_skip_shown_in_verbose(self, tmp_path, monkeypatch, capsys):
@@ -287,8 +325,12 @@ class TestRunDeploy:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         args = argparse.Namespace(
-            verbose=True, quiet=False, dry_run=False,
-            target=None, only_type=None, target_root=None,
+            verbose=True,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -345,9 +387,10 @@ class TestRunValidate:
             )
         ]
 
-        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: Config(
-            source_root=tmp_path, targets={}, groups={}
-        ))
+        monkeypatch.setattr(
+            "promptdeploy.cli.load_config",
+            lambda *a, **kw: Config(source_root=tmp_path, targets={}, groups={}),
+        )
         monkeypatch.setattr(
             "promptdeploy.validate.validate_all", lambda cfg: fake_issues
         )
@@ -369,9 +412,10 @@ class TestRunValidate:
             )
         ]
 
-        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: Config(
-            source_root=tmp_path, targets={}, groups={}
-        ))
+        monkeypatch.setattr(
+            "promptdeploy.cli.load_config",
+            lambda *a, **kw: Config(source_root=tmp_path, targets={}, groups={}),
+        )
         monkeypatch.setattr(
             "promptdeploy.validate.validate_all", lambda cfg: fake_issues
         )
@@ -392,9 +436,10 @@ class TestRunValidate:
             )
         ]
 
-        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: Config(
-            source_root=tmp_path, targets={}, groups={}
-        ))
+        monkeypatch.setattr(
+            "promptdeploy.cli.load_config",
+            lambda *a, **kw: Config(source_root=tmp_path, targets={}, groups={}),
+        )
         monkeypatch.setattr(
             "promptdeploy.validate.validate_all", lambda cfg: fake_issues
         )
@@ -499,14 +544,13 @@ class TestCliMainGuard:
     def test_cli_module_main_guard(self, tmp_path, monkeypatch):
         """Running cli.py as __main__ invokes main()."""
         import runpy
+
         # Patch sys.argv to trigger the deploy command dry-run
         src = _make_source(tmp_path)
         tc = _make_claude_target(tmp_path)
         config = _make_config(src, {tc.id: tc})
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
-        monkeypatch.setattr(
-            "sys.argv", ["promptdeploy", "deploy", "--dry-run"]
-        )
+        monkeypatch.setattr("sys.argv", ["promptdeploy", "deploy", "--dry-run"])
         # Run the module as __main__
         runpy.run_module("promptdeploy.cli", run_name="__main__")
 
@@ -591,8 +635,11 @@ class TestTargetRootDeploy:
         preview_root.mkdir()
 
         args = argparse.Namespace(
-            verbose=False, quiet=False, dry_run=False,
-            target=None, only_type=None,
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
             target_root=preview_root,
         )
         _run_deploy(args)
@@ -617,8 +664,11 @@ class TestTargetRootDeploy:
         preview_root.mkdir()
 
         args = argparse.Namespace(
-            verbose=False, quiet=False, dry_run=False,
-            target=None, only_type=None,
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
             target_root=preview_root,
         )
         _run_deploy(args)
@@ -638,8 +688,11 @@ class TestTargetRootDeploy:
         preview_root.mkdir()
 
         args = argparse.Namespace(
-            verbose=False, quiet=False, dry_run=True,
-            target=None, only_type=None,
+            verbose=False,
+            quiet=False,
+            dry_run=True,
+            target=None,
+            only_type=None,
             target_root=preview_root,
         )
         _run_deploy(args)
@@ -693,9 +746,7 @@ class TestTargetRootList:
 
         assert "not installed" in captured.out
 
-    def test_list_target_root_shows_deployed_items(
-        self, tmp_path, monkeypatch, capsys
-    ):
+    def test_list_target_root_shows_deployed_items(self, tmp_path, monkeypatch, capsys):
         """After deploying with target-root, list reads from the remapped location."""
         src = _make_source(tmp_path)
         original_dir = tmp_path / "original"
@@ -708,8 +759,11 @@ class TestTargetRootList:
 
         # Deploy using target_root so files land in preview/test-claude/
         deploy_args = argparse.Namespace(
-            verbose=False, quiet=False, dry_run=False,
-            target=None, only_type=None,
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
             target_root=preview_root,
         )
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)

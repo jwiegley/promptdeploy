@@ -6,8 +6,13 @@ from pathlib import Path
 import pytest
 
 from promptdeploy.config import Config, TargetConfig
-from promptdeploy.manifest import MANIFEST_FILENAME, ManifestItem, compute_file_hash
-from promptdeploy.status import StatusEntry, get_status, _TYPE_TO_CATEGORY, _CATEGORY_TO_TYPE
+from promptdeploy.manifest import MANIFEST_FILENAME, compute_file_hash
+from promptdeploy.status import (
+    StatusEntry,
+    get_status,
+    _TYPE_TO_CATEGORY,
+    _CATEGORY_TO_TYPE,
+)
 
 
 @pytest.fixture
@@ -93,35 +98,52 @@ class TestGetStatusWithManifest:
         }
         (target_path / MANIFEST_FILENAME).write_text(json.dumps(manifest_data))
 
-    def test_current_items(self, config: Config, source_root: Path, target_path: Path) -> None:
+    def test_current_items(
+        self, config: Config, source_root: Path, target_path: Path
+    ) -> None:
         # Write manifest with matching hashes
-        alpha_hash = compute_file_hash((source_root / "agents" / "alpha.md").read_bytes())
-        deploy_hash = compute_file_hash((source_root / "commands" / "deploy.md").read_bytes())
-        server_hash = compute_file_hash((source_root / "mcp" / "server.yaml").read_bytes())
-        self._write_manifest(target_path, {
-            "agents": {"alpha": {"source_hash": alpha_hash}},
-            "commands": {"deploy": {"source_hash": deploy_hash}},
-            "mcp_servers": {"server": {"source_hash": server_hash}},
-        })
+        alpha_hash = compute_file_hash(
+            (source_root / "agents" / "alpha.md").read_bytes()
+        )
+        deploy_hash = compute_file_hash(
+            (source_root / "commands" / "deploy.md").read_bytes()
+        )
+        server_hash = compute_file_hash(
+            (source_root / "mcp" / "server.yaml").read_bytes()
+        )
+        self._write_manifest(
+            target_path,
+            {
+                "agents": {"alpha": {"source_hash": alpha_hash}},
+                "commands": {"deploy": {"source_hash": deploy_hash}},
+                "mcp_servers": {"server": {"source_hash": server_hash}},
+            },
+        )
 
         entries = get_status(config)
         assert all(e.state == "current" for e in entries), [e.state for e in entries]
 
     def test_changed_items(self, config: Config, target_path: Path) -> None:
-        self._write_manifest(target_path, {
-            "agents": {"alpha": {"source_hash": "sha256:old_hash"}},
-        })
+        self._write_manifest(
+            target_path,
+            {
+                "agents": {"alpha": {"source_hash": "sha256:old_hash"}},
+            },
+        )
         entries = get_status(config)
         alpha = [e for e in entries if e.name == "alpha"][0]
         assert alpha.state == "changed"
 
     def test_pending_removal(self, config: Config, target_path: Path) -> None:
-        self._write_manifest(target_path, {
-            "agents": {
-                "alpha": {"source_hash": "sha256:whatever"},
-                "deleted-agent": {"source_hash": "sha256:old"},
+        self._write_manifest(
+            target_path,
+            {
+                "agents": {
+                    "alpha": {"source_hash": "sha256:whatever"},
+                    "deleted-agent": {"source_hash": "sha256:old"},
+                },
             },
-        })
+        )
         entries = get_status(config)
         removed = [e for e in entries if e.name == "deleted-agent"]
         assert len(removed) == 1
@@ -173,7 +195,9 @@ class TestGetStatusWithFilters:
         root = tmp_path / "src"
         agents = root / "agents"
         agents.mkdir(parents=True)
-        (agents / "restricted.md").write_bytes(b"---\nname: restricted\nonly:\n  - t1\n---\n")
+        (agents / "restricted.md").write_bytes(
+            b"---\nname: restricted\nonly:\n  - t1\n---\n"
+        )
 
         t1 = tmp_path / "t1"
         t2 = tmp_path / "t2"
@@ -210,7 +234,9 @@ class TestGetStatusSkills:
         root = tmp_path / "src"
         skill_dir = root / "skills" / "my-skill"
         skill_dir.mkdir(parents=True)
-        (skill_dir / "SKILL.md").write_bytes(b"---\nname: my-skill\ndescription: test\n---\nBody")
+        (skill_dir / "SKILL.md").write_bytes(
+            b"---\nname: my-skill\ndescription: test\n---\nBody"
+        )
 
         target = tmp_path / "target"
         target.mkdir()

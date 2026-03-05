@@ -60,9 +60,7 @@ class ClaudeTarget(Target):
         # Transform the SKILL.md inside the deployed copy.
         skill_md = dest / "SKILL.md"
         if skill_md.exists():
-            skill_md.write_bytes(
-                transform_for_target(skill_md.read_bytes(), self._id)
-            )
+            skill_md.write_bytes(transform_for_target(skill_md.read_bytes(), self._id))
 
     def deploy_models(self, config: dict) -> None:
         pass  # Claude Code does not support custom models

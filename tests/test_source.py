@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import yaml
 
 from promptdeploy.source import SourceDiscovery, SourceItem
 
@@ -256,6 +255,22 @@ class TestNonMdFilesInCommands:
         assert commands[0].name == "valid"
 
 
+class TestSkillDirWithoutSkillMd:
+    def test_skill_dir_without_skill_md_skipped(self, tmp_path):
+        """A subdirectory in skills/ without SKILL.md is skipped."""
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        empty = skills_dir / "no-skill-md"
+        empty.mkdir()
+        valid = skills_dir / "real-skill"
+        valid.mkdir()
+        (valid / "SKILL.md").write_bytes(b"---\nname: real\n---\nBody\n")
+        d = SourceDiscovery(tmp_path)
+        skills = list(d.discover_skills())
+        assert len(skills) == 1
+        assert skills[0].name == "real"
+
+
 class TestNonDirInSkills:
     def test_non_directory_entries_skipped_in_skills(self, tmp_path):
         """Files (not directories) in skills/ are skipped."""
@@ -386,7 +401,9 @@ class TestDiscoverHooks:
         hooks_dir = tmp_path / "hooks"
         hooks_dir.mkdir()
         (hooks_dir / ".hidden.yaml").write_bytes(b"name: hidden\nhooks: {}\n")
-        (hooks_dir / "visible.yaml").write_bytes(b"name: visible\nhooks:\n  Stop:\n    - matcher: ''\n      hooks: []\n")
+        (hooks_dir / "visible.yaml").write_bytes(
+            b"name: visible\nhooks:\n  Stop:\n    - matcher: ''\n      hooks: []\n"
+        )
         d = SourceDiscovery(tmp_path)
         names = [h.name for h in d.discover_hooks()]
         assert "visible" in names

@@ -147,11 +147,11 @@ class TestShouldDeployTo:
             should_deploy_to("droid", metadata, config, "t.md")
 
     def test_empty_only_deploys_nowhere(self, config: Config) -> None:
-        metadata = {"only": []}
+        metadata: dict[str, list[str]] = {"only": []}
         for target in ALL_TARGETS:
             assert should_deploy_to(target, metadata, config, "t.md") is False
 
     def test_empty_except_deploys_everywhere(self, config: Config) -> None:
-        metadata = {"except": []}
+        metadata: dict[str, list[str]] = {"except": []}
         for target in ALL_TARGETS:
             assert should_deploy_to(target, metadata, config, "t.md") is True

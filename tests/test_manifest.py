@@ -160,7 +160,6 @@ class TestSaveManifest:
 class TestSaveManifestError:
     def test_cleanup_on_replace_failure(self, tmp_path: Path) -> None:
         """When os.replace fails, temp file is cleaned up and error is raised."""
-        import os
         from unittest.mock import patch
 
         path = tmp_path / MANIFEST_FILENAME
@@ -251,14 +250,10 @@ class TestHasChanged:
 
     def test_changed_hash(self) -> None:
         manifest = Manifest()
-        manifest.items["agents"]["my-agent"] = ManifestItem(
-            source_hash="sha256:old"
-        )
+        manifest.items["agents"]["my-agent"] = ManifestItem(source_hash="sha256:old")
         assert has_changed(manifest, "agents", "my-agent", "sha256:new")
 
     def test_unchanged(self) -> None:
         manifest = Manifest()
-        manifest.items["agents"]["my-agent"] = ManifestItem(
-            source_hash="sha256:same"
-        )
+        manifest.items["agents"]["my-agent"] = ManifestItem(source_hash="sha256:same")
         assert not has_changed(manifest, "agents", "my-agent", "sha256:same")

@@ -64,10 +64,7 @@ def get_status(
             deployed_names.add((category, item.name))
 
             if has_changed(manifest, category, item.name, current_hash):
-                if (
-                    category in manifest.items
-                    and item.name in manifest.items[category]
-                ):
+                if category in manifest.items and item.name in manifest.items[category]:
                     state = "changed"
                 else:
                     state = "new"

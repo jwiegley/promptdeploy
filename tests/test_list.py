@@ -1,11 +1,9 @@
 """Tests for the list subcommand."""
 
-import json
 from pathlib import Path
 
 from promptdeploy.config import Config, TargetConfig
 from promptdeploy.deploy import deploy
-from promptdeploy.manifest import MANIFEST_FILENAME
 
 
 def _make_source(tmp_path: Path) -> Path:
@@ -41,7 +39,6 @@ class TestListWithManifest:
     """List items from targets that have been deployed to."""
 
     def test_lists_deployed_items(self, tmp_path: Path, capsys) -> None:
-        from promptdeploy.cli import _run_list
 
         src = _make_source(tmp_path)
         tc = _make_claude_target(tmp_path)
@@ -136,9 +133,7 @@ class TestRunListIntegration:
         deploy(config)
 
         # Patch load_config to return our config
-        monkeypatch.setattr(
-            "promptdeploy.cli.load_config", lambda *a, **kw: config
-        )
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         import argparse
         from promptdeploy.cli import _run_list
@@ -168,9 +163,7 @@ class TestRunListIntegration:
         config = _make_config(src, {tc.id: tc})
         deploy(config)
 
-        monkeypatch.setattr(
-            "promptdeploy.cli.load_config", lambda *a, **kw: config
-        )
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         import argparse
         from promptdeploy.cli import _run_list
@@ -187,9 +180,7 @@ class TestRunListIntegration:
         tc = TargetConfig(id="ghost", type="claude", path=tmp_path / "nope")
         config = _make_config(src, {tc.id: tc})
 
-        monkeypatch.setattr(
-            "promptdeploy.cli.load_config", lambda *a, **kw: config
-        )
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         import argparse
         from promptdeploy.cli import _run_list
@@ -204,9 +195,7 @@ class TestRunListIntegration:
         tc = _make_claude_target(tmp_path, "empty-target")
         config = _make_config(tmp_path / "source", {tc.id: tc})
 
-        monkeypatch.setattr(
-            "promptdeploy.cli.load_config", lambda *a, **kw: config
-        )
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         import argparse
         from promptdeploy.cli import _run_list

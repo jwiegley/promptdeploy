@@ -1,9 +1,5 @@
 """Tests for environment variable expansion."""
 
-import os
-
-import pytest
-
 from promptdeploy.envsubst import expand_env_in_dict, expand_env_vars
 
 

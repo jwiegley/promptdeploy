@@ -23,13 +23,17 @@ def config() -> Config:
 
 class TestValidateItem:
     def test_valid_agent_no_frontmatter(self, config: Config) -> None:
-        item = SourceItem("agent", "test", Path("/tmp/test.md"), None, b"No frontmatter")
+        item = SourceItem(
+            "agent", "test", Path("/tmp/test.md"), None, b"No frontmatter"
+        )
         issues = validate_item(item, config)
         assert issues == []
 
     def test_valid_agent_with_frontmatter(self, config: Config) -> None:
         content = b"---\nname: test\ndescription: A test agent\n---\nBody text"
-        item = SourceItem("agent", "test", Path("/tmp/test.md"), {"name": "test"}, content)
+        item = SourceItem(
+            "agent", "test", Path("/tmp/test.md"), {"name": "test"}, content
+        )
         issues = validate_item(item, config)
         assert issues == []
 
@@ -144,22 +148,25 @@ class TestValidateItemMcp:
 class TestValidateItemModels:
     def _make_models_item(self, content_dict: dict) -> SourceItem:
         import yaml
+
         content = yaml.dump(content_dict).encode("utf-8")
         return SourceItem(
             "models", "models", Path("/tmp/models.yaml"), content_dict, content
         )
 
     def test_valid_models_yaml(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://acme.com",
-                    "api_key": "sk-test",
-                    "models": {"gpt-4": {"display_name": "GPT-4"}},
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "sk-test",
+                        "models": {"gpt-4": {"display_name": "GPT-4"}},
+                    },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
         assert issues == []
 
@@ -174,20 +181,24 @@ class TestValidateItemModels:
         assert any("missing or empty 'providers'" in i.message for i in issues)
 
     def test_provider_not_a_dict(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {"bad": "not-a-dict"},
-        })
+        item = self._make_models_item(
+            {
+                "providers": {"bad": "not-a-dict"},
+            }
+        )
         issues = validate_item(item, config)
         assert any("must be a mapping" in i.message for i in issues)
 
     def test_missing_required_fields(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "models": {"m": {}},
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "models": {"m": {}},
+                    },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
         messages = [i.message for i in issues]
         assert any("'display_name'" in m for m in messages)
@@ -195,176 +206,208 @@ class TestValidateItemModels:
         assert any("'api_key'" in m for m in messages)
 
     def test_empty_models_in_provider(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://acme.com",
-                    "api_key": "key",
-                    "models": {},
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {},
+                    },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
         assert any("no models defined" in i.message for i in issues)
 
-    def test_provider_level_only_and_except_mutually_exclusive(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://acme.com",
-                    "api_key": "key",
-                    "models": {"m": {}},
-                    "only": ["droid"],
-                    "except": ["claude-personal"],
+    def test_provider_level_only_and_except_mutually_exclusive(
+        self, config: Config
+    ) -> None:
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {"m": {}},
+                        "only": ["droid"],
+                        "except": ["claude-personal"],
+                    },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
-        assert any("cannot specify both 'only' and 'except'" in i.message for i in issues)
+        assert any(
+            "cannot specify both 'only' and 'except'" in i.message for i in issues
+        )
 
     def test_provider_level_only_not_a_list(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://acme.com",
-                    "api_key": "key",
-                    "models": {"m": {}},
-                    "only": "droid",
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {"m": {}},
+                        "only": "droid",
+                    },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
         assert any("'only' must be a list" in i.message for i in issues)
 
     def test_provider_level_invalid_environment_id(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://acme.com",
-                    "api_key": "key",
-                    "models": {"m": {}},
-                    "only": ["nonexistent-env"],
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {"m": {}},
+                        "only": ["nonexistent-env"],
+                    },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
-        assert any("invalid environment ID 'nonexistent-env'" in i.message for i in issues)
+        assert any(
+            "invalid environment ID 'nonexistent-env'" in i.message for i in issues
+        )
 
     def test_provider_level_except_not_a_list(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://acme.com",
-                    "api_key": "key",
-                    "models": {"m": {}},
-                    "except": "droid",
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {"m": {}},
+                        "except": "droid",
+                    },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
         assert any("'except' must be a list" in i.message for i in issues)
 
-    def test_model_level_only_and_except_mutually_exclusive(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://acme.com",
-                    "api_key": "key",
-                    "models": {
-                        "m": {
-                            "only": ["droid"],
-                            "except": ["claude-personal"],
+    def test_model_level_only_and_except_mutually_exclusive(
+        self, config: Config
+    ) -> None:
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {
+                            "m": {
+                                "only": ["droid"],
+                                "except": ["claude-personal"],
+                            },
                         },
                     },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
-        assert any("cannot specify both 'only' and 'except'" in i.message for i in issues)
+        assert any(
+            "cannot specify both 'only' and 'except'" in i.message for i in issues
+        )
 
     def test_model_level_only_not_a_list(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://acme.com",
-                    "api_key": "key",
-                    "models": {
-                        "m": {"only": "droid"},
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {
+                            "m": {"only": "droid"},
+                        },
                     },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
         assert any("'only' must be a list" in i.message for i in issues)
 
     def test_model_level_invalid_environment_id(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://acme.com",
-                    "api_key": "key",
-                    "models": {
-                        "m": {"only": ["bogus-env"]},
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {
+                            "m": {"only": ["bogus-env"]},
+                        },
                     },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
         assert any("invalid environment ID 'bogus-env'" in i.message for i in issues)
 
     def test_model_level_except_not_a_list(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://acme.com",
-                    "api_key": "key",
-                    "models": {
-                        "m": {"except": "droid"},
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {
+                            "m": {"except": "droid"},
+                        },
                     },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
         assert any("'except' must be a list" in i.message for i in issues)
 
     def test_model_level_except_invalid_environment_id(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://acme.com",
-                    "api_key": "key",
-                    "models": {
-                        "m": {"except": ["nonexistent"]},
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {
+                            "m": {"except": ["nonexistent"]},
+                        },
                     },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
         assert any("invalid environment ID 'nonexistent'" in i.message for i in issues)
 
     def test_model_not_a_dict_skipped_gracefully(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://acme.com",
-                    "api_key": "key",
-                    "models": {
-                        "m": "not-a-dict",
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {
+                            "m": "not-a-dict",
+                        },
                     },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
         # Should not crash; no model-level only/except errors for non-dict models
         model_issues = [i for i in issues if "Model " in i.message]
@@ -376,17 +419,19 @@ class TestValidateItemModels:
         assert any("missing or empty 'providers'" in i.message for i in issues)
 
     def test_valid_provider_level_only_with_group(self, config: Config) -> None:
-        item = self._make_models_item({
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://acme.com",
-                    "api_key": "key",
-                    "models": {"m": {}},
-                    "only": ["claude"],
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {"m": {}},
+                        "only": ["claude"],
+                    },
                 },
-            },
-        })
+            }
+        )
         issues = validate_item(item, config)
         # "claude" is a valid group, so no environment ID errors
         env_issues = [i for i in issues if "invalid environment ID" in i.message]
@@ -444,28 +489,41 @@ class TestValidateAll:
 class TestValidateItemHook:
     def _make_hook_item(self, content_dict: dict) -> SourceItem:
         import yaml
+
         content = yaml.dump(content_dict).encode("utf-8")
         return SourceItem(
-            "hook", content_dict.get("name", "test-hook"),
-            Path("/tmp/hooks/test.yaml"), content_dict, content
+            "hook",
+            content_dict.get("name", "test-hook"),
+            Path("/tmp/hooks/test.yaml"),
+            content_dict,
+            content,
         )
 
     def test_valid_hook(self, config: Config) -> None:
-        item = self._make_hook_item({
-            "name": "my-hook",
-            "hooks": {
-                "PostToolUse": [{"matcher": "Write", "hooks": [{"command": "echo", "type": "command"}]}],
-            },
-        })
+        item = self._make_hook_item(
+            {
+                "name": "my-hook",
+                "hooks": {
+                    "PostToolUse": [
+                        {
+                            "matcher": "Write",
+                            "hooks": [{"command": "echo", "type": "command"}],
+                        }
+                    ],
+                },
+            }
+        )
         issues = validate_item(item, config)
         assert issues == []
 
     def test_hook_missing_name(self, config: Config) -> None:
-        item = self._make_hook_item({
-            "hooks": {
-                "PostToolUse": [{"matcher": "Write", "hooks": []}],
-            },
-        })
+        item = self._make_hook_item(
+            {
+                "hooks": {
+                    "PostToolUse": [{"matcher": "Write", "hooks": []}],
+                },
+            }
+        )
         issues = validate_item(item, config)
         assert any("missing 'name'" in i.message for i in issues)
 
@@ -480,73 +538,105 @@ class TestValidateItemHook:
         assert any("missing or invalid 'hooks'" in i.message for i in issues)
 
     def test_hook_invalid_event_type(self, config: Config) -> None:
-        item = self._make_hook_item({
-            "name": "my-hook",
-            "hooks": {
-                "InvalidEvent": [{"matcher": "Write", "hooks": []}],
-            },
-        })
+        item = self._make_hook_item(
+            {
+                "name": "my-hook",
+                "hooks": {
+                    "InvalidEvent": [{"matcher": "Write", "hooks": []}],
+                },
+            }
+        )
         issues = validate_item(item, config)
-        assert any("Invalid hook event type 'InvalidEvent'" in i.message for i in issues)
+        assert any(
+            "Invalid hook event type 'InvalidEvent'" in i.message for i in issues
+        )
 
     def test_hook_empty_event_list(self, config: Config) -> None:
-        item = self._make_hook_item({
-            "name": "my-hook",
-            "hooks": {
-                "PostToolUse": [],
-            },
-        })
+        item = self._make_hook_item(
+            {
+                "name": "my-hook",
+                "hooks": {
+                    "PostToolUse": [],
+                },
+            }
+        )
         issues = validate_item(item, config)
         assert any("must be a non-empty list" in i.message for i in issues)
 
     def test_hook_event_not_a_list(self, config: Config) -> None:
-        item = self._make_hook_item({
-            "name": "my-hook",
-            "hooks": {
-                "PostToolUse": "not-a-list",
-            },
-        })
+        item = self._make_hook_item(
+            {
+                "name": "my-hook",
+                "hooks": {
+                    "PostToolUse": "not-a-list",
+                },
+            }
+        )
         issues = validate_item(item, config)
         assert any("must be a non-empty list" in i.message for i in issues)
 
     def test_hook_all_valid_event_types(self, config: Config) -> None:
-        for event in ["PreToolUse", "PostToolUse", "PostToolUseFailure",
-                      "PermissionRequest", "Notification", "SubagentStart",
-                      "SubagentStop", "Stop", "TeammateIdle", "TaskCompleted",
-                      "SessionStart", "SessionEnd", "PreCompact",
-                      "UserPromptSubmit", "InstructionsLoaded", "ConfigChange",
-                      "WorktreeCreate", "WorktreeRemove"]:
-            item = self._make_hook_item({
-                "name": "my-hook",
-                "hooks": {
-                    event: [{"matcher": "", "hooks": []}],
-                },
-            })
+        for event in [
+            "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "PermissionRequest",
+            "Notification",
+            "SubagentStart",
+            "SubagentStop",
+            "Stop",
+            "TeammateIdle",
+            "TaskCompleted",
+            "SessionStart",
+            "SessionEnd",
+            "PreCompact",
+            "UserPromptSubmit",
+            "InstructionsLoaded",
+            "ConfigChange",
+            "WorktreeCreate",
+            "WorktreeRemove",
+        ]:
+            item = self._make_hook_item(
+                {
+                    "name": "my-hook",
+                    "hooks": {
+                        event: [{"matcher": "", "hooks": []}],
+                    },
+                }
+            )
             issues = validate_item(item, config)
             event_issues = [i for i in issues if "Invalid hook event type" in i.message]
-            assert event_issues == [], f"Unexpected error for event {event}: {event_issues}"
+            assert event_issues == [], (
+                f"Unexpected error for event {event}: {event_issues}"
+            )
 
     def test_hook_with_only_filter(self, config: Config) -> None:
-        item = self._make_hook_item({
-            "name": "my-hook",
-            "only": ["claude-personal"],
-            "hooks": {
-                "Stop": [{"matcher": "", "hooks": []}],
-            },
-        })
+        item = self._make_hook_item(
+            {
+                "name": "my-hook",
+                "only": ["claude-personal"],
+                "hooks": {
+                    "Stop": [{"matcher": "", "hooks": []}],
+                },
+            }
+        )
         issues = validate_item(item, config)
         assert issues == []
 
     def test_hook_invalid_yaml(self, config: Config) -> None:
         content = b"name: [broken yaml\n"
-        item = SourceItem("hook", "test-hook", Path("/tmp/hooks/test.yaml"), None, content)
+        item = SourceItem(
+            "hook", "test-hook", Path("/tmp/hooks/test.yaml"), None, content
+        )
         issues = validate_item(item, config)
         assert len(issues) == 1
         assert "Invalid YAML" in issues[0].message
 
     def test_hook_non_dict_yaml(self, config: Config) -> None:
         content = b"just a string\n"
-        item = SourceItem("hook", "test-hook", Path("/tmp/hooks/test.yaml"), None, content)
+        item = SourceItem(
+            "hook", "test-hook", Path("/tmp/hooks/test.yaml"), None, content
+        )
         issues = validate_item(item, config)
         # Non-dict metadata -> None -> no issues
         assert issues == []
@@ -576,5 +666,7 @@ class TestValidationIssue:
         assert issue.line == 42
 
     def test_line_optional(self) -> None:
-        issue = ValidationIssue(level="warning", message="warn", file_path=Path("/tmp/x"))
+        issue = ValidationIssue(
+            level="warning", message="warn", file_path=Path("/tmp/x")
+        )
         assert issue.line is None

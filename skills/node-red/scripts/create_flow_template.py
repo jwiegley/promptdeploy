@@ -13,7 +13,7 @@ import uuid
 
 def generate_id():
     """Generate Node-RED compatible ID."""
-    return str(uuid.uuid4()).replace('-', '')
+    return str(uuid.uuid4()).replace("-", "")
 
 
 def create_mqtt_flow():
@@ -25,7 +25,7 @@ def create_mqtt_flow():
             "type": "tab",
             "label": "MQTT Flow",
             "disabled": False,
-            "info": "MQTT publish and subscribe template"
+            "info": "MQTT publish and subscribe template",
         },
         {
             "id": generate_id(),
@@ -38,7 +38,7 @@ def create_mqtt_flow():
             "broker": "",
             "x": 130,
             "y": 100,
-            "wires": [[]]
+            "wires": [[]],
         },
         {
             "id": generate_id(),
@@ -51,7 +51,7 @@ def create_mqtt_flow():
             "broker": "",
             "x": 500,
             "y": 200,
-            "wires": []
+            "wires": [],
         },
         {
             "id": generate_id(),
@@ -61,8 +61,8 @@ def create_mqtt_flow():
             "info": "Double-click MQTT nodes to configure broker connection",
             "x": 150,
             "y": 40,
-            "wires": []
-        }
+            "wires": [],
+        },
     ]
 
 
@@ -79,7 +79,7 @@ def create_http_api_flow():
             "type": "tab",
             "label": "REST API",
             "disabled": False,
-            "info": "REST API endpoint template"
+            "info": "REST API endpoint template",
         },
         {
             "id": http_in_id,
@@ -92,7 +92,7 @@ def create_http_api_flow():
             "swaggerDoc": "",
             "x": 120,
             "y": 100,
-            "wires": [[function_id]]
+            "wires": [[function_id]],
         },
         {
             "id": function_id,
@@ -107,7 +107,7 @@ def create_http_api_flow():
             "libs": [],
             "x": 300,
             "y": 100,
-            "wires": [[http_resp_id]]
+            "wires": [[http_resp_id]],
         },
         {
             "id": http_resp_id,
@@ -118,8 +118,8 @@ def create_http_api_flow():
             "headers": {},
             "x": 500,
             "y": 100,
-            "wires": []
-        }
+            "wires": [],
+        },
     ]
 
 
@@ -137,17 +137,14 @@ def create_data_pipeline_flow():
             "type": "tab",
             "label": "Data Pipeline",
             "disabled": False,
-            "info": "Data processing pipeline template"
+            "info": "Data processing pipeline template",
         },
         {
             "id": inject_id,
             "type": "inject",
             "z": tab_id,
             "name": "Data Source",
-            "props": [
-                {"p": "payload"},
-                {"p": "topic", "vt": "str"}
-            ],
+            "props": [{"p": "payload"}, {"p": "topic", "vt": "str"}],
             "repeat": "60",
             "crontab": "",
             "once": False,
@@ -157,7 +154,7 @@ def create_data_pipeline_flow():
             "payloadType": "json",
             "x": 130,
             "y": 100,
-            "wires": [[transform_id]]
+            "wires": [[transform_id]],
         },
         {
             "id": transform_id,
@@ -171,7 +168,7 @@ def create_data_pipeline_flow():
             "finalize": "",
             "x": 320,
             "y": 100,
-            "wires": [[filter_id]]
+            "wires": [[filter_id]],
         },
         {
             "id": filter_id,
@@ -183,15 +180,15 @@ def create_data_pipeline_flow():
             "noerr": 0,
             "x": 510,
             "y": 100,
-            "wires": [[output_id]]
+            "wires": [[output_id]],
         },
         {
             "id": output_id,
             "type": "debug",
             "z": tab_id,
             "name": "Pipeline Output",
-            "active": true,
-            "tosidebar": true,
+            "active": True,
+            "tosidebar": True,
             "console": False,
             "tostatus": False,
             "complete": "payload",
@@ -200,8 +197,8 @@ def create_data_pipeline_flow():
             "statusType": "auto",
             "x": 700,
             "y": 100,
-            "wires": []
-        }
+            "wires": [],
+        },
     ]
 
 
@@ -219,7 +216,7 @@ def create_error_handler_flow():
             "type": "tab",
             "label": "Error Handler",
             "disabled": False,
-            "info": "Error handling pattern template"
+            "info": "Error handling pattern template",
         },
         {
             "id": inject_id,
@@ -236,7 +233,7 @@ def create_error_handler_flow():
             "payloadType": "str",
             "x": 110,
             "y": 100,
-            "wires": [[try_id]]
+            "wires": [[try_id]],
         },
         {
             "id": try_id,
@@ -250,7 +247,7 @@ def create_error_handler_flow():
             "finalize": "",
             "x": 280,
             "y": 100,
-            "wires": [[]]
+            "wires": [[]],
         },
         {
             "id": catch_id,
@@ -261,7 +258,7 @@ def create_error_handler_flow():
             "uncaught": False,
             "x": 110,
             "y": 200,
-            "wires": [[log_id]]
+            "wires": [[log_id]],
         },
         {
             "id": log_id,
@@ -273,16 +270,16 @@ def create_error_handler_flow():
             "noerr": 0,
             "x": 300,
             "y": 200,
-            "wires": [[]]
-        }
+            "wires": [[]],
+        },
     ]
 
 
 TEMPLATES = {
-    'mqtt': create_mqtt_flow,
-    'http-api': create_http_api_flow,
-    'data-pipeline': create_data_pipeline_flow,
-    'error-handler': create_error_handler_flow
+    "mqtt": create_mqtt_flow,
+    "http-api": create_http_api_flow,
+    "data-pipeline": create_data_pipeline_flow,
+    "error-handler": create_error_handler_flow,
 }
 
 
@@ -302,7 +299,7 @@ def main():
 
     flow = TEMPLATES[template_type]()
 
-    with open(output_file, 'w') as f:
+    with open(output_file, "w") as f:
         json.dump(flow, f, indent=2)
 
     print(f"✓ Created {template_type} flow template: {output_file}")

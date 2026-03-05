@@ -72,9 +72,7 @@ def load_manifest(manifest_path: Path) -> Manifest:
     data = json.loads(manifest_path.read_text())
     items: dict[str, dict[str, ManifestItem]] = {}
     for category, entries in data.get("items", {}).items():
-        items[category] = {
-            name: ManifestItem(**vals) for name, vals in entries.items()
-        }
+        items[category] = {name: ManifestItem(**vals) for name, vals in entries.items()}
     return Manifest(
         version=data.get("version", MANIFEST_VERSION),
         deployed_at=data.get("deployed_at", ""),
@@ -103,9 +101,7 @@ def save_manifest(manifest: Manifest, manifest_path: Path) -> None:
         "items": serialized,
     }
 
-    fd, tmp_path = tempfile.mkstemp(
-        dir=manifest_path.parent, suffix=".tmp"
-    )
+    fd, tmp_path = tempfile.mkstemp(dir=manifest_path.parent, suffix=".tmp")
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(data, f, indent=2)

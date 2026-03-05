@@ -68,6 +68,7 @@ class TestDeployCommand:
         dest = tmp_path / ".claude" / "commands" / "fix.md"
         assert dest.exists()
         meta, body = parse_frontmatter(dest.read_bytes())
+        assert meta is not None
         assert "except" not in meta
         assert body == b"Fix things.\n"
 
@@ -108,6 +109,7 @@ class TestDeploySkill:
         assert (dest / "helper.py").read_text() == "print('hi')"
 
         meta, body = parse_frontmatter((dest / "SKILL.md").read_bytes())
+        assert meta is not None
         assert "only" not in meta
         assert meta["name"] == "my-skill"
         assert body == b"Skill body.\n"
@@ -163,7 +165,9 @@ class TestDeploySkill:
 
         target.deploy_skill("s", src_v1)
         target.deploy_skill("s", src_v2)
-        assert (tmp_path / ".claude" / "skills" / "s" / "SKILL.md").read_bytes() == b"v2"
+        assert (
+            tmp_path / ".claude" / "skills" / "s" / "SKILL.md"
+        ).read_bytes() == b"v2"
 
 
 class TestRemoveSkill:
@@ -244,7 +248,11 @@ class TestDeployMcpServer:
         assert result["allowedTools"] == ["Edit"]
         assert "my-server" in result["mcpServers"]
         srv = result["mcpServers"]["my-server"]
-        assert srv == {"command": "npx", "args": ["-y", "my-server"], "env": {"API_KEY": "xxx"}}
+        assert srv == {
+            "command": "npx",
+            "args": ["-y", "my-server"],
+            "env": {"API_KEY": "xxx"},
+        }
         # Deployment metadata stripped.
         for key in ("name", "description", "scope", "enabled", "only", "except"):
             assert key not in srv
@@ -316,7 +324,6 @@ class TestRemoveMcpServer:
 class TestSaveJsonError:
     def test_cleanup_on_replace_failure(self, tmp_path: Path):
         """When os.replace fails in _save_json, temp file is cleaned up."""
-        import os
         from unittest.mock import patch
 
         target = _make_target(tmp_path)

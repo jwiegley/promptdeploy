@@ -2,13 +2,11 @@
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import yaml
 
 from promptdeploy.config import Config, TargetConfig
-from promptdeploy.deploy import DeployAction, _filter_models_config, deploy
-from promptdeploy.manifest import MANIFEST_FILENAME, load_manifest
+from promptdeploy.deploy import _filter_models_config, deploy
 
 
 def _make_config(
@@ -54,8 +52,12 @@ class TestFilterModelsConfig:
         config = Config(
             source_root=Path("/tmp"),
             targets={
-                "target-a": TargetConfig(id="target-a", type="claude", path=Path("/tmp/a")),
-                "target-b": TargetConfig(id="target-b", type="claude", path=Path("/tmp/b")),
+                "target-a": TargetConfig(
+                    id="target-a", type="claude", path=Path("/tmp/a")
+                ),
+                "target-b": TargetConfig(
+                    id="target-b", type="claude", path=Path("/tmp/b")
+                ),
             },
             groups={},
         )
@@ -80,8 +82,12 @@ class TestFilterModelsConfig:
         config = Config(
             source_root=Path("/tmp"),
             targets={
-                "target-a": TargetConfig(id="target-a", type="claude", path=Path("/tmp/a")),
-                "target-b": TargetConfig(id="target-b", type="claude", path=Path("/tmp/b")),
+                "target-a": TargetConfig(
+                    id="target-a", type="claude", path=Path("/tmp/a")
+                ),
+                "target-b": TargetConfig(
+                    id="target-b", type="claude", path=Path("/tmp/b")
+                ),
             },
             groups={},
         )
@@ -106,8 +112,12 @@ class TestFilterModelsConfig:
         config = Config(
             source_root=Path("/tmp"),
             targets={
-                "target-a": TargetConfig(id="target-a", type="claude", path=Path("/tmp/a")),
-                "target-b": TargetConfig(id="target-b", type="claude", path=Path("/tmp/b")),
+                "target-a": TargetConfig(
+                    id="target-a", type="claude", path=Path("/tmp/a")
+                ),
+                "target-b": TargetConfig(
+                    id="target-b", type="claude", path=Path("/tmp/b")
+                ),
             },
             groups={},
         )
@@ -135,7 +145,9 @@ class TestFilterModelsConfig:
         config = Config(
             source_root=Path("/tmp"),
             targets={
-                "target-a": TargetConfig(id="target-a", type="claude", path=Path("/tmp/a")),
+                "target-a": TargetConfig(
+                    id="target-a", type="claude", path=Path("/tmp/a")
+                ),
             },
             groups={},
         )
@@ -157,8 +169,12 @@ class TestFilterModelsConfig:
         config = Config(
             source_root=Path("/tmp"),
             targets={
-                "target-a": TargetConfig(id="target-a", type="claude", path=Path("/tmp/a")),
-                "other": TargetConfig(id="other", type="claude", path=Path("/tmp/other")),
+                "target-a": TargetConfig(
+                    id="target-a", type="claude", path=Path("/tmp/a")
+                ),
+                "other": TargetConfig(
+                    id="other", type="claude", path=Path("/tmp/other")
+                ),
             },
             groups={},
         )
@@ -206,8 +222,12 @@ class TestFilterModelsConfig:
         config = Config(
             source_root=Path("/tmp"),
             targets={
-                "target-a": TargetConfig(id="target-a", type="claude", path=Path("/tmp/a")),
-                "target-b": TargetConfig(id="target-b", type="claude", path=Path("/tmp/b")),
+                "target-a": TargetConfig(
+                    id="target-a", type="claude", path=Path("/tmp/a")
+                ),
+                "target-b": TargetConfig(
+                    id="target-b", type="claude", path=Path("/tmp/b")
+                ),
             },
             groups={"my-group": ["target-a"]},
         )
@@ -239,23 +259,28 @@ class TestModelsDeployIntegration:
     def test_full_deploy_with_models_creates_action(self, tmp_path: Path):
         src = tmp_path / "source"
         src.mkdir()
-        self._write_models_yaml(src, {
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://api.acme.com/v1",
-                    "api_key": "sk-test",
-                    "models": {
-                        "gpt-4": {"display_name": "GPT-4"},
+        self._write_models_yaml(
+            src,
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://api.acme.com/v1",
+                        "api_key": "sk-test",
+                        "models": {
+                            "gpt-4": {"display_name": "GPT-4"},
+                        },
                     },
                 },
             },
-        })
+        )
         tc = _make_droid_target(tmp_path)
         config = _make_config(src, {tc.id: tc})
         actions = deploy(config)
 
-        creates = [a for a in actions if a.action == "create" and a.item_type == "models"]
+        creates = [
+            a for a in actions if a.action == "create" and a.item_type == "models"
+        ]
         assert len(creates) == 1
         assert creates[0].name == "models"
 
@@ -278,7 +303,7 @@ class TestModelsDeployIntegration:
         tc = _make_droid_target(tmp_path)
         config = _make_config(src, {tc.id: tc})
 
-        actions = deploy(config)
+        deploy(config)
 
         # Verify settings.json was written with customModels
         settings_path = tc.path / "settings.json"
@@ -290,16 +315,19 @@ class TestModelsDeployIntegration:
     def test_models_removal_when_models_deleted(self, tmp_path: Path):
         src = tmp_path / "source"
         src.mkdir()
-        self._write_models_yaml(src, {
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://api.acme.com/v1",
-                    "api_key": "sk-test",
-                    "models": {"gpt-4": {}},
+        self._write_models_yaml(
+            src,
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://api.acme.com/v1",
+                        "api_key": "sk-test",
+                        "models": {"gpt-4": {}},
+                    },
                 },
             },
-        })
+        )
         tc = _make_droid_target(tmp_path)
         config = _make_config(src, {tc.id: tc})
 
@@ -308,28 +336,35 @@ class TestModelsDeployIntegration:
         (src / "models.yaml").unlink()
         actions = deploy(config)
 
-        removes = [a for a in actions if a.action == "remove" and a.item_type == "models"]
+        removes = [
+            a for a in actions if a.action == "remove" and a.item_type == "models"
+        ]
         assert len(removes) == 1
 
     def test_dry_run_does_not_call_deploy_models(self, tmp_path: Path):
         src = tmp_path / "source"
         src.mkdir()
-        self._write_models_yaml(src, {
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://api.acme.com/v1",
-                    "api_key": "sk-test",
-                    "models": {"gpt-4": {}},
+        self._write_models_yaml(
+            src,
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://api.acme.com/v1",
+                        "api_key": "sk-test",
+                        "models": {"gpt-4": {}},
+                    },
                 },
             },
-        })
+        )
         tc = _make_droid_target(tmp_path)
         config = _make_config(src, {tc.id: tc})
 
         actions = deploy(config, dry_run=True)
 
-        creates = [a for a in actions if a.action == "create" and a.item_type == "models"]
+        creates = [
+            a for a in actions if a.action == "create" and a.item_type == "models"
+        ]
         assert len(creates) == 1
         # No settings.json should have been created
         assert not (tc.path / "settings.json").exists()
@@ -341,16 +376,19 @@ class TestModelsDeployIntegration:
         agents = src / "agents"
         agents.mkdir()
         (agents / "helper.md").write_bytes(b"---\nname: helper\n---\nBody.\n")
-        self._write_models_yaml(src, {
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://api.acme.com/v1",
-                    "api_key": "sk-test",
-                    "models": {"gpt-4": {}},
+        self._write_models_yaml(
+            src,
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://api.acme.com/v1",
+                        "api_key": "sk-test",
+                        "models": {"gpt-4": {}},
+                    },
                 },
             },
-        })
+        )
         tc = _make_droid_target(tmp_path)
         config = _make_config(src, {tc.id: tc})
 
@@ -378,17 +416,20 @@ class TestModelsDeployIntegration:
         """Covers deploy.py lines 117-118: elif category == 'models': target.remove_models()."""
         src = tmp_path / "source"
         src.mkdir()
-        self._write_models_yaml(src, {
-            "providers": {
-                "acme": {
-                    "display_name": "Acme",
-                    "base_url": "https://api.acme.com/v1",
-                    "api_key": "sk-test",
-                    "droid": {},
-                    "models": {"gpt-4": {}},
+        self._write_models_yaml(
+            src,
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://api.acme.com/v1",
+                        "api_key": "sk-test",
+                        "droid": {},
+                        "models": {"gpt-4": {}},
+                    },
                 },
             },
-        })
+        )
         tc = _make_droid_target(tmp_path)
         config = _make_config(src, {tc.id: tc})
 

@@ -11,7 +11,7 @@ import sys
 def wire_nodes(flow_path, source_id, target_id, output_port=0):
     """Wire two nodes together in a flow."""
     try:
-        with open(flow_path, 'r') as f:
+        with open(flow_path, "r") as f:
             flow_data = json.load(f)
     except (json.JSONDecodeError, FileNotFoundError) as e:
         print(f"Error loading flow: {e}")
@@ -20,7 +20,7 @@ def wire_nodes(flow_path, source_id, target_id, output_port=0):
     # Find source node
     source_node = None
     for node in flow_data:
-        if node.get('id') == source_id:
+        if node.get("id") == source_id:
             source_node = node
             break
 
@@ -29,28 +29,28 @@ def wire_nodes(flow_path, source_id, target_id, output_port=0):
         return False
 
     # Verify target exists
-    target_exists = any(node.get('id') == target_id for node in flow_data)
+    target_exists = any(node.get("id") == target_id for node in flow_data)
     if not target_exists:
         print(f"Target node '{target_id}' not found")
         return False
 
     # Initialize wires if needed
-    if 'wires' not in source_node:
-        source_node['wires'] = []
+    if "wires" not in source_node:
+        source_node["wires"] = []
 
     # Ensure we have enough output ports
-    while len(source_node['wires']) <= output_port:
-        source_node['wires'].append([])
+    while len(source_node["wires"]) <= output_port:
+        source_node["wires"].append([])
 
     # Add wire if not already present
-    if target_id not in source_node['wires'][output_port]:
-        source_node['wires'][output_port].append(target_id)
+    if target_id not in source_node["wires"][output_port]:
+        source_node["wires"][output_port].append(target_id)
         print(f"✓ Wired {source_id} (output {output_port}) -> {target_id}")
     else:
         print(f"Wire already exists: {source_id} -> {target_id}")
 
     # Save the flow
-    with open(flow_path, 'w') as f:
+    with open(flow_path, "w") as f:
         json.dump(flow_data, f, indent=2)
 
     return True
@@ -58,7 +58,9 @@ def wire_nodes(flow_path, source_id, target_id, output_port=0):
 
 def main():
     if len(sys.argv) < 4:
-        print("Usage: python wire_nodes.py <flow.json> <source_id> <target_id> [output_port]")
+        print(
+            "Usage: python wire_nodes.py <flow.json> <source_id> <target_id> [output_port]"
+        )
         sys.exit(1)
 
     flow_path = sys.argv[1]

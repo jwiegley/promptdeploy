@@ -1,7 +1,6 @@
 """Tests for the __main__.py entry point."""
 
 import runpy
-import sys
 
 import pytest
 
@@ -20,7 +19,5 @@ class TestMainModule:
 
         config = Config(source_root=tmp_path, targets={}, groups={})
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
-        monkeypatch.setattr(
-            "sys.argv", ["promptdeploy", "deploy", "--dry-run"]
-        )
+        monkeypatch.setattr("sys.argv", ["promptdeploy", "deploy", "--dry-run"])
         runpy.run_module("promptdeploy", run_name="__main__")

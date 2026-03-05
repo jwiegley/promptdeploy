@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 
-import yaml
 
 from promptdeploy.config import Config, TargetConfig
 from promptdeploy.deploy import deploy
@@ -337,9 +336,7 @@ class TestMcpDeploy:
         src.mkdir()
         mcp_dir = src / "mcp"
         mcp_dir.mkdir()
-        (mcp_dir / "server.yaml").write_bytes(
-            b"name: server\ncommand: echo\n"
-        )
+        (mcp_dir / "server.yaml").write_bytes(b"name: server\ncommand: echo\n")
 
         tc = _make_claude_target(tmp_path)
         config = _make_config(src, {tc.id: tc})
@@ -379,6 +376,7 @@ class TestRemoveSkills:
         deploy(config)
 
         import shutil
+
         shutil.rmtree(src / "skills" / "my-skill")
         actions = deploy(config)
 

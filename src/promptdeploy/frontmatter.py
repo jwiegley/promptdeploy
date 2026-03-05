@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 
 import yaml
 
-FRONTMATTER_PATTERN = re.compile(r'^---\s*\n(.*?)\n---\s*\n', re.DOTALL)
+FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
 
 class FrontmatterError(Exception):
@@ -34,7 +34,7 @@ def parse_frontmatter(content: bytes) -> Tuple[Optional[dict], bytes]:
     if metadata is None:
         metadata = {}
 
-    body = text[match.end():]
+    body = text[match.end() :]
     return metadata, body.encode("utf-8")
 
 

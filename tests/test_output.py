@@ -1,8 +1,5 @@
 """Tests for promptdeploy output formatting."""
 
-import io
-import sys
-
 from promptdeploy.output import Output, Verbosity
 
 
@@ -113,5 +110,6 @@ class TestTimer:
     def test_elapsed_returns_float(self) -> None:
         out = Output()
         out.start_timer()
-        assert isinstance(out.elapsed(), float)
-        assert out.elapsed() >= 0
+        elapsed = out.elapsed()
+        assert isinstance(elapsed, float)
+        assert elapsed >= 0

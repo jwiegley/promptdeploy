@@ -3,7 +3,6 @@
 import json
 from pathlib import Path
 
-import pytest
 
 from promptdeploy.targets.claude import ClaudeTarget
 
@@ -138,9 +137,11 @@ class TestDeployHook:
         assert "PreToolUse" in settings["hooks"]
 
         # Redeploy with only PostToolUse (PreToolUse dropped)
+        hooks = _GIT_AI_CONFIG["hooks"]
+        assert isinstance(hooks, dict)
         updated = {
             "hooks": {
-                "PostToolUse": _GIT_AI_CONFIG["hooks"]["PostToolUse"],
+                "PostToolUse": hooks["PostToolUse"],
             },
         }
         target.deploy_hook("git-ai", updated)

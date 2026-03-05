@@ -38,7 +38,9 @@ class TestParseFrontmatter:
         assert body == b"Body.\n"
 
     def test_unicode_content(self):
-        content = "---\ntitle: \u6d4b\u8bd5\nauthor: \u00e9l\u00e8ve\n---\nBody with \u00fcnicode.\n".encode("utf-8")
+        content = "---\ntitle: \u6d4b\u8bd5\nauthor: \u00e9l\u00e8ve\n---\nBody with \u00fcnicode.\n".encode(
+            "utf-8"
+        )
         metadata, body = parse_frontmatter(content)
         assert metadata["title"] == "\u6d4b\u8bd5"
         assert metadata["author"] == "\u00e9l\u00e8ve"

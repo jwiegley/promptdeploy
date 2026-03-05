@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Set
 
 from .config import Config
-from .filters import FilterError, should_deploy_to
+from .filters import should_deploy_to
 from .manifest import (
     Manifest,
     ManifestItem,
@@ -53,9 +53,7 @@ class DeployAction:
     source_path: Optional[str] = None
 
 
-def _filter_models_config(
-    config_dict: dict, target_id: str, config: Config
-) -> dict:
+def _filter_models_config(config_dict: dict, target_id: str, config: Config) -> dict:
     """Filter a models.yaml config dict, keeping only matching providers/models.
 
     Applies should_deploy_to() at both provider and model level so that
@@ -162,9 +160,7 @@ def deploy(
         target_config = config.targets[target_id]
         target = create_target(target_config)
         manifest = load_manifest(target.manifest_path())
-        new_manifest = Manifest(
-            deployed_at=datetime.now(timezone.utc).isoformat()
-        )
+        new_manifest = Manifest(deployed_at=datetime.now(timezone.utc).isoformat())
 
         # Track which (category, name) pairs we process for stale detection
         deployed_names: set[tuple[str, str]] = set()
@@ -175,9 +171,7 @@ def deploy(
                 continue
 
             # Apply environment filters (only/except in frontmatter)
-            if not should_deploy_to(
-                target_id, item.metadata, config, str(item.path)
-            ):
+            if not should_deploy_to(target_id, item.metadata, config, str(item.path)):
                 continue
 
             category = _TYPE_TO_CATEGORY[item.item_type]
@@ -187,8 +181,7 @@ def deploy(
             if has_changed(manifest, category, item.name, current_hash):
                 # Determine if create or update
                 is_update = (
-                    category in manifest.items
-                    and item.name in manifest.items[category]
+                    category in manifest.items and item.name in manifest.items[category]
                 )
                 action_type = "update" if is_update else "create"
 
@@ -222,8 +215,8 @@ def deploy(
                 )
 
             # Record in new manifest regardless of action
-            new_manifest.items.setdefault(category, {})[item.name] = (
-                ManifestItem(source_hash=current_hash)
+            new_manifest.items.setdefault(category, {})[item.name] = ManifestItem(
+                source_hash=current_hash
             )
 
         # Detect stale items: in old manifest but not in new source
@@ -238,9 +231,9 @@ def deploy(
                     )
                     if cat_type not in allowed_types:
                         # Preserve unfiltered items in new manifest
-                        new_manifest.items.setdefault(category, {})[name] = (
-                            items_dict[name]
-                        )
+                        new_manifest.items.setdefault(category, {})[name] = items_dict[
+                            name
+                        ]
                         continue
 
                 if not dry_run:

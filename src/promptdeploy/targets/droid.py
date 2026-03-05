@@ -63,9 +63,7 @@ class DroidTarget(Target):
         shutil.copytree(source_dir.resolve(), dest, symlinks=False)
         skill_md = dest / "SKILL.md"
         if skill_md.exists():
-            skill_md.write_bytes(
-                transform_for_target(skill_md.read_bytes(), self._id)
-            )
+            skill_md.write_bytes(transform_for_target(skill_md.read_bytes(), self._id))
 
     def deploy_hook(self, name: str, config: dict) -> None:
         pass

@@ -62,9 +62,7 @@ def should_deploy_to(
     except_ = metadata.get("except")
 
     if only is not None and except_ is not None:
-        raise FilterError(
-            f"Cannot specify both 'only' and 'except' in {source_path}"
-        )
+        raise FilterError(f"Cannot specify both 'only' and 'except' in {source_path}")
 
     validate_environments(only, config, source_path)
     validate_environments(except_, config, source_path)

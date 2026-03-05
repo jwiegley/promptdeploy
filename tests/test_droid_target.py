@@ -77,7 +77,9 @@ class TestDeployCommand:
 
     def test_command_with_droid_deploy_skill_wraps_as_skill(self, tmp_path: Path):
         target = _make_target(tmp_path)
-        content = b"---\nname: fix\ndroid_deploy: skill\nonly:\n  - x\n---\nFix things.\n"
+        content = (
+            b"---\nname: fix\ndroid_deploy: skill\nonly:\n  - x\n---\nFix things.\n"
+        )
         target.deploy_command("fix", content)
 
         dest = tmp_path / ".droid" / "skills" / "fix"
@@ -85,6 +87,7 @@ class TestDeployCommand:
         skill_md = dest / "SKILL.md"
         assert skill_md.exists()
         meta, body = parse_frontmatter(skill_md.read_bytes())
+        assert meta is not None
         assert "only" not in meta
         assert body == b"Fix things.\n"
 
@@ -126,6 +129,7 @@ class TestDeploySkill:
         assert (dest / "helper.py").read_text() == "print('hi')"
 
         meta, body = parse_frontmatter((dest / "SKILL.md").read_bytes())
+        assert meta is not None
         assert "only" not in meta
         assert meta["name"] == "my-skill"
         assert body == b"Skill body.\n"
@@ -270,7 +274,6 @@ class TestRemoveMcpServer:
 class TestSaveJsonError:
     def test_cleanup_on_replace_failure(self, tmp_path: Path):
         """When os.replace fails in _save_json, temp file is cleaned up."""
-        import os
         from unittest.mock import patch
 
         target = _make_target(tmp_path)
@@ -573,10 +576,14 @@ class TestRemoveModels:
     def test_removes_custom_models_from_settings(self, tmp_path: Path):
         target = _make_target(tmp_path)
         settings_path = tmp_path / ".droid" / "settings.json"
-        settings_path.write_text(json.dumps({
-            "customModels": [{"id": "test"}],
-            "theme": "dark",
-        }))
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "customModels": [{"id": "test"}],
+                    "theme": "dark",
+                }
+            )
+        )
 
         target.remove_models()
 
@@ -592,11 +599,15 @@ class TestRemoveModels:
     def test_preserves_other_keys(self, tmp_path: Path):
         target = _make_target(tmp_path)
         settings_path = tmp_path / ".droid" / "settings.json"
-        settings_path.write_text(json.dumps({
-            "customModels": [],
-            "theme": "light",
-            "fontSize": 12,
-        }))
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "customModels": [],
+                    "theme": "light",
+                    "fontSize": 12,
+                }
+            )
+        )
 
         target.remove_models()
 
@@ -639,7 +650,12 @@ class TestDeployHookNoop:
         config = {
             "name": "git-ai",
             "hooks": {
-                "PostToolUse": [{"matcher": "Write", "hooks": [{"command": "echo", "type": "command"}]}],
+                "PostToolUse": [
+                    {
+                        "matcher": "Write",
+                        "hooks": [{"command": "echo", "type": "command"}],
+                    }
+                ],
             },
         }
         # Should not raise or create any files

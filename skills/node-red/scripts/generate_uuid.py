@@ -10,7 +10,7 @@ import uuid
 
 def generate_node_id():
     """Generate a Node-RED compatible UUID (no hyphens)."""
-    return str(uuid.uuid4()).replace('-', '')
+    return str(uuid.uuid4()).replace("-", "")
 
 
 def main():
@@ -21,7 +21,7 @@ def main():
         if count == 1:
             print(node_id)
         else:
-            print(f"ID {i+1}: {node_id}")
+            print(f"ID {i + 1}: {node_id}")
 
 
 if __name__ == "__main__":

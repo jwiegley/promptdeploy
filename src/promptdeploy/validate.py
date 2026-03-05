@@ -56,26 +56,28 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
     """Validate a single source item."""
     issues: List[ValidationIssue] = []
 
-    _VALID_HOOK_EVENTS = frozenset({
-        "PreToolUse",
-        "PostToolUse",
-        "PostToolUseFailure",
-        "PermissionRequest",
-        "Notification",
-        "SubagentStart",
-        "SubagentStop",
-        "Stop",
-        "TeammateIdle",
-        "TaskCompleted",
-        "SessionStart",
-        "SessionEnd",
-        "PreCompact",
-        "UserPromptSubmit",
-        "InstructionsLoaded",
-        "ConfigChange",
-        "WorktreeCreate",
-        "WorktreeRemove",
-    })
+    _VALID_HOOK_EVENTS = frozenset(
+        {
+            "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "PermissionRequest",
+            "Notification",
+            "SubagentStart",
+            "SubagentStop",
+            "Stop",
+            "TeammateIdle",
+            "TaskCompleted",
+            "SessionStart",
+            "SessionEnd",
+            "PreCompact",
+            "UserPromptSubmit",
+            "InstructionsLoaded",
+            "ConfigChange",
+            "WorktreeCreate",
+            "WorktreeRemove",
+        }
+    )
 
     # Parse metadata
     try:
@@ -275,7 +277,10 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                                     file_path=item.path,
                                 )
                             )
-                        for env_list, field_name in [(m_only, "only"), (m_except, "except")]:
+                        for env_list, field_name in [
+                            (m_only, "only"),
+                            (m_except, "except"),
+                        ]:
                             if env_list is not None:
                                 if not isinstance(env_list, list):
                                     issues.append(
