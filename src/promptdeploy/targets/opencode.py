@@ -127,12 +127,17 @@ class OpenCodeTarget(Target):
 
         # Disabled servers are not written at all.
         if not config.get("enabled", True):
-            data.get("mcpServers", {}).pop(name, None)
+            data.get("mcp", {}).pop(name, None)
         else:
             oc_config: dict = {}
-            # command is an array: command + args combined.
+            # Determine type based on presence of url vs command.
             cmd = config.get("command")
             args = config.get("args", [])
+            if "url" in config:
+                oc_config["type"] = "remote"
+            elif cmd is not None:
+                oc_config["type"] = "local"
+            # command is an array: command + args combined.
             if cmd is not None:
                 oc_config["command"] = [cmd] + list(args)
             # "environment" key, not "env".
@@ -147,7 +152,7 @@ class OpenCodeTarget(Target):
                     "env",
                 ):
                     oc_config[k] = v
-            data.setdefault("mcpServers", {})[name] = oc_config
+            data.setdefault("mcp", {})[name] = oc_config
 
         self._save_json(oc_path, data)
 
@@ -179,7 +184,7 @@ class OpenCodeTarget(Target):
         if not path.exists():
             return
         data = self._load_json(path)
-        data.get("mcpServers", {}).pop(name, None)
+        data.get("mcp", {}).pop(name, None)
         self._save_json(path, data)
 
     # ------------------------------------------------------------------

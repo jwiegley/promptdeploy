@@ -166,7 +166,9 @@ class TestDeployMcpServer:
         oc_path = tmp_path / ".opencode" / "opencode.json"
         assert oc_path.exists()
         result = json.loads(oc_path.read_text())
-        srv = result["mcpServers"]["my-server"]
+        srv = result["mcp"]["my-server"]
+        # type is "local" for command-based servers.
+        assert srv["type"] == "local"
         # command is an array: command + args combined.
         assert srv["command"] == ["npx", "-y", "my-server"]
         # "environment" key, not "env".
@@ -184,7 +186,7 @@ class TestDeployMcpServer:
         result = json.loads(
             (tmp_path / ".opencode" / "opencode.json").read_text()
         )
-        assert result["mcpServers"]["srv"]["command"] == ["echo"]
+        assert result["mcp"]["srv"]["command"] == ["echo"]
 
     def test_creates_opencode_json_if_missing(self, tmp_path: Path):
         target = _make_target(tmp_path)
@@ -193,7 +195,7 @@ class TestDeployMcpServer:
         oc_path = tmp_path / ".opencode" / "opencode.json"
         assert oc_path.exists()
         result = json.loads(oc_path.read_text())
-        assert "srv" in result["mcpServers"]
+        assert "srv" in result["mcp"]
 
     def test_disabled_server_not_written(self, tmp_path: Path):
         target = _make_target(tmp_path)
@@ -201,7 +203,7 @@ class TestDeployMcpServer:
 
         oc_path = tmp_path / ".opencode" / "opencode.json"
         result = json.loads(oc_path.read_text())
-        assert "srv" not in result.get("mcpServers", {})
+        assert "srv" not in result.get("mcp", {})
 
     def test_disabled_server_removed_if_exists(self, tmp_path: Path):
         target = _make_target(tmp_path)
@@ -211,7 +213,7 @@ class TestDeployMcpServer:
         result = json.loads(
             (tmp_path / ".opencode" / "opencode.json").read_text()
         )
-        assert "srv" not in result.get("mcpServers", {})
+        assert "srv" not in result.get("mcp", {})
 
     def test_no_environment_key_when_env_empty(self, tmp_path: Path):
         target = _make_target(tmp_path)
@@ -220,21 +222,37 @@ class TestDeployMcpServer:
         result = json.loads(
             (tmp_path / ".opencode" / "opencode.json").read_text()
         )
-        srv = result["mcpServers"]["srv"]
+        srv = result["mcp"]["srv"]
         assert "environment" not in srv
+
+    def test_remote_server_type(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "url": "https://mcp.example.com/mcp",
+            "headers": {"Authorization": "Bearer token"},
+        }
+        target.deploy_mcp_server("remote", config)
+
+        result = json.loads(
+            (tmp_path / ".opencode" / "opencode.json").read_text()
+        )
+        srv = result["mcp"]["remote"]
+        assert srv["type"] == "remote"
+        assert srv["url"] == "https://mcp.example.com/mcp"
+        assert srv["headers"] == {"Authorization": "Bearer token"}
 
     def test_preserves_other_servers(self, tmp_path: Path):
         target = _make_target(tmp_path)
         oc_path = tmp_path / ".opencode" / "opencode.json"
         oc_path.write_text(
-            json.dumps({"mcpServers": {"existing": {"command": ["keep"]}}})
+            json.dumps({"mcp": {"existing": {"command": ["keep"]}}})
         )
 
         target.deploy_mcp_server("new", {"command": "added"})
 
         result = json.loads(oc_path.read_text())
-        assert result["mcpServers"]["existing"] == {"command": ["keep"]}
-        assert "new" in result["mcpServers"]
+        assert result["mcp"]["existing"] == {"command": ["keep"]}
+        assert "new" in result["mcp"]
 
 
 class TestRemoveMcpServer:
@@ -246,7 +264,7 @@ class TestRemoveMcpServer:
         result = json.loads(
             (tmp_path / ".opencode" / "opencode.json").read_text()
         )
-        assert "srv" not in result.get("mcpServers", {})
+        assert "srv" not in result.get("mcp", {})
 
     def test_no_error_if_missing(self, tmp_path: Path):
         target = _make_target(tmp_path)
@@ -561,7 +579,7 @@ class TestRemoveModels:
         oc_path = tmp_path / ".opencode" / "opencode.json"
         oc_path.write_text(json.dumps({
             "provider": {},
-            "mcpServers": {"srv": {}},
+            "mcp": {"srv": {}},
             "theme": "light",
         }))
 
@@ -569,7 +587,7 @@ class TestRemoveModels:
 
         result = json.loads(oc_path.read_text())
         assert "provider" not in result
-        assert result["mcpServers"] == {"srv": {}}
+        assert result["mcp"] == {"srv": {}}
         assert result["theme"] == "light"
 
 
@@ -587,7 +605,7 @@ class TestExtraConfigKeys:
 
         oc_path = tmp_path / ".opencode" / "opencode.json"
         result = json.loads(oc_path.read_text())
-        srv = result["mcpServers"]["srv"]
+        srv = result["mcp"]["srv"]
         assert srv["custom_key"] == "custom_value"
         assert srv["timeout"] == 30
 
