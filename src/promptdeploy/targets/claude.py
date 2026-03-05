@@ -51,7 +51,9 @@ class ClaudeTarget(Target):
 
     def deploy_skill(self, name: str, source_dir: Path) -> None:
         dest = self._config_path / "skills" / name
-        if dest.exists():
+        if dest.is_symlink():
+            dest.unlink()
+        elif dest.exists():
             shutil.rmtree(dest)
         # Resolve symlinks so the deployed copy is self-contained.
         shutil.copytree(source_dir.resolve(), dest, symlinks=False)
@@ -122,7 +124,9 @@ class ClaudeTarget(Target):
 
     def remove_skill(self, name: str) -> None:
         dest = self._config_path / "skills" / name
-        if dest.exists():
+        if dest.is_symlink():
+            dest.unlink()
+        elif dest.exists():
             shutil.rmtree(dest)
 
     def remove_models(self) -> None:
