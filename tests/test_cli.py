@@ -132,7 +132,7 @@ class TestRunDeploy:
 
         args = argparse.Namespace(
             verbose=False, quiet=False, dry_run=False,
-            target=None, only_type=None,
+            target=None, only_type=None, target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -147,7 +147,7 @@ class TestRunDeploy:
 
         args = argparse.Namespace(
             verbose=True, quiet=False, dry_run=False,
-            target=None, only_type=None,
+            target=None, only_type=None, target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -161,7 +161,7 @@ class TestRunDeploy:
 
         args = argparse.Namespace(
             verbose=False, quiet=True, dry_run=False,
-            target=None, only_type=None,
+            target=None, only_type=None, target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -176,7 +176,7 @@ class TestRunDeploy:
 
         args = argparse.Namespace(
             verbose=False, quiet=False, dry_run=True,
-            target=None, only_type=None,
+            target=None, only_type=None, target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -190,7 +190,7 @@ class TestRunDeploy:
 
         args = argparse.Namespace(
             verbose=False, quiet=False, dry_run=True,
-            target=["test-claude"], only_type=None,
+            target=["test-claude"], only_type=None, target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -204,7 +204,7 @@ class TestRunDeploy:
 
         args = argparse.Namespace(
             verbose=False, quiet=False, dry_run=True,
-            target=None, only_type=["agents"],
+            target=None, only_type=["agents"], target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -226,7 +226,7 @@ class TestRunDeploy:
 
         args = argparse.Namespace(
             verbose=False, quiet=False, dry_run=True,
-            target=None, only_type=["hooks"],
+            target=None, only_type=["hooks"], target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -250,7 +250,7 @@ class TestRunDeploy:
 
         args = argparse.Namespace(
             verbose=False, quiet=False, dry_run=False,
-            target=None, only_type=None,
+            target=None, only_type=None, target_root=None,
         )
         with pytest.raises(SystemExit) as exc_info:
             _run_deploy(args)
@@ -269,7 +269,7 @@ class TestRunDeploy:
 
         args = argparse.Namespace(
             verbose=False, quiet=False, dry_run=False,
-            target=None, only_type=None,
+            target=None, only_type=None, target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -288,7 +288,7 @@ class TestRunDeploy:
 
         args = argparse.Namespace(
             verbose=True, quiet=False, dry_run=False,
-            target=None, only_type=None,
+            target=None, only_type=None, target_root=None,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -414,7 +414,7 @@ class TestRunStatus:
         config = Config(source_root=tmp_path, targets={}, groups={})
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
-        args = argparse.Namespace(target=None)
+        args = argparse.Namespace(target=None, target_root=None)
         _run_status(args)
         captured = capsys.readouterr()
         assert "No items to report" in captured.out
@@ -425,7 +425,7 @@ class TestRunStatus:
         config = _make_config(src, {tc.id: tc})
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
-        args = argparse.Namespace(target=None)
+        args = argparse.Namespace(target=None, target_root=None)
         _run_status(args)
         captured = capsys.readouterr()
         # All items should be "new" (A) since no manifest exists
@@ -441,7 +441,7 @@ class TestRunStatus:
         deploy(config)
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
-        args = argparse.Namespace(target=None)
+        args = argparse.Namespace(target=None, target_root=None)
         _run_status(args)
         captured = capsys.readouterr()
         # Items are current after deploy
@@ -459,7 +459,7 @@ class TestRunStatus:
         )
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
-        args = argparse.Namespace(target=None)
+        args = argparse.Namespace(target=None, target_root=None)
         _run_status(args)
         captured = capsys.readouterr()
         assert "M" in captured.out
@@ -473,7 +473,7 @@ class TestRunStatus:
         (src / "agents" / "helper.md").unlink()
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
-        args = argparse.Namespace(target=None)
+        args = argparse.Namespace(target=None, target_root=None)
         _run_status(args)
         captured = capsys.readouterr()
         assert "D" in captured.out
@@ -484,7 +484,7 @@ class TestRunStatus:
         config = _make_config(src, {tc.id: tc})
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
-        args = argparse.Namespace(target=["test-claude"])
+        args = argparse.Namespace(target=["test-claude"], target_root=None)
         _run_status(args)
         captured = capsys.readouterr()
         assert "test-claude" in captured.out
@@ -509,3 +509,217 @@ class TestCliMainGuard:
         )
         # Run the module as __main__
         runpy.run_module("promptdeploy.cli", run_name="__main__")
+
+
+# ===================================================================
+# --target-root argument: argument parsing tests
+# ===================================================================
+
+
+class TestTargetRootArgParsing:
+    """Verify --target-root is accepted by deploy, status, and list parsers."""
+
+    def _parse(self, argv: list[str]) -> argparse.Namespace:
+        """Build the real parser and parse the given argv."""
+        import argparse
+        from pathlib import Path
+
+        parser = argparse.ArgumentParser(prog="promptdeploy")
+        subparsers = parser.add_subparsers(dest="command", required=True)
+
+        deploy_parser = subparsers.add_parser("deploy")
+        deploy_parser.add_argument("--dry-run", action="store_true")
+        deploy_parser.add_argument("--target", action="append")
+        deploy_parser.add_argument("--only-type", action="append")
+        deploy_parser.add_argument("--verbose", action="store_true")
+        deploy_parser.add_argument("--quiet", action="store_true")
+        deploy_parser.add_argument("--target-root", type=Path, metavar="DIR")
+
+        status_parser = subparsers.add_parser("status")
+        status_parser.add_argument("--target", action="append")
+        status_parser.add_argument("--target-root", type=Path, metavar="DIR")
+
+        list_parser = subparsers.add_parser("list")
+        list_parser.add_argument("--target", action="append")
+        list_parser.add_argument("--target-root", type=Path, metavar="DIR")
+
+        return parser.parse_args(argv)
+
+    def test_deploy_accepts_target_root(self, tmp_path):
+        args = self._parse(["deploy", "--target-root", str(tmp_path)])
+        assert args.target_root == tmp_path
+
+    def test_deploy_target_root_defaults_to_none(self):
+        args = self._parse(["deploy"])
+        assert args.target_root is None
+
+    def test_status_accepts_target_root(self, tmp_path):
+        args = self._parse(["status", "--target-root", str(tmp_path)])
+        assert args.target_root == tmp_path
+
+    def test_status_target_root_defaults_to_none(self):
+        args = self._parse(["status"])
+        assert args.target_root is None
+
+    def test_list_accepts_target_root(self, tmp_path):
+        args = self._parse(["list", "--target-root", str(tmp_path)])
+        assert args.target_root == tmp_path
+
+    def test_list_target_root_defaults_to_none(self):
+        args = self._parse(["list"])
+        assert args.target_root is None
+
+
+# ===================================================================
+# --target-root: _run_* integration tests
+# ===================================================================
+
+
+class TestTargetRootDeploy:
+    """Verify _run_deploy remaps paths when --target-root is set."""
+
+    def test_deploy_target_root_redirects_files(self, tmp_path, monkeypatch, capsys):
+        """Files are written under target-root/target-id, not the original path."""
+        src = _make_source(tmp_path)
+        original_target_dir = tmp_path / "original-target"
+        original_target_dir.mkdir()
+        tc = TargetConfig(id="test-claude", type="claude", path=original_target_dir)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        preview_root = tmp_path / "preview"
+        preview_root.mkdir()
+
+        args = argparse.Namespace(
+            verbose=False, quiet=False, dry_run=False,
+            target=None, only_type=None,
+            target_root=preview_root,
+        )
+        _run_deploy(args)
+        capsys.readouterr()  # discard output
+
+        expected_agents_dir = preview_root / "test-claude" / "agents"
+        assert expected_agents_dir.exists(), f"{expected_agents_dir} should exist"
+        assert (expected_agents_dir / "helper.md").exists()
+
+        # Original path should be untouched
+        assert not (original_target_dir / "agents").exists()
+
+    def test_deploy_target_root_uses_resolved_path(self, tmp_path, monkeypatch, capsys):
+        """target_root is resolved to an absolute path before remapping."""
+        src = _make_source(tmp_path)
+        tc = TargetConfig(id="tgt", type="claude", path=tmp_path / "orig")
+        (tmp_path / "orig").mkdir()
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        preview_root = tmp_path / "preview"
+        preview_root.mkdir()
+
+        args = argparse.Namespace(
+            verbose=False, quiet=False, dry_run=False,
+            target=None, only_type=None,
+            target_root=preview_root,
+        )
+        _run_deploy(args)
+        capsys.readouterr()
+
+        assert (preview_root / "tgt" / "agents" / "helper.md").exists()
+
+    def test_deploy_target_root_dry_run(self, tmp_path, monkeypatch, capsys):
+        """--target-root combined with --dry-run does not write files."""
+        src = _make_source(tmp_path)
+        tc = TargetConfig(id="tgt", type="claude", path=tmp_path / "orig")
+        (tmp_path / "orig").mkdir()
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        preview_root = tmp_path / "preview"
+        preview_root.mkdir()
+
+        args = argparse.Namespace(
+            verbose=False, quiet=False, dry_run=True,
+            target=None, only_type=None,
+            target_root=preview_root,
+        )
+        _run_deploy(args)
+        captured = capsys.readouterr()
+
+        assert "[dry-run]" in captured.out
+        # No actual files written
+        assert not (preview_root / "tgt").exists()
+
+
+class TestTargetRootStatus:
+    """Verify _run_status uses remapped paths when --target-root is set."""
+
+    def test_status_target_root_reads_from_remapped_path(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """Status reports items as new when target-root dir has no manifest."""
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        preview_root = tmp_path / "preview"
+
+        args = argparse.Namespace(target=None, target_root=preview_root)
+        _run_status(args)
+        captured = capsys.readouterr()
+
+        # preview dir doesn't exist → items show as new (A)
+        assert "A" in captured.out
+
+
+class TestTargetRootList:
+    """Verify _run_list uses remapped paths when --target-root is set."""
+
+    def test_list_target_root_shows_not_installed_for_missing_dir(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """With --target-root pointing at an empty dir, target shows not installed."""
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        preview_root = tmp_path / "preview"
+        # Don't create preview_root subdirs — they won't exist
+
+        args = argparse.Namespace(target=None, target_root=preview_root)
+        _run_list(args)
+        captured = capsys.readouterr()
+
+        assert "not installed" in captured.out
+
+    def test_list_target_root_shows_deployed_items(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """After deploying with target-root, list reads from the remapped location."""
+        src = _make_source(tmp_path)
+        original_dir = tmp_path / "original"
+        original_dir.mkdir()
+        tc = TargetConfig(id="test-claude", type="claude", path=original_dir)
+        config = _make_config(src, {tc.id: tc})
+
+        preview_root = tmp_path / "preview"
+        preview_root.mkdir()
+
+        # Deploy using target_root so files land in preview/test-claude/
+        deploy_args = argparse.Namespace(
+            verbose=False, quiet=False, dry_run=False,
+            target=None, only_type=None,
+            target_root=preview_root,
+        )
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+        _run_deploy(deploy_args)
+        capsys.readouterr()
+
+        # Now list using the same target_root
+        list_args = argparse.Namespace(target=None, target_root=preview_root)
+        _run_list(list_args)
+        captured = capsys.readouterr()
+
+        assert "test-claude:" in captured.out
+        assert "helper" in captured.out

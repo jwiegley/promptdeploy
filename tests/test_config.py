@@ -11,6 +11,7 @@ from promptdeploy.config import (
     expand_target_arg,
     find_config_file,
     load_config,
+    remap_targets_to_root,
 )
 
 SAMPLE_CONFIG = {
@@ -116,6 +117,55 @@ class TestLoadConfigDefaults:
         config = load_config()
         assert isinstance(config, Config)
         assert len(config.targets) == 3
+
+
+class TestRemapTargetsToRoot:
+    def test_remaps_all_target_paths(self, config: Config, tmp_path: Path) -> None:
+        root = tmp_path / "preview"
+        remapped = remap_targets_to_root(config, root)
+        assert remapped.targets["claude-personal"].path == root / "claude-personal"
+        assert remapped.targets["claude-positron"].path == root / "claude-positron"
+        assert remapped.targets["droid"].path == root / "droid"
+
+    def test_preserves_target_id_and_type(self, config: Config, tmp_path: Path) -> None:
+        root = tmp_path / "preview"
+        remapped = remap_targets_to_root(config, root)
+        tc = remapped.targets["droid"]
+        assert tc.id == "droid"
+        assert tc.type == "droid"
+
+    def test_preserves_source_root(self, config: Config, tmp_path: Path) -> None:
+        root = tmp_path / "preview"
+        remapped = remap_targets_to_root(config, root)
+        assert remapped.source_root == config.source_root
+
+    def test_preserves_groups(self, config: Config, tmp_path: Path) -> None:
+        root = tmp_path / "preview"
+        remapped = remap_targets_to_root(config, root)
+        assert remapped.groups == config.groups
+
+    def test_returns_new_config_instance(self, config: Config, tmp_path: Path) -> None:
+        root = tmp_path / "preview"
+        remapped = remap_targets_to_root(config, root)
+        assert remapped is not config
+
+    def test_original_config_unchanged(self, config: Config, tmp_path: Path) -> None:
+        original_paths = {tid: tc.path for tid, tc in config.targets.items()}
+        remap_targets_to_root(config, tmp_path / "preview")
+        for tid, path in original_paths.items():
+            assert config.targets[tid].path == path
+
+    def test_empty_targets(self, tmp_path: Path) -> None:
+        empty_config = Config(source_root=tmp_path, targets={}, groups={})
+        remapped = remap_targets_to_root(empty_config, tmp_path / "root")
+        assert remapped.targets == {}
+
+    def test_target_id_used_as_subdirectory_name(self, tmp_path: Path) -> None:
+        tc = TargetConfig(id="my-target", type="claude", path=Path("/some/original/path"))
+        cfg = Config(source_root=tmp_path, targets={"my-target": tc}, groups={})
+        root = tmp_path / "scratch"
+        remapped = remap_targets_to_root(cfg, root)
+        assert remapped.targets["my-target"].path == root / "my-target"
 
 
 class TestExpandTargetArg:

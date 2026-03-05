@@ -56,6 +56,35 @@ def load_config(config_path: Optional[Path] = None) -> Config:
     return Config(source_root=source_root, targets=targets, groups=groups)
 
 
+def remap_targets_to_root(config: Config, root: Path) -> Config:
+    """Return a new Config with all target paths remapped under root.
+
+    Each target's path is replaced with ``root / target_id``, allowing
+    deployment to be previewed in a scratch directory without touching real
+    configuration files.
+
+    Args:
+        config: The original configuration.
+        root: The directory under which all targets will be remapped.
+
+    Returns:
+        A new :class:`Config` instance with remapped target paths.
+
+    Example::
+
+        new_cfg = remap_targets_to_root(config, Path("/tmp/preview"))
+        # config.targets["claude-personal"].path == Path("/tmp/preview/claude-personal")
+    """
+    new_targets = {}
+    for tid, tc in config.targets.items():
+        new_targets[tid] = TargetConfig(id=tc.id, type=tc.type, path=root / tid)
+    return Config(
+        source_root=config.source_root,
+        targets=new_targets,
+        groups=config.groups,
+    )
+
+
 def expand_target_arg(
     targets_arg: Optional[List[str]], config: Config
 ) -> List[str]:

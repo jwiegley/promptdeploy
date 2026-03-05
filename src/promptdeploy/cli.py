@@ -1,5 +1,6 @@
 import argparse
 import sys
+from pathlib import Path
 
 from .config import load_config, expand_target_arg
 
@@ -27,6 +28,12 @@ def main():
     )
     deploy_parser.add_argument("--verbose", action="store_true", help="Verbose output")
     deploy_parser.add_argument("--quiet", action="store_true", help="Suppress output")
+    deploy_parser.add_argument(
+        "--target-root",
+        type=Path,
+        metavar="DIR",
+        help="Redirect all deployment output under DIR (using target IDs as subdirectories)",
+    )
 
     # validate subcommand
     subparsers.add_parser("validate", help="Validate source items and configuration")
@@ -36,11 +43,23 @@ def main():
     status_parser.add_argument(
         "--target", action="append", help="Target environment(s) to check"
     )
+    status_parser.add_argument(
+        "--target-root",
+        type=Path,
+        metavar="DIR",
+        help="Redirect all deployment output under DIR (using target IDs as subdirectories)",
+    )
 
     # list subcommand
     list_parser = subparsers.add_parser("list", help="List deployable items")
     list_parser.add_argument(
         "--target", action="append", help="Filter by target environment(s)"
+    )
+    list_parser.add_argument(
+        "--target-root",
+        type=Path,
+        metavar="DIR",
+        help="Redirect all deployment output under DIR (using target IDs as subdirectories)",
     )
 
     args = parser.parse_args()
@@ -71,6 +90,9 @@ def _run_deploy(args):
     out.start_timer()
 
     config = load_config()
+    if args.target_root:
+        from .config import remap_targets_to_root
+        config = remap_targets_to_root(config, args.target_root.resolve())
     target_ids = expand_target_arg(args.target, config)
 
     try:
@@ -129,6 +151,9 @@ def _run_status(args):
     from .status import get_status
 
     config = load_config()
+    if args.target_root:
+        from .config import remap_targets_to_root
+        config = remap_targets_to_root(config, args.target_root.resolve())
     target_ids = expand_target_arg(args.target, config)
     entries = get_status(config, target_ids)
     if not entries:
@@ -149,6 +174,9 @@ def _run_list(args):
     from .targets import create_target
 
     config = load_config()
+    if args.target_root:
+        from .config import remap_targets_to_root
+        config = remap_targets_to_root(config, args.target_root.resolve())
     target_ids = expand_target_arg(args.target, config)
 
     for target_id in target_ids:
