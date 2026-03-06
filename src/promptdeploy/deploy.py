@@ -129,6 +129,7 @@ def deploy(
     verbose: bool = False,
     quiet: bool = False,
     item_types: Optional[List[str]] = None,
+    force: bool = False,
 ) -> List[DeployAction]:
     """Deploy source items to targets.
 
@@ -139,6 +140,8 @@ def deploy(
         verbose: Print extra detail.
         quiet: Suppress output.
         item_types: CLI --only-type values (plural) to filter by.
+        force: If True, deploy all items regardless of checksum or
+            pre-existing state.
 
     Returns:
         List of DeployAction records describing what was done.
@@ -182,7 +185,7 @@ def deploy(
                 current_hash = _compute_hash(item)
                 deployed_names.add((category, item.name))
 
-                if has_changed(manifest, category, item.name, current_hash):
+                if force or has_changed(manifest, category, item.name, current_hash):
                     # Determine if create or update
                     is_update = (
                         category in manifest.items
@@ -190,7 +193,11 @@ def deploy(
                     )
 
                     # Detect pre-existing: new item but target already has something
-                    if not is_update and target.item_exists(item.item_type, item.name):
+                    if (
+                        not force
+                        and not is_update
+                        and target.item_exists(item.item_type, item.name)
+                    ):
                         actions.append(
                             DeployAction(
                                 action="pre-existing",

@@ -31,6 +31,11 @@ def main():
     deploy_parser.add_argument("--verbose", action="store_true", help="Verbose output")
     deploy_parser.add_argument("--quiet", action="store_true", help="Suppress output")
     deploy_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite items even when unchanged or pre-existing",
+    )
+    deploy_parser.add_argument(
         "--target-root",
         type=Path,
         metavar="DIR",
@@ -106,6 +111,7 @@ def _run_deploy(args):
             verbose=args.verbose,
             quiet=args.quiet,
             item_types=args.only_type,
+            force=args.force,
         )
     except FilterError as exc:
         out.error(str(exc))

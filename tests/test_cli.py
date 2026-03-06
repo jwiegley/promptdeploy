@@ -135,6 +135,7 @@ class TestRunDeploy:
             target=None,
             only_type=None,
             target_root=None,
+            force=False,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -154,6 +155,7 @@ class TestRunDeploy:
             target=None,
             only_type=None,
             target_root=None,
+            force=False,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -172,6 +174,7 @@ class TestRunDeploy:
             target=None,
             only_type=None,
             target_root=None,
+            force=False,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -191,6 +194,7 @@ class TestRunDeploy:
             target=None,
             only_type=None,
             target_root=None,
+            force=False,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -209,6 +213,7 @@ class TestRunDeploy:
             target=["test-claude"],
             only_type=None,
             target_root=None,
+            force=False,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -227,6 +232,7 @@ class TestRunDeploy:
             target=None,
             only_type=["agents"],
             target_root=None,
+            force=False,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -253,6 +259,7 @@ class TestRunDeploy:
             target=None,
             only_type=["hooks"],
             target_root=None,
+            force=False,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -281,6 +288,7 @@ class TestRunDeploy:
             target=None,
             only_type=None,
             target_root=None,
+            force=False,
         )
         with pytest.raises(SystemExit) as exc_info:
             _run_deploy(args)
@@ -304,6 +312,7 @@ class TestRunDeploy:
             target=None,
             only_type=None,
             target_root=None,
+            force=False,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -336,6 +345,7 @@ class TestRunDeploy:
             target=None,
             only_type=None,
             target_root=None,
+            force=False,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -357,11 +367,34 @@ class TestRunDeploy:
             target=None,
             only_type=None,
             target_root=None,
+            force=False,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
         # In verbose mode, skip actions show with space symbol
         assert "3 unchanged" in captured.out
+
+    def test_deploy_force_overwrites_unchanged(self, tmp_path, monkeypatch, capsys):
+        """--force causes unchanged items to be redeployed."""
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        deploy(config)
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=None,
+            force=True,
+        )
+        _run_deploy(args)
+        captured = capsys.readouterr()
+        assert "3 updated" in captured.out
+        assert "0 unchanged" in captured.out
 
 
 # ===================================================================
@@ -604,6 +637,7 @@ class TestTargetRootArgParsing:
         deploy_parser.add_argument("--only-type", action="append")
         deploy_parser.add_argument("--verbose", action="store_true")
         deploy_parser.add_argument("--quiet", action="store_true")
+        deploy_parser.add_argument("--force", action="store_true")
         deploy_parser.add_argument("--target-root", type=Path, metavar="DIR")
 
         status_parser = subparsers.add_parser("status")
@@ -668,6 +702,7 @@ class TestTargetRootDeploy:
             target=None,
             only_type=None,
             target_root=preview_root,
+            force=False,
         )
         _run_deploy(args)
         capsys.readouterr()  # discard output
@@ -697,6 +732,7 @@ class TestTargetRootDeploy:
             target=None,
             only_type=None,
             target_root=preview_root,
+            force=False,
         )
         _run_deploy(args)
         capsys.readouterr()
@@ -721,6 +757,7 @@ class TestTargetRootDeploy:
             target=None,
             only_type=None,
             target_root=preview_root,
+            force=False,
         )
         _run_deploy(args)
         captured = capsys.readouterr()
@@ -792,6 +829,7 @@ class TestTargetRootList:
             target=None,
             only_type=None,
             target_root=preview_root,
+            force=False,
         )
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
         _run_deploy(deploy_args)

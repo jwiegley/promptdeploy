@@ -508,3 +508,53 @@ class TestHookDeploy:
 
         removes = [a for a in actions if a.action == "remove"]
         assert any(a.name == "hook" and a.item_type == "hook" for a in removes)
+
+
+class TestForce:
+    """--force bypasses checksum and pre-existing checks."""
+
+    def test_force_redeploys_unchanged_items(self, tmp_path: Path):
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        deploy(config)
+        actions = deploy(config, force=True)
+
+        updates = [a for a in actions if a.action == "update"]
+        skips = [a for a in actions if a.action == "skip"]
+        assert len(updates) == 3
+        assert len(skips) == 0
+
+    def test_force_overwrites_pre_existing(self, tmp_path: Path):
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        agents_dir = tc.path / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "helper.md").write_text("I was here first")
+
+        actions = deploy(config, force=True)
+
+        creates = [a for a in actions if a.action == "create"]
+        pre = [a for a in actions if a.action == "pre-existing"]
+        assert any(a.name == "helper" for a in creates)
+        assert len(pre) == 0
+
+        # File should be overwritten
+        assert (agents_dir / "helper.md").read_text() != "I was here first"
+
+    def test_force_records_in_manifest(self, tmp_path: Path):
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        agents_dir = tc.path / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "helper.md").write_text("pre-existing")
+
+        deploy(config, force=True)
+
+        manifest = load_manifest(tc.path / MANIFEST_FILENAME)
+        assert "helper" in manifest.items.get("agents", {})
