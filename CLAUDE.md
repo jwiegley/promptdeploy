@@ -30,11 +30,13 @@ All content items support `only`/`except` filtering by target or group name (def
 3. **Discovery** (`source.py`) -- `SourceDiscovery` scans all 6 item types. `SourceItem` uses singular `item_type` (`agent`, `command`, `skill`, `mcp`, `models`, `hook`)
 4. **Filtering** (`filters.py`) -- `should_deploy_to()` evaluates `only`/`except` with group expansion
 5. **Deploy** (`deploy.py`) -- Orchestrates targets × items, computes SHA256 hashes, returns `List[DeployAction]`. Maps between naming conventions: `_TYPE_TO_CATEGORY` (singular→plural for manifests), `_CLI_TYPE_TO_ITEM_TYPE` (CLI plural→singular)
-6. **Targets** (`targets/`) -- Abstract `Target` ABC in `base.py`, three implementations:
+6. **Targets** (`targets/`) -- Abstract `Target` ABC in `base.py`, three local implementations + remote wrapper:
    - `claude.py` -- Writes `.md` files; merges MCP into `settings.json` `mcpServers`; merges hooks with `_source` tagging for independent group updates
    - `droid.py` -- Agents→`droids/`; commands skipped unless `droid_deploy: skill` in frontmatter; MCP→`mcp.json` with `type` field; models→`settings.json` `customModels` with provider-type formatting
    - `opencode.py` -- Standard layout; MCP→`opencode.json` with `command` as array, `environment` instead of `env`; models→`opencode.json` under `provider` key
-7. **Manifest** (`manifest.py`) -- SHA256 change detection. Atomic writes via `tempfile.mkstemp()` + `os.replace()`
+   - `remote.py` -- `RemoteTarget` wrapper; delegates to inner target operating on a local staging dir; syncs via rsync over SSH
+7. **SSH Transport** (`ssh.py`) -- `ssh_pull`/`ssh_push`/`ssh_exists` via `rsync -az --delete` and `ssh`. No Python SSH dependencies.
+8. **Manifest** (`manifest.py`) -- SHA256 change detection. Atomic writes via `tempfile.mkstemp()` + `os.replace()`
 
 ### Key Patterns
 
@@ -44,6 +46,7 @@ All content items support `only`/`except` filtering by target or group name (def
 - **Environment variable handling** -- `envsubst.py` expands `${VAR}` from `os.environ`. Claude target passes `${VAR}` through verbatim (runtime expansion); Droid/OpenCode expand at deploy time.
 - **Frontmatter transformation** -- `frontmatter.py` `transform_for_target()` strips deployment metadata (`only`/`except`) before writing to targets.
 - **Models filtering** -- `only`/`except` applies at both provider and individual model level.
+- **Remote deployment** -- Targets with `host:` in `deploy.yaml` are deployed via rsync over SSH. The `Target` ABC has `prepare()`/`finalize()`/`cleanup()` lifecycle hooks (no-ops for local targets). `RemoteTarget` wraps any inner target, using a local staging dir: `prepare()` pulls remote state, `finalize()` pushes back. Path `~` expansion is skipped for remote targets (rsync expands `~` on the remote). `--target-root` strips `host` to force local preview.
 
 ## Development Commands
 
@@ -81,7 +84,7 @@ The Nix dev shell also provides `mypy` and `ruff`, configured in `pyproject.toml
 
 ## deploy.yaml
 
-Defines 5 targets in 1 group. `--target claude` expands to `claude-personal`, `claude-positron`, `claude-git-ai`. Target types: `claude`, `droid`, `opencode`.
+Defines 8 targets classified by labels: `claude`, `personal`, `positron`, `local`, `remote`. Labels on targets auto-generate groups (merged with explicit groups). `--target positron` expands to `claude-positron` + `claude-andoria`. Target types: `claude`, `droid`, `opencode`. Remote targets add `host:` field.
 
 ## Environment Variables
 
