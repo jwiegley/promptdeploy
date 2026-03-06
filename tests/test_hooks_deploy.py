@@ -160,6 +160,38 @@ class TestDeployHook:
                 assert "_source" in entry
                 assert entry["_source"] == "git-ai"
 
+    def test_deploy_removes_pre_existing_duplicates(self, tmp_path: Path):
+        """Pre-existing entries without _source that match new entries are removed."""
+        target = _make_target(tmp_path)
+        settings_path = tmp_path / ".claude" / "settings.json"
+
+        # Simulate a manually-installed hook (no _source tag)
+        manual_hooks = {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": "Write|Edit|MultiEdit",
+                        "hooks": [
+                            {
+                                "command": "git-ai checkpoint claude --hook-input stdin",
+                                "type": "command",
+                            }
+                        ],
+                    }
+                ]
+            }
+        }
+        settings_path.write_text(json.dumps(manual_hooks))
+
+        # Deploy the same hook via promptdeploy
+        target.deploy_hook("git-ai", _GIT_AI_CONFIG)
+
+        settings = json.loads(settings_path.read_text())
+        post = settings["hooks"]["PostToolUse"]
+        # Should have exactly one entry (with _source), not two
+        assert len(post) == 1
+        assert post[0]["_source"] == "git-ai"
+
     def test_deploy_no_hooks_key_in_config(self, tmp_path: Path):
         """When config has no 'hooks' key, nothing is written to hooks."""
         target = _make_target(tmp_path)

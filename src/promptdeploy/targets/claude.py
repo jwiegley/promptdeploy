@@ -96,12 +96,19 @@ class ClaudeTarget(Target):
         for event_type in empty_event_types:
             del settings_hooks[event_type]
 
-        # Add new entries with _source tag
+        # Add new entries with _source tag, removing any pre-existing
+        # duplicates that match ignoring the _source field.
         for event_type, matchers in hooks_config.items():
             event_list = settings_hooks.setdefault(event_type, [])
             for entry in matchers:
                 new_entry = dict(entry)
                 new_entry["_source"] = name
+                content = {k: v for k, v in new_entry.items() if k != "_source"}
+                event_list[:] = [
+                    e
+                    for e in event_list
+                    if {k: v for k, v in e.items() if k != "_source"} != content
+                ]
                 event_list.append(new_entry)
 
         if not settings_hooks:
