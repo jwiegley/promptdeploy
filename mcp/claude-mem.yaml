@@ -3,7 +3,7 @@ description: Semantic memory search for Claude sessions
 command: /etc/profiles/per-user/johnw/bin/mcp-server-claude-mem
 args: []
 env:
-  CLAUDE_MEM_DB: "${HOME}/.claude-mem/db.sqlite"
+  CLAUDE_MEM_DB: "${HOME}/.claude-mem/claude-mem.db"
 scope: user
 enabled: true
 except:
