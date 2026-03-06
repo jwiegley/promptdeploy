@@ -87,6 +87,17 @@ class TestSSHExists:
         with patch("promptdeploy.ssh.subprocess.run", return_value=result):
             assert ssh_exists("user@host", Path("/remote/path")) is False
 
+    def test_raises_on_connection_failure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("shutil.which", lambda tool: f"/usr/bin/{tool}")
+        result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(
+            args=[], returncode=255, stderr=b"Could not resolve hostname"
+        )
+        with patch("promptdeploy.ssh.subprocess.run", return_value=result):
+            with pytest.raises(SSHError, match="SSH connection to .* failed"):
+                ssh_exists("user@host", Path("/remote/path"))
+
 
 class TestSSHPull:
     def test_creates_local_dir_and_syncs(

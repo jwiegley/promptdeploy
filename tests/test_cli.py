@@ -575,7 +575,8 @@ class TestCliMainGuard:
         src = _make_source(tmp_path)
         tc = _make_claude_target(tmp_path)
         config = _make_config(src, {tc.id: tc})
-        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+        # Patch at the config module level so runpy re-imports pick it up
+        monkeypatch.setattr("promptdeploy.config.load_config", lambda *a, **kw: config)
         monkeypatch.setattr("sys.argv", ["promptdeploy", "deploy", "--dry-run"])
         # Run the module as __main__
         runpy.run_module("promptdeploy.cli", run_name="__main__")

@@ -39,12 +39,20 @@ def _check_tools() -> None:
 
 
 def ssh_exists(host: str, remote_path: Path) -> bool:
-    """Check if a directory exists on a remote host."""
+    """Check if a directory exists on a remote host.
+
+    Raises SSHError if the host is unreachable (returncode 255).
+    Returns False only when the host is reachable but the directory
+    does not exist.
+    """
     _check_tools()
     result = subprocess.run(
         ["ssh", *_SSH_OPTS, host, "test", "-d", str(remote_path)],
         capture_output=True,
     )
+    if result.returncode == 255:
+        stderr = result.stderr.decode(errors="replace").strip() if result.stderr else ""
+        raise SSHError(f"SSH connection to {host} failed: {stderr}")
     return result.returncode == 0
 
 
