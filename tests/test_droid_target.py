@@ -101,6 +101,21 @@ class TestRemoveCommand:
         target.remove_command("fix")
         assert not (tmp_path / ".droid" / "skills" / "fix").exists()
 
+    def test_removes_symlinked_command(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        real_dir = tmp_path / "real-cmd"
+        real_dir.mkdir()
+
+        dest = tmp_path / ".droid" / "skills" / "cmd"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.symlink_to(real_dir)
+
+        target.remove_command("cmd")
+        assert not dest.exists()
+        assert not dest.is_symlink()
+        # Original directory should be untouched
+        assert real_dir.is_dir()
+
     def test_no_error_if_missing(self, tmp_path: Path):
         target = _make_target(tmp_path)
         target.remove_command("nonexistent")
@@ -149,6 +164,27 @@ class TestDeploySkill:
         target.deploy_skill("s", src_v2)
         assert (tmp_path / ".droid" / "skills" / "s" / "SKILL.md").read_bytes() == b"v2"
 
+    def test_overwrites_symlinked_skill(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+
+        # Create a symlink where the skill directory would be deployed.
+        real_dir = tmp_path / "real-skill"
+        real_dir.mkdir()
+        (real_dir / "SKILL.md").write_bytes(b"old")
+
+        dest = tmp_path / ".droid" / "skills" / "s"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.symlink_to(real_dir)
+
+        src = tmp_path / "new-skill"
+        src.mkdir()
+        (src / "SKILL.md").write_bytes(b"new")
+
+        target.deploy_skill("s", src)
+        assert dest.is_dir()
+        assert not dest.is_symlink()
+        assert (dest / "SKILL.md").read_bytes() == b"new"
+
 
 class TestRemoveSkill:
     def test_removes_existing(self, tmp_path: Path):
@@ -159,6 +195,21 @@ class TestRemoveSkill:
         target.deploy_skill("s", src)
         target.remove_skill("s")
         assert not (tmp_path / ".droid" / "skills" / "s").exists()
+
+    def test_removes_symlinked_skill(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        real_dir = tmp_path / "real-skill"
+        real_dir.mkdir()
+
+        dest = tmp_path / ".droid" / "skills" / "s"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.symlink_to(real_dir)
+
+        target.remove_skill("s")
+        assert not dest.exists()
+        assert not dest.is_symlink()
+        # Original directory should be untouched
+        assert real_dir.is_dir()
 
     def test_no_error_if_missing(self, tmp_path: Path):
         target = _make_target(tmp_path)
@@ -615,6 +666,47 @@ class TestRemoveModels:
         assert "customModels" not in settings
         assert settings["theme"] == "light"
         assert settings["fontSize"] == 12
+
+
+class TestItemExists:
+    def test_agent_exists(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("agent", "a")
+        target.deploy_agent("a", b"content")
+        assert target.item_exists("agent", "a")
+
+    def test_skill_exists(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("skill", "s")
+        src = tmp_path / "src-skill"
+        src.mkdir()
+        (src / "SKILL.md").write_bytes(b"body")
+        target.deploy_skill("s", src)
+        assert target.item_exists("skill", "s")
+
+    def test_skill_symlink_exists(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        real_dir = tmp_path / "real-skill"
+        real_dir.mkdir()
+        dest = tmp_path / ".droid" / "skills" / "s"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.symlink_to(real_dir)
+        assert target.item_exists("skill", "s")
+
+    def test_command_exists(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("command", "c")
+        content = b"---\nname: c\ndroid_deploy: skill\n---\nBody.\n"
+        target.deploy_command("c", content)
+        assert target.item_exists("command", "c")
+
+    def test_mcp_returns_false(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("mcp", "srv")
+
+    def test_models_returns_false(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("models", "m")
 
 
 class TestTargetProperties:

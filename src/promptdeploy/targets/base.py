@@ -47,4 +47,13 @@ class Target(ABC):
     def remove_hook(self, name: str) -> None: ...
 
     @abstractmethod
+    def item_exists(self, item_type: str, name: str) -> bool:
+        """Check if an item already exists at the deploy target path.
+
+        Used to detect pre-existing items that were not deployed by
+        promptdeploy and should not be overwritten or removed.
+        """
+        ...
+
+    @abstractmethod
     def manifest_path(self) -> Path: ...

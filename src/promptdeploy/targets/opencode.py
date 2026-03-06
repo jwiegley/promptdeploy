@@ -51,7 +51,9 @@ class OpenCodeTarget(Target):
 
     def deploy_skill(self, name: str, source_dir: Path) -> None:
         dest = self._config_path / "skills" / name
-        if dest.exists():
+        if dest.is_symlink():
+            dest.unlink()
+        elif dest.exists():
             shutil.rmtree(dest)
         shutil.copytree(source_dir.resolve(), dest, symlinks=False)
         skill_md = dest / "SKILL.md"
@@ -166,7 +168,9 @@ class OpenCodeTarget(Target):
 
     def remove_skill(self, name: str) -> None:
         dest = self._config_path / "skills" / name
-        if dest.exists():
+        if dest.is_symlink():
+            dest.unlink()
+        elif dest.exists():
             shutil.rmtree(dest)
 
     def remove_models(self) -> None:
@@ -184,6 +188,20 @@ class OpenCodeTarget(Target):
         data = self._load_json(path)
         data.get("mcp", {}).pop(name, None)
         self._save_json(path, data)
+
+    # ------------------------------------------------------------------
+    # Pre-existing detection
+    # ------------------------------------------------------------------
+
+    def item_exists(self, item_type: str, name: str) -> bool:
+        if item_type == "agent":
+            return (self._config_path / "agents" / f"{name}.md").exists()
+        if item_type == "command":
+            return (self._config_path / "commands" / f"{name}.md").exists()
+        if item_type == "skill":
+            dest = self._config_path / "skills" / name
+            return dest.exists() or dest.is_symlink()
+        return False
 
     # ------------------------------------------------------------------
     # Helpers

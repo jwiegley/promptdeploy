@@ -357,6 +357,46 @@ class TestSaveJsonError:
                     target.deploy_mcp_server("srv", {"command": "echo"})
 
 
+class TestItemExists:
+    def test_agent_exists(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("agent", "a")
+        target.deploy_agent("a", b"content")
+        assert target.item_exists("agent", "a")
+
+    def test_command_exists(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("command", "c")
+        target.deploy_command("c", b"content")
+        assert target.item_exists("command", "c")
+
+    def test_skill_exists(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("skill", "s")
+        src = tmp_path / "src-skill"
+        src.mkdir()
+        (src / "SKILL.md").write_bytes(b"body")
+        target.deploy_skill("s", src)
+        assert target.item_exists("skill", "s")
+
+    def test_skill_symlink_exists(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        real_dir = tmp_path / "real-skill"
+        real_dir.mkdir()
+        dest = tmp_path / ".claude" / "skills" / "s"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.symlink_to(real_dir)
+        assert target.item_exists("skill", "s")
+
+    def test_mcp_returns_false(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("mcp", "srv")
+
+    def test_models_returns_false(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("models", "m")
+
+
 class TestTargetProperties:
     def test_id(self, tmp_path: Path):
         target = ClaudeTarget("my-id", tmp_path)

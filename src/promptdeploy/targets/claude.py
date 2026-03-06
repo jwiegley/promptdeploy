@@ -160,6 +160,20 @@ class ClaudeTarget(Target):
         self._save_json(path, settings)
 
     # ------------------------------------------------------------------
+    # Pre-existing detection
+    # ------------------------------------------------------------------
+
+    def item_exists(self, item_type: str, name: str) -> bool:
+        if item_type == "agent":
+            return (self._config_path / "agents" / f"{name}.md").exists()
+        if item_type == "command":
+            return (self._config_path / "commands" / f"{name}.md").exists()
+        if item_type == "skill":
+            dest = self._config_path / "skills" / name
+            return dest.exists() or dest.is_symlink()
+        return False
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
