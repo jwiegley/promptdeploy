@@ -405,6 +405,66 @@ class TestUnmanagedFiles:
         assert unmanaged.read_text() == "my custom agent"
 
 
+class TestPreExisting:
+    """Pre-existing items at the target are not overwritten."""
+
+    def test_pre_existing_agent_skipped(self, tmp_path: Path):
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        # Place a pre-existing agent file before first deploy
+        agents_dir = tc.path / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "helper.md").write_text("I was here first")
+
+        actions = deploy(config)
+
+        pre = [a for a in actions if a.action == "pre-existing"]
+        assert len(pre) == 1
+        assert pre[0].name == "helper"
+        assert pre[0].item_type == "agent"
+
+        # Pre-existing file should not be overwritten
+        assert (agents_dir / "helper.md").read_text() == "I was here first"
+
+    def test_pre_existing_skill_symlink_skipped(self, tmp_path: Path):
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        # Place a pre-existing symlink for the skill
+        skills_dir = tc.path / "skills"
+        skills_dir.mkdir(parents=True)
+        real_dir = tmp_path / "real-skill"
+        real_dir.mkdir()
+        (skills_dir / "my-skill").symlink_to(real_dir)
+
+        actions = deploy(config)
+
+        pre = [a for a in actions if a.action == "pre-existing"]
+        assert any(a.name == "my-skill" for a in pre)
+
+        # Symlink should be left alone
+        assert (skills_dir / "my-skill").is_symlink()
+
+    def test_pre_existing_not_in_manifest(self, tmp_path: Path):
+        """Pre-existing items are not recorded in the manifest."""
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        agents_dir = tc.path / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "helper.md").write_text("pre-existing")
+
+        deploy(config)
+
+        manifest = load_manifest(tc.path / MANIFEST_FILENAME)
+        # helper was pre-existing, should not be in manifest
+        assert "helper" not in manifest.items.get("agents", {})
+
+
 class TestHookDeploy:
     """Deploy hook items through the deploy orchestration."""
 

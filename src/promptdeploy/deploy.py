@@ -183,6 +183,20 @@ def deploy(
                 is_update = (
                     category in manifest.items and item.name in manifest.items[category]
                 )
+
+                # Detect pre-existing: new item but target already has something
+                if not is_update and target.item_exists(item.item_type, item.name):
+                    actions.append(
+                        DeployAction(
+                            action="pre-existing",
+                            item_type=item.item_type,
+                            name=item.name,
+                            target_id=target_id,
+                            source_path=str(item.path),
+                        )
+                    )
+                    continue
+
                 action_type = "update" if is_update else "create"
 
                 if not dry_run:

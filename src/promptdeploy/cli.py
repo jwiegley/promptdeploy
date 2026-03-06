@@ -112,7 +112,13 @@ def _run_deploy(args):
         sys.exit(1)
 
     prefix = "[dry-run] " if args.dry_run else ""
-    symbols = {"create": "A", "update": "M", "remove": "D", "skip": " "}
+    symbols = {
+        "create": "A",
+        "update": "M",
+        "remove": "D",
+        "skip": " ",
+        "pre-existing": "P",
+    }
 
     for act in actions:
         if act.action == "skip" and verbosity < Verbosity.VERBOSE:
@@ -124,7 +130,10 @@ def _run_deploy(args):
     updated = sum(1 for a in actions if a.action == "update")
     removed = sum(1 for a in actions if a.action == "remove")
     skipped = sum(1 for a in actions if a.action == "skip")
-    out.summary(created, updated, removed, skipped, prefix=prefix)
+    pre_existing = sum(1 for a in actions if a.action == "pre-existing")
+    out.summary(
+        created, updated, removed, skipped, pre_existing=pre_existing, prefix=prefix
+    )
 
 
 def _run_validate():

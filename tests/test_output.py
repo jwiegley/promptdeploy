@@ -101,6 +101,18 @@ class TestOutputSummary:
         captured = capsys.readouterr()
         assert "[dry-run]" in captured.out
 
+    def test_pre_existing_shown_when_nonzero(self, capsys) -> None:
+        out = Output(Verbosity.NORMAL)
+        out.summary(1, 0, 0, 2, pre_existing=3)
+        captured = capsys.readouterr()
+        assert "3 pre-existing" in captured.out
+
+    def test_pre_existing_hidden_when_zero(self, capsys) -> None:
+        out = Output(Verbosity.NORMAL)
+        out.summary(1, 0, 0, 2, pre_existing=0)
+        captured = capsys.readouterr()
+        assert "pre-existing" not in captured.out
+
 
 class TestTimer:
     def test_elapsed_none_without_start(self) -> None:

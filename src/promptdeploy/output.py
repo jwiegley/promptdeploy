@@ -61,6 +61,7 @@ class Output:
         removed: int,
         skipped: int,
         prefix: str = "",
+        pre_existing: int = 0,
     ) -> None:
         if self.verbosity == Verbosity.QUIET:
             return
@@ -68,6 +69,8 @@ class Output:
             f"{prefix}{created} created, {updated} updated, "
             f"{removed} removed, {skipped} unchanged"
         )
+        if pre_existing:
+            parts += f", {pre_existing} pre-existing"
         elapsed = self.elapsed()
         if elapsed is not None and self.verbosity == Verbosity.VERBOSE:
             parts += f" ({elapsed:.2f}s)"

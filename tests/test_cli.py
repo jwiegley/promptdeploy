@@ -316,6 +316,32 @@ class TestRunDeploy:
         ]
         assert len(lines) == 0
 
+    def test_deploy_pre_existing_shown(self, tmp_path, monkeypatch, capsys):
+        """Pre-existing items show with P symbol."""
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        # Place a pre-existing agent file
+        agents_dir = tc.path / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "helper.md").write_text("pre-existing")
+
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=None,
+        )
+        _run_deploy(args)
+        captured = capsys.readouterr()
+        assert "P" in captured.out
+        assert "1 pre-existing" in captured.out
+
     def test_deploy_skip_shown_in_verbose(self, tmp_path, monkeypatch, capsys):
         """Skipped items are shown in verbose mode."""
         src = _make_source(tmp_path)
