@@ -1,6 +1,5 @@
 Remember the following:
 
-- Use the claude-code skill to provide context for the rest of the task
 - Use the GitHub CLI (`gh`) for all GitHub-related tasks
 - Search the codebase for relevant files
 - Ensure code passes linting and type checking after doing any work

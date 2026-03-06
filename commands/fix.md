@@ -23,7 +23,6 @@ NOTE: Do not work on a bug that already has a PR open that addresses it. In that
 7. Leave your work uncommitted in the working tree, so it can be reviewed.
 
 Remember the following:
-- Use the claude-code skill to provide context for the rest of the task
 - Use the GitHub CLI (`gh`) for all GitHub-related tasks
 - Search the codebase for relevant files
 - Ensure code passes linting and type checking after doing any work
