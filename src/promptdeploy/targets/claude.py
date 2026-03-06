@@ -183,6 +183,17 @@ class ClaudeTarget(Target):
         if item_type == "skill":
             dest = self._config_path / "skills" / name
             return dest.exists() or dest.is_symlink()
+        if item_type == "hook":
+            settings = self._load_json(self._settings_path())
+            hooks = settings.get("hooks")
+            if not isinstance(hooks, dict):
+                return False
+            return any(
+                e.get("_source") == name for entries in hooks.values() for e in entries
+            )
+        if item_type == "mcp":
+            settings = self._load_json(self._settings_path())
+            return name in settings.get("mcpServers", {})
         return False
 
     # ------------------------------------------------------------------

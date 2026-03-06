@@ -388,9 +388,48 @@ class TestItemExists:
         dest.symlink_to(real_dir)
         assert target.item_exists("skill", "s")
 
-    def test_mcp_returns_false(self, tmp_path: Path):
+    def test_mcp_not_exists(self, tmp_path: Path):
         target = _make_target(tmp_path)
         assert not target.item_exists("mcp", "srv")
+
+    def test_mcp_exists_after_deploy(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_mcp_server("srv", {"name": "srv", "command": "echo"})
+        assert target.item_exists("mcp", "srv")
+
+    def test_hook_not_exists(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("hook", "myhook")
+
+    def test_hook_exists_after_deploy(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": "Write",
+                        "hooks": [{"command": "echo", "type": "command"}],
+                    }
+                ]
+            }
+        }
+        target.deploy_hook("myhook", config)
+        assert target.item_exists("hook", "myhook")
+
+    def test_hook_not_exists_different_source(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": "Write",
+                        "hooks": [{"command": "echo", "type": "command"}],
+                    }
+                ]
+            }
+        }
+        target.deploy_hook("other", config)
+        assert not target.item_exists("hook", "myhook")
 
     def test_models_returns_false(self, tmp_path: Path):
         target = _make_target(tmp_path)
