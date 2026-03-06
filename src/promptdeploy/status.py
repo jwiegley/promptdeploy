@@ -12,9 +12,9 @@ from .manifest import (
     compute_file_hash,
     has_changed,
     load_manifest,
-    MANIFEST_FILENAME,
 )
 from .source import SourceDiscovery, SourceItem
+from .targets import create_target
 
 
 @dataclass
@@ -52,35 +52,45 @@ def get_status(
 
     for target_id in target_ids:
         target_config = config.targets[target_id]
-        manifest = load_manifest(target_config.path / MANIFEST_FILENAME)
+        target = create_target(target_config)
+        try:
+            target.prepare()
+            manifest = load_manifest(target.manifest_path())
 
-        deployed_names: set[tuple[str, str]] = set()
-        for item in items:
-            if not should_deploy_to(target_id, item.metadata, config, str(item.path)):
-                continue
+            deployed_names: set[tuple[str, str]] = set()
+            for item in items:
+                if not should_deploy_to(
+                    target_id, item.metadata, config, str(item.path)
+                ):
+                    continue
 
-            category = _TYPE_TO_CATEGORY[item.item_type]
-            current_hash = _compute_hash(item)
-            deployed_names.add((category, item.name))
+                category = _TYPE_TO_CATEGORY[item.item_type]
+                current_hash = _compute_hash(item)
+                deployed_names.add((category, item.name))
 
-            if has_changed(manifest, category, item.name, current_hash):
-                if category in manifest.items and item.name in manifest.items[category]:
-                    state = "changed"
+                if has_changed(manifest, category, item.name, current_hash):
+                    if (
+                        category in manifest.items
+                        and item.name in manifest.items[category]
+                    ):
+                        state = "changed"
+                    else:
+                        state = "new"
                 else:
-                    state = "new"
-            else:
-                state = "current"
+                    state = "current"
 
-            entries.append(StatusEntry(item.item_type, item.name, target_id, state))
+                entries.append(StatusEntry(item.item_type, item.name, target_id, state))
 
-        # Check for items in manifest but no longer in source (pending removal)
-        for category, items_dict in manifest.items.items():
-            for name in items_dict:
-                if (category, name) not in deployed_names:
-                    item_type = _CATEGORY_TO_TYPE.get(category, category)
-                    entries.append(
-                        StatusEntry(item_type, name, target_id, "pending_removal")
-                    )
+            # Check for items in manifest but no longer in source
+            for category, items_dict in manifest.items.items():
+                for name in items_dict:
+                    if (category, name) not in deployed_names:
+                        item_type = _CATEGORY_TO_TYPE.get(category, category)
+                        entries.append(
+                            StatusEntry(item_type, name, target_id, "pending_removal")
+                        )
+        finally:
+            target.cleanup()
 
     return entries
 

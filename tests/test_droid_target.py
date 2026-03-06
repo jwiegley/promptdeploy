@@ -730,6 +730,18 @@ class TestTargetProperties:
         target = DroidTarget("t", config)
         assert target.manifest_path() == config / MANIFEST_FILENAME
 
+    def test_rsync_includes(self, tmp_path: Path):
+        config = tmp_path / ".droid"
+        config.mkdir()
+        target = DroidTarget("t", config)
+        includes = target.rsync_includes()
+        assert includes is not None
+        assert "droids/" in includes
+        assert "droids/**" in includes
+        assert "skills/" in includes
+        assert "mcp.json" in includes
+        assert MANIFEST_FILENAME in includes
+
 
 # ------------------------------------------------------------------
 # Hooks (no-op for Droid)

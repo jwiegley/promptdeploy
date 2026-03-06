@@ -170,6 +170,215 @@ class TestRemapTargetsToRoot:
         assert remapped.targets["my-target"].path == root / "my-target"
 
 
+class TestHostField:
+    def test_host_preserved_in_target_config(self, tmp_path: Path) -> None:
+        data = {
+            "source_root": ".",
+            "targets": {
+                "remote-claude": {
+                    "type": "claude",
+                    "path": "/remote/path",
+                    "host": "user@server",
+                },
+            },
+            "groups": {},
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        tc = config.targets["remote-claude"]
+        assert tc.host == "user@server"
+        assert tc.path == Path("/remote/path")
+
+    def test_path_not_expanded_when_host_set(self, tmp_path: Path) -> None:
+        data = {
+            "source_root": ".",
+            "targets": {
+                "remote-claude": {
+                    "type": "claude",
+                    "path": "~/.config/claude",
+                    "host": "user@server",
+                },
+            },
+            "groups": {},
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        tc = config.targets["remote-claude"]
+        # Path should NOT be expanded when host is set
+        assert str(tc.path) == "~/.config/claude"
+
+    def test_path_expanded_when_host_not_set(self, tmp_path: Path) -> None:
+        data = {
+            "source_root": ".",
+            "targets": {
+                "local-claude": {
+                    "type": "claude",
+                    "path": "~/.config/claude",
+                },
+            },
+            "groups": {},
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        tc = config.targets["local-claude"]
+        home = Path.home()
+        assert tc.path == home / ".config" / "claude"
+
+    def test_host_defaults_to_none(self, config: Config) -> None:
+        for tc in config.targets.values():
+            assert tc.host is None
+
+    def test_remap_strips_host(self, tmp_path: Path) -> None:
+        tc = TargetConfig(
+            id="remote", type="claude", path=Path("/remote/path"), host="user@server"
+        )
+        cfg = Config(source_root=tmp_path, targets={"remote": tc}, groups={})
+        remapped = remap_targets_to_root(cfg, tmp_path / "preview")
+        assert remapped.targets["remote"].host is None
+
+
+class TestLabels:
+    def test_labels_loaded_from_config(self, tmp_path: Path) -> None:
+        data = {
+            "source_root": ".",
+            "targets": {
+                "t1": {
+                    "type": "claude",
+                    "path": str(tmp_path / "t1"),
+                    "labels": ["personal", "local"],
+                },
+            },
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        assert config.targets["t1"].labels == ["personal", "local"]
+
+    def test_labels_default_to_empty(self, tmp_path: Path) -> None:
+        data = {
+            "source_root": ".",
+            "targets": {
+                "t1": {"type": "claude", "path": str(tmp_path / "t1")},
+            },
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        assert config.targets["t1"].labels == []
+
+    def test_labels_generate_groups(self, tmp_path: Path) -> None:
+        data = {
+            "source_root": ".",
+            "targets": {
+                "t1": {
+                    "type": "claude",
+                    "path": str(tmp_path / "t1"),
+                    "labels": ["personal", "claude"],
+                },
+                "t2": {
+                    "type": "claude",
+                    "path": str(tmp_path / "t2"),
+                    "labels": ["positron", "claude"],
+                },
+            },
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        assert "personal" in config.groups
+        assert config.groups["personal"] == ["t1"]
+        assert "positron" in config.groups
+        assert config.groups["positron"] == ["t2"]
+        assert set(config.groups["claude"]) == {"t1", "t2"}
+
+    def test_labels_merge_with_explicit_groups(self, tmp_path: Path) -> None:
+        data = {
+            "source_root": ".",
+            "targets": {
+                "t1": {
+                    "type": "claude",
+                    "path": str(tmp_path / "t1"),
+                    "labels": ["mygroup"],
+                },
+                "t2": {
+                    "type": "claude",
+                    "path": str(tmp_path / "t2"),
+                },
+            },
+            "groups": {
+                "mygroup": ["t2"],
+            },
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        assert set(config.groups["mygroup"]) == {"t1", "t2"}
+
+    def test_labels_no_duplicates_in_groups(self, tmp_path: Path) -> None:
+        """If a target is already in an explicit group, labels don't duplicate it."""
+        data = {
+            "source_root": ".",
+            "targets": {
+                "t1": {
+                    "type": "claude",
+                    "path": str(tmp_path / "t1"),
+                    "labels": ["mygroup"],
+                },
+            },
+            "groups": {
+                "mygroup": ["t1"],
+            },
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        assert config.groups["mygroup"] == ["t1"]
+
+    def test_labels_work_with_expand_target_arg(self, tmp_path: Path) -> None:
+        data = {
+            "source_root": ".",
+            "targets": {
+                "t1": {
+                    "type": "claude",
+                    "path": str(tmp_path / "t1"),
+                    "labels": ["personal"],
+                },
+                "t2": {
+                    "type": "claude",
+                    "path": str(tmp_path / "t2"),
+                    "labels": ["positron"],
+                },
+            },
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        result = expand_target_arg(["positron"], config)
+        assert result == ["t2"]
+
+    def test_remap_preserves_labels(self, tmp_path: Path) -> None:
+        tc = TargetConfig(id="t1", type="claude", path=Path("/orig"), labels=["a", "b"])
+        cfg = Config(source_root=tmp_path, targets={"t1": tc}, groups={})
+        remapped = remap_targets_to_root(cfg, tmp_path / "root")
+        assert remapped.targets["t1"].labels == ["a", "b"]
+
+    def test_target_config_labels_default(self) -> None:
+        tc = TargetConfig(id="t", type="claude", path=Path("/p"))
+        assert tc.labels == []
+
+
 class TestExpandTargetArg:
     def test_none_returns_all(self, config: Config) -> None:
         result = expand_target_arg(None, config)

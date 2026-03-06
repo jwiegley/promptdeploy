@@ -196,42 +196,46 @@ def _run_list(args):
     for target_id in target_ids:
         target_config = config.targets[target_id]
         target = create_target(target_config)
+        try:
+            target.prepare()
 
-        if not target.exists():
-            print(f"{target_id} (not installed)")
-            continue
-
-        manifest = load_manifest(target.manifest_path())
-        total = sum(len(items) for items in manifest.items.values())
-
-        if total == 0:
-            print(f"{target_id}: no managed items")
-            continue
-
-        print(f"{target_id}:")
-        category_labels = {
-            "agents": "Agents",
-            "commands": "Commands",
-            "skills": "Skills",
-            "mcp_servers": "MCP Servers",
-            "models": "Models",
-            "hooks": "Hooks",
-        }
-        for category in (
-            "agents",
-            "commands",
-            "skills",
-            "mcp_servers",
-            "models",
-            "hooks",
-        ):
-            items = manifest.items.get(category, {})
-            if not items:
+            if not target.exists():
+                print(f"{target_id} (not installed)")
                 continue
-            label = category_labels.get(category, category)
-            print(f"  {label}:")
-            for name in sorted(items):
-                print(f"    - {name}")
+
+            manifest = load_manifest(target.manifest_path())
+            total = sum(len(items) for items in manifest.items.values())
+
+            if total == 0:
+                print(f"{target_id}: no managed items")
+                continue
+
+            print(f"{target_id}:")
+            category_labels = {
+                "agents": "Agents",
+                "commands": "Commands",
+                "skills": "Skills",
+                "mcp_servers": "MCP Servers",
+                "models": "Models",
+                "hooks": "Hooks",
+            }
+            for category in (
+                "agents",
+                "commands",
+                "skills",
+                "mcp_servers",
+                "models",
+                "hooks",
+            ):
+                items = manifest.items.get(category, {})
+                if not items:
+                    continue
+                label = category_labels.get(category, category)
+                print(f"  {label}:")
+                for name in sorted(items):
+                    print(f"    - {name}")
+        finally:
+            target.cleanup()
 
 
 if __name__ == "__main__":

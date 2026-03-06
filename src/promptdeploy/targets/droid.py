@@ -35,6 +35,17 @@ class DroidTarget(Target):
     def manifest_path(self) -> Path:
         return self._config_path / MANIFEST_FILENAME
 
+    def rsync_includes(self) -> list[str] | None:
+        return [
+            "droids/",
+            "droids/**",
+            "skills/",
+            "skills/**",
+            "settings.json",
+            "mcp.json",
+            MANIFEST_FILENAME,
+        ]
+
     # ------------------------------------------------------------------
     # Deploy
     # ------------------------------------------------------------------

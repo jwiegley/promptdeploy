@@ -68,7 +68,9 @@
             touch $out
           '';
 
-          pytest = pkgs.runCommand "pytest" { nativeBuildInputs = [ pythonWithDeps ]; } ''
+          pytest = pkgs.runCommand "pytest" {
+            nativeBuildInputs = [ pythonWithDeps pkgs.rsync pkgs.openssh ];
+          } ''
             cp -r ${src} $TMPDIR/src && chmod -R u+w $TMPDIR/src
             cd $TMPDIR/src
             PYTHONPATH=src python -m pytest tests/ -x -q --cov --cov-report=term-missing

@@ -10,6 +10,12 @@ class TargetConfig:
     id: str
     type: str  # 'claude', 'droid', 'opencode'
     path: Path
+    host: Optional[str] = None
+    labels: List[str] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.labels is None:
+            self.labels = []
 
 
 @dataclass
@@ -47,12 +53,28 @@ def load_config(config_path: Optional[Path] = None) -> Config:
 
     targets = {}
     for target_id, target_data in data.get("targets", {}).items():
-        path = Path(target_data["path"]).expanduser()
+        host = target_data.get("host")
+        path = Path(target_data["path"])
+        if host is None:
+            path = path.expanduser()
+        labels = target_data.get("labels", [])
         targets[target_id] = TargetConfig(
-            id=target_id, type=target_data["type"], path=path
+            id=target_id,
+            type=target_data["type"],
+            path=path,
+            host=host,
+            labels=labels,
         )
 
-    groups = data.get("groups", {})
+    groups: Dict[str, List[str]] = dict(data.get("groups", {}))
+
+    # Auto-generate groups from target labels (merge with explicit groups)
+    for target_id, tc in targets.items():
+        for label in tc.labels:
+            groups.setdefault(label, [])
+            if target_id not in groups[label]:
+                groups[label].append(target_id)
+
     return Config(source_root=source_root, targets=targets, groups=groups)
 
 
@@ -77,7 +99,9 @@ def remap_targets_to_root(config: Config, root: Path) -> Config:
     """
     new_targets = {}
     for tid, tc in config.targets.items():
-        new_targets[tid] = TargetConfig(id=tc.id, type=tc.type, path=root / tid)
+        new_targets[tid] = TargetConfig(
+            id=tc.id, type=tc.type, path=root / tid, host=None, labels=list(tc.labels)
+        )
     return Config(
         source_root=config.source_root,
         targets=new_targets,

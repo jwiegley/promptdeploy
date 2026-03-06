@@ -159,113 +159,124 @@ def deploy(
     for target_id in target_ids:
         target_config = config.targets[target_id]
         target = create_target(target_config)
-        manifest = load_manifest(target.manifest_path())
-        new_manifest = Manifest(deployed_at=datetime.now(timezone.utc).isoformat())
+        try:
+            target.prepare(verbose=verbose)
+            manifest = load_manifest(target.manifest_path())
+            new_manifest = Manifest(deployed_at=datetime.now(timezone.utc).isoformat())
 
-        # Track which (category, name) pairs we process for stale detection
-        deployed_names: set[tuple[str, str]] = set()
+            # Track which (category, name) pairs we process for stale detection
+            deployed_names: set[tuple[str, str]] = set()
 
-        for item in all_items:
-            # Apply --only-type filter
-            if allowed_types is not None and item.item_type not in allowed_types:
-                continue
+            for item in all_items:
+                # Apply --only-type filter
+                if allowed_types is not None and item.item_type not in allowed_types:
+                    continue
 
-            # Apply environment filters (only/except in frontmatter)
-            if not should_deploy_to(target_id, item.metadata, config, str(item.path)):
-                continue
+                # Apply environment filters (only/except in frontmatter)
+                if not should_deploy_to(
+                    target_id, item.metadata, config, str(item.path)
+                ):
+                    continue
 
-            category = _TYPE_TO_CATEGORY[item.item_type]
-            current_hash = _compute_hash(item)
-            deployed_names.add((category, item.name))
+                category = _TYPE_TO_CATEGORY[item.item_type]
+                current_hash = _compute_hash(item)
+                deployed_names.add((category, item.name))
 
-            if has_changed(manifest, category, item.name, current_hash):
-                # Determine if create or update
-                is_update = (
-                    category in manifest.items and item.name in manifest.items[category]
-                )
+                if has_changed(manifest, category, item.name, current_hash):
+                    # Determine if create or update
+                    is_update = (
+                        category in manifest.items
+                        and item.name in manifest.items[category]
+                    )
 
-                # Detect pre-existing: new item but target already has something
-                if not is_update and target.item_exists(item.item_type, item.name):
+                    # Detect pre-existing: new item but target already has something
+                    if not is_update and target.item_exists(item.item_type, item.name):
+                        actions.append(
+                            DeployAction(
+                                action="pre-existing",
+                                item_type=item.item_type,
+                                name=item.name,
+                                target_id=target_id,
+                                source_path=str(item.path),
+                            )
+                        )
+                        continue
+
+                    action_type = "update" if is_update else "create"
+
+                    if not dry_run:
+                        if item.item_type == "models":
+                            filtered = _filter_models_config(
+                                item.metadata or {}, target_id, config
+                            )
+                            _deploy_item(target, item, filtered_models_config=filtered)
+                        else:
+                            _deploy_item(target, item)
+
                     actions.append(
                         DeployAction(
-                            action="pre-existing",
+                            action=action_type,
                             item_type=item.item_type,
                             name=item.name,
                             target_id=target_id,
                             source_path=str(item.path),
                         )
                     )
-                    continue
-
-                action_type = "update" if is_update else "create"
-
-                if not dry_run:
-                    if item.item_type == "models":
-                        filtered = _filter_models_config(
-                            item.metadata or {}, target_id, config
+                else:
+                    actions.append(
+                        DeployAction(
+                            action="skip",
+                            item_type=item.item_type,
+                            name=item.name,
+                            target_id=target_id,
+                            source_path=str(item.path),
                         )
-                        _deploy_item(target, item, filtered_models_config=filtered)
-                    else:
-                        _deploy_item(target, item)
+                    )
 
-                actions.append(
-                    DeployAction(
-                        action=action_type,
-                        item_type=item.item_type,
-                        name=item.name,
-                        target_id=target_id,
-                        source_path=str(item.path),
-                    )
-                )
-            else:
-                actions.append(
-                    DeployAction(
-                        action="skip",
-                        item_type=item.item_type,
-                        name=item.name,
-                        target_id=target_id,
-                        source_path=str(item.path),
-                    )
+                # Record in new manifest regardless of action
+                new_manifest.items.setdefault(category, {})[item.name] = ManifestItem(
+                    source_hash=current_hash
                 )
 
-            # Record in new manifest regardless of action
-            new_manifest.items.setdefault(category, {})[item.name] = ManifestItem(
-                source_hash=current_hash
-            )
-
-        # Detect stale items: in old manifest but not in new source
-        for category, items_dict in manifest.items.items():
-            for name in items_dict:
-                if (category, name) in deployed_names:
-                    continue
-                # If --only-type is active, only remove items of matching types
-                if allowed_types is not None:
-                    cat_type = {v: k for k, v in _TYPE_TO_CATEGORY.items()}.get(
-                        category
-                    )
-                    if cat_type not in allowed_types:
-                        # Preserve unfiltered items in new manifest
-                        new_manifest.items.setdefault(category, {})[name] = items_dict[
-                            name
-                        ]
+            # Detect stale items: in old manifest but not in new source
+            for category, items_dict in manifest.items.items():
+                for name in items_dict:
+                    if (category, name) in deployed_names:
                         continue
+                    # If --only-type is active, only remove items of matching types
+                    if allowed_types is not None:
+                        cat_type = {v: k for k, v in _TYPE_TO_CATEGORY.items()}.get(
+                            category
+                        )
+                        if cat_type not in allowed_types:
+                            # Preserve unfiltered items in new manifest
+                            new_manifest.items.setdefault(category, {})[name] = (
+                                items_dict[name]
+                            )
+                            continue
 
-                if not dry_run:
-                    _remove_item(target, category, name)
+                    if not dry_run:
+                        _remove_item(target, category, name)
 
-                actions.append(
-                    DeployAction(
-                        action="remove",
-                        item_type={v: k for k, v in _TYPE_TO_CATEGORY.items()}.get(
-                            category, category
-                        ),
-                        name=name,
-                        target_id=target_id,
+                    actions.append(
+                        DeployAction(
+                            action="remove",
+                            item_type={v: k for k, v in _TYPE_TO_CATEGORY.items()}.get(
+                                category, category
+                            ),
+                            name=name,
+                            target_id=target_id,
+                        )
                     )
-                )
 
-        # Save updated manifest (atomic write)
-        if not dry_run:
-            save_manifest(new_manifest, target.manifest_path())
+            # Save updated manifest (atomic write)
+            if not dry_run:
+                save_manifest(new_manifest, target.manifest_path())
+                target.finalize(verbose=verbose)
+            else:
+                target.cleanup()
+        except BaseException:
+            target.cleanup()
+            raise
 
     return actions

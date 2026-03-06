@@ -722,6 +722,18 @@ class TestTargetProperties:
         target = OpenCodeTarget("t", config)
         assert target.manifest_path() == config / MANIFEST_FILENAME
 
+    def test_rsync_includes(self, tmp_path: Path):
+        config = tmp_path / ".opencode"
+        config.mkdir()
+        target = OpenCodeTarget("t", config)
+        includes = target.rsync_includes()
+        assert includes is not None
+        assert "agents/" in includes
+        assert "agents/**" in includes
+        assert "commands/" in includes
+        assert "opencode.json" in includes
+        assert MANIFEST_FILENAME in includes
+
 
 # ------------------------------------------------------------------
 # Hooks (no-op for OpenCode)

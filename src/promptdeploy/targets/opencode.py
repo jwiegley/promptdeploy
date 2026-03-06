@@ -35,6 +35,18 @@ class OpenCodeTarget(Target):
     def manifest_path(self) -> Path:
         return self._config_path / MANIFEST_FILENAME
 
+    def rsync_includes(self) -> list[str] | None:
+        return [
+            "agents/",
+            "agents/**",
+            "commands/",
+            "commands/**",
+            "skills/",
+            "skills/**",
+            "opencode.json",
+            MANIFEST_FILENAME,
+        ]
+
     # ------------------------------------------------------------------
     # Deploy
     # ------------------------------------------------------------------

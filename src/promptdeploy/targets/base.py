@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -9,6 +11,23 @@ class Target(ABC):
 
     @abstractmethod
     def exists(self) -> bool: ...
+
+    def prepare(self, *, verbose: bool = False) -> None:
+        """Called before any deploy/read operations. No-op for local targets."""
+
+    def finalize(self, *, verbose: bool = False) -> None:
+        """Called after all deploy operations complete. No-op for local targets."""
+
+    def cleanup(self) -> None:
+        """Called to release resources (e.g. temp dirs) without pushing changes."""
+
+    def rsync_includes(self) -> list[str] | None:
+        """Return rsync include patterns for managed paths.
+
+        When non-None, only these paths are synced to/from the remote.
+        Returning None (the default) syncs the entire directory.
+        """
+        return None
 
     @abstractmethod
     def deploy_agent(self, name: str, content: bytes) -> None: ...
