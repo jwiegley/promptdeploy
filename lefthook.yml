@@ -8,7 +8,7 @@ pre-commit:
       run: ruff check {staged_files}
     mypy:
       glob: "*.py"
-      run: PYTHONPATH=src mypy {staged_files}
+      run: PYTHONPATH=src mypy src/ tests/
     nix-check:
       glob: "*.{py,nix,toml,yaml}"
       run: nix flake check --no-warn-dirty 2>&1

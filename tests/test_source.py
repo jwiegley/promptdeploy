@@ -117,15 +117,26 @@ class TestDiscoverSkills:
             assert "name" in skill.metadata
             assert "description" in skill.metadata
 
-    def test_symlinked_skills_discovered(self, discovery):
-        skills = {s.name: s for s in discovery.discover_skills()}
-        # 'ask' is a symlink in the actual repo
-        assert "ask" in skills
-        ask = skills["ask"]
-        # Original path is preserved (not resolved)
-        assert ask.path == REPO_ROOT / "skills" / "ask" / "SKILL.md"
-        # Content is readable (resolved through symlink)
-        assert len(ask.content) > 0
+    def test_symlinked_skills_discovered(self, tmp_path):
+        # Create a real skill directory and symlink to it
+        real_skill = tmp_path / "real-skill"
+        real_skill.mkdir()
+        (real_skill / "SKILL.md").write_bytes(
+            b"---\nname: linked-skill\ndescription: A linked skill\n---\nBody.\n"
+        )
+
+        src = tmp_path / "source"
+        src.mkdir()
+        skills_dir = src / "skills"
+        skills_dir.mkdir()
+        (skills_dir / "linked-skill").symlink_to(real_skill)
+
+        disc = SourceDiscovery(src)
+        skills = {s.name: s for s in disc.discover_skills()}
+        assert "linked-skill" in skills
+        linked = skills["linked-skill"]
+        assert linked.path == src / "skills" / "linked-skill" / "SKILL.md"
+        assert len(linked.content) > 0
 
     def test_skips_non_skill_entries(self, discovery):
         skills = list(discovery.discover_skills())
