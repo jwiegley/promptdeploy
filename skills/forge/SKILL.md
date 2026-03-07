@@ -3,7 +3,7 @@ name: forge
 description: >
   Multi-phase, multi-model deep analysis workflow for complex problems. This
   skill should be used when the user wants rigorous, multi-model collaborative
-  analysis: deep research with Opus and PAL MCP consensus (GPT-5.2-Pro + Gemini 3
+  analysis: deep research with Opus and PAL MCP consensus (GPT-5.4-Pro + Gemini 3
   Pro), strategic planning, Sonnet execution with tests, comprehensive review,
   and adversarial devil's advocate critique. Invoke explicitly with /forge.
 ---
@@ -16,18 +16,18 @@ Forge applies maximum analytical rigor to complex problems by orchestrating mult
 
 | Phase | Model(s) | Purpose |
 |-------|----------|---------|
-| 1. Research | Opus + GPT-5.2-Pro + Gemini 3 Pro | Deep analysis and consensus |
-| 2. Planning | Opus + GPT-5.2-Pro + Gemini 3 Pro | Strategic plan with validation |
+| 1. Research | Opus + GPT-5.4-Pro + Gemini 3 Pro | Deep analysis and consensus |
+| 2. Planning | Opus + GPT-5.4-Pro + Gemini 3 Pro | Strategic plan with validation |
 | 3. Execution | Sonnet | Code changes + test execution |
-| 4. Review | Opus + GPT-5.2-Pro + Gemini 3 Pro | Comprehensive change review |
-| 5. Critique | Opus + GPT-5.2-Pro + Gemini 3 Pro | Devil's advocate analysis |
+| 4. Review | Opus + GPT-5.4-Pro + Gemini 3 Pro | Comprehensive change review |
+| 5. Critique | Opus + GPT-5.4-Pro + Gemini 3 Pro | Devil's advocate analysis |
 
-Each analytical phase (1, 2, 4, 5) uses Opus as orchestrator and builds multi-model consensus via PAL MCP with GPT-5.2-Pro and Gemini 3 Pro. Phase 3 uses only Sonnet for cost-efficient execution.
+Each analytical phase (1, 2, 4, 5) uses Opus as orchestrator and builds multi-model consensus via PAL MCP with GPT-5.4-Pro and Gemini 3 Pro. Phase 3 uses only Sonnet for cost-efficient execution.
 
 ## Prerequisites
 
 - The current session must be running on Opus (`claude-opus-4-6`)
-- PAL MCP server must be running with access to `gpt-5.2-pro` and `gemini-3-pro-preview`
+- PAL MCP server must be running with access to `gpt-5.4-pro` and `gemini-3-pro-preview`
 - To verify model availability, call `mcp__pal__listmodels` before starting
 
 If PAL MCP is unavailable or a partner model is missing, inform the user and halt. Do not fall back to single-model operation -- the value of Forge comes from multi-model collaboration.
@@ -52,7 +52,7 @@ Use `mcp__pal__consensus` to gather perspectives from both partner models:
 
 ```
 models: [
-  {"model": "gpt-5.2-pro", "stance": "neutral"},
+  {"model": "gpt-5.4-pro", "stance": "neutral"},
   {"model": "gemini-3-pro-preview", "stance": "neutral"}
 ]
 ```
@@ -90,7 +90,7 @@ Use `mcp__pal__consensus`:
 
 ```
 models: [
-  {"model": "gpt-5.2-pro", "stance": "neutral"},
+  {"model": "gpt-5.4-pro", "stance": "neutral"},
   {"model": "gemini-3-pro-preview", "stance": "neutral"}
 ]
 ```
@@ -159,7 +159,7 @@ Use `mcp__pal__consensus`:
 
 ```
 models: [
-  {"model": "gpt-5.2-pro", "stance": "neutral"},
+  {"model": "gpt-5.4-pro", "stance": "neutral"},
   {"model": "gemini-3-pro-preview", "stance": "neutral"}
 ]
 ```
@@ -198,13 +198,13 @@ Examine:
 - Error propagation: are errors swallowed or mishandled?
 - The review itself: did reviewers agree too readily? What did they not check?
 
-**Step 5.2 -- Adversarial multi-model consensus:**
+**Step 5.4 -- Adversarial multi-model consensus:**
 Use `mcp__pal__consensus` with adversarial stances:
 
 ```
 models: [
   {
-    "model": "gpt-5.2-pro",
+    "model": "gpt-5.4-pro",
     "stance": "against",
     "stance_prompt": "You are a hostile code reviewer. Find every possible
       flaw, vulnerability, edge case, race condition, and design mistake in
@@ -263,7 +263,7 @@ If no critical issues remain, confirm the implementation is ready and note any m
 | Role | PAL Model Name | Used In |
 |------|---------------|---------|
 | Orchestrator | (native Opus) | All phases |
-| Partner 1 | `gpt-5.2-pro` | Consensus in Phases 1, 2, 4, 5 |
+| Partner 1 | `gpt-5.4-pro` | Consensus in Phases 1, 2, 4, 5 |
 | Partner 2 | `gemini-3-pro-preview` | Consensus + codereview in Phases 1, 2, 4, 5 |
 | Executor | `sonnet` (Task tool model param) | Phase 3 only |
 

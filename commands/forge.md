@@ -3,7 +3,7 @@ Use the forge skill to perform a comprehensive multi-model collaborative workflo
 $ARGUMENTS
 
 Execute all five phases of the forge workflow in sequence:
-1. Deep Analysis & Research (Opus + PAL consensus with GPT-5.2-Pro and Gemini 3 Pro)
+1. Deep Analysis & Research (Opus + PAL consensus with GPT-5.4-Pro and Gemini 3 Pro)
 2. Strategic Planning (Opus + PAL consensus; present plan for user approval)
 3. Execution (Sonnet agent; code editing + running tests)
 4. Comprehensive Review (Opus + PAL consensus + codereview)

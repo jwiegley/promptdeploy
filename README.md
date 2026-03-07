@@ -100,7 +100,7 @@ Python expert specializing in clean, performant, idiomatic Python code.
 
 | Skill | Description |
 |-------|-------------|
-| forge | Multi-phase, multi-model deep analysis (Opus orchestrator + GPT-5.2-Pro + Gemini 3 Pro consensus) |
+| forge | Multi-phase, multi-model deep analysis (Opus orchestrator + GPT-5.4-Pro + Gemini 3 Pro consensus) |
 | claude-code | Prime sessions with proper use of installed plugins and tools |
 | caveman | Compress prompts to preserve meaning while reducing context |
 | nixos | Resolve NixOS issues using research and sequential thinking |

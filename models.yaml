@@ -43,14 +43,14 @@ providers:
       provider_type: openai
     only: [droid]
     models:
-      gpt-5.2:
-        display_name: "ChatGPT 5.2"
+      gpt-5.4:
+        display_name: "ChatGPT 5.4"
         max_output_tokens: 32000
-      gpt-5.2-pro:
-        display_name: "ChatGPT 5.2 Pro"
+      gpt-5.4-pro:
+        display_name: "ChatGPT 5.4 Pro"
         max_output_tokens: 32000
-      gpt-5.2-codex:
-        display_name: "ChatGPT 5.2 Codex"
+      gpt-5.4-codex:
+        display_name: "ChatGPT 5.4 Codex"
         max_output_tokens: 32000
 
   litellm:
