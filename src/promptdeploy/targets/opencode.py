@@ -309,6 +309,12 @@ class OpenCodeTarget(Target):
         if item_type == "skill":
             dest = self._config_path / "skills" / name
             return dest.exists() or dest.is_symlink()
+        if item_type == "mcp":
+            data = self._load_json(self._opencode_path())
+            return name in data.get("mcp", {})
+        if item_type == "models":
+            data = self._load_json(self._opencode_path())
+            return bool(data.get("provider"))
         return False
 
     # ------------------------------------------------------------------

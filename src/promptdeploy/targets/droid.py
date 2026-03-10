@@ -210,6 +210,12 @@ class DroidTarget(Target):
         if item_type in ("command", "skill"):
             dest = self._config_path / "skills" / name
             return dest.exists() or dest.is_symlink()
+        if item_type == "mcp":
+            data = self._load_json(self._mcp_path())
+            return name in data.get("mcpServers", {})
+        if item_type == "models":
+            data = self._load_json(self._config_path / "settings.json")
+            return bool(data.get("customModels"))
         return False
 
     # ------------------------------------------------------------------

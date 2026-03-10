@@ -700,13 +700,31 @@ class TestItemExists:
         target.deploy_command("c", content)
         assert target.item_exists("command", "c")
 
-    def test_mcp_returns_false(self, tmp_path: Path):
+    def test_mcp_exists(self, tmp_path: Path):
         target = _make_target(tmp_path)
         assert not target.item_exists("mcp", "srv")
+        target.deploy_mcp_server("srv", {"command": "x", "args": []})
+        assert target.item_exists("mcp", "srv")
 
-    def test_models_returns_false(self, tmp_path: Path):
+    def test_models_exists(self, tmp_path: Path):
         target = _make_target(tmp_path)
-        assert not target.item_exists("models", "m")
+        assert not target.item_exists("models", "models")
+        target.deploy_models(
+            {
+                "providers": {
+                    "p": {
+                        "base_url": "http://x",
+                        "api_key": "k",
+                        "models": {"m": {"display_name": "M"}},
+                    }
+                }
+            }
+        )
+        assert target.item_exists("models", "models")
+
+    def test_unknown_type_returns_false(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("unknown", "x")
 
 
 class TestTargetProperties:
