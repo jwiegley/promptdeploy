@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
 
-from ..frontmatter import transform_for_target
+from ..frontmatter import (
+    parse_frontmatter,
+    serialize_frontmatter,
+    strip_deployment_fields,
+)
 from ..manifest import MANIFEST_FILENAME
 from .base import Target
 
@@ -16,6 +21,95 @@ from .base import Target
 _MCP_STRIP_KEYS = frozenset(
     {"name", "description", "scope", "enabled", "only", "except"}
 )
+
+# Frontmatter fields that use Claude Code format and are incompatible
+# with OpenCode's schema.  These are stripped after being converted
+# (where possible) to OpenCode equivalents.
+_CLAUDE_ONLY_FIELDS = frozenset({"model"})
+
+# Known OpenCode built-in tool names (lowercase).
+_OPENCODE_TOOL_NAMES = frozenset(
+    {
+        "bash",
+        "edit",
+        "glob",
+        "grep",
+        "list",
+        "lsp",
+        "patch",
+        "read",
+        "skill",
+        "todoread",
+        "todowrite",
+        "webfetch",
+        "websearch",
+        "write",
+        "task",
+        "question",
+    }
+)
+
+
+def _convert_claude_tools_string(tools_value: str) -> dict[str, bool]:
+    """Convert a Claude Code ``tools`` string to an OpenCode tools object.
+
+    Claude Code format examples::
+
+        "Read, Grep, Glob, Bash(grep:*), Bash(wc:*)"
+        "mcp__perplexity__perplexity_search_web, mcp__perplexity__perplexity_fetch_web"
+
+    OpenCode expects a mapping of tool names to booleans::
+
+        {"read": true, "grep": true, "glob": true, "bash": true}
+
+    Tool names are lowercased and de-duplicated.  ``Bash(...)`` variants
+    collapse to a single ``bash: true`` entry.  Unknown/MCP tool names are
+    silently dropped since they cannot be represented as OpenCode built-in
+    tool booleans.
+    """
+    result: dict[str, bool] = {}
+    # Split on commas, strip whitespace.
+    for token in re.split(r"\s*,\s*", tools_value.strip()):
+        if not token:
+            continue
+        # Strip Bash(...) qualifiers -> "bash"
+        base = re.sub(r"\(.*\)$", "", token).strip().lower()
+        if base in _OPENCODE_TOOL_NAMES:
+            result[base] = True
+    return result
+
+
+def _transform_for_opencode(content: bytes, target_id: str) -> bytes:
+    """Transform frontmatter for OpenCode targets.
+
+    In addition to stripping deployment fields (``only``/``except``), this:
+
+    * Converts a string-valued ``tools`` field (Claude Code format) to an
+      OpenCode-compatible object with boolean values.
+    * Removes ``model`` (Claude Code uses short aliases like ``sonnet``
+      which are not valid OpenCode model identifiers).
+    """
+    metadata, body = parse_frontmatter(content)
+    if metadata is None:
+        return content
+
+    cleaned = strip_deployment_fields(metadata)
+
+    # Convert tools: string -> tools: {name: true, ...}
+    tools_val = cleaned.get("tools")
+    if isinstance(tools_val, str):
+        converted = _convert_claude_tools_string(tools_val)
+        if converted:
+            cleaned["tools"] = converted
+        else:
+            # No recognisable tools; remove the field entirely.
+            del cleaned["tools"]
+
+    # Strip Claude-only fields that have no OpenCode equivalent.
+    for field in _CLAUDE_ONLY_FIELDS:
+        cleaned.pop(field, None)
+
+    return serialize_frontmatter(cleaned, body)
 
 
 class OpenCodeTarget(Target):
@@ -54,12 +148,12 @@ class OpenCodeTarget(Target):
     def deploy_agent(self, name: str, content: bytes) -> None:
         dest = self._config_path / "agents" / f"{name}.md"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(transform_for_target(content, self._id))
+        dest.write_bytes(_transform_for_opencode(content, self._id))
 
     def deploy_command(self, name: str, content: bytes) -> None:
         dest = self._config_path / "commands" / f"{name}.md"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(transform_for_target(content, self._id))
+        dest.write_bytes(_transform_for_opencode(content, self._id))
 
     def deploy_skill(self, name: str, source_dir: Path) -> None:
         dest = self._config_path / "skills" / name
@@ -70,7 +164,9 @@ class OpenCodeTarget(Target):
         shutil.copytree(source_dir.resolve(), dest, symlinks=False)
         skill_md = dest / "SKILL.md"
         if skill_md.exists():
-            skill_md.write_bytes(transform_for_target(skill_md.read_bytes(), self._id))
+            skill_md.write_bytes(
+                _transform_for_opencode(skill_md.read_bytes(), self._id)
+            )
 
     def deploy_hook(self, name: str, config: dict) -> None:
         pass

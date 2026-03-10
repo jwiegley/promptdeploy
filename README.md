@@ -132,7 +132,6 @@ and grammatical scaffolding while preserving meaning.
 | context7 | Up-to-date documentation and code examples for any library |
 | sequential-thinking | Structured multi-step reasoning |
 | claude-mem | Persistent cross-session memory |
-| mem0 | Memory tools with Qdrant vector store |
 
 **Format:**
 

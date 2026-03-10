@@ -158,7 +158,7 @@ class TestDiscoverMcpServers:
         mcps = list(discovery.discover_mcp_servers())
         assert len(mcps) >= 3
         names = {m.name for m in mcps}
-        assert "claude-mem" in names
+        assert "perplexity" in names
 
     def test_mcp_properties(self, discovery):
         mcps = list(discovery.discover_mcp_servers())
@@ -170,10 +170,10 @@ class TestDiscoverMcpServers:
 
     def test_mcp_full_yaml_parse(self, discovery):
         mcps = {m.name: m for m in discovery.discover_mcp_servers()}
-        mem = mcps["claude-mem"]
-        assert mem.metadata is not None
-        assert "command" in mem.metadata
-        assert "args" in mem.metadata
+        ctx = mcps["context7"]
+        assert ctx.metadata is not None
+        assert "command" in ctx.metadata
+        assert "args" in ctx.metadata
 
     def test_mcp_skips_non_yaml(self, discovery):
         mcps = list(discovery.discover_mcp_servers())

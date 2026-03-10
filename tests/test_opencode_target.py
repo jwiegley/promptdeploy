@@ -7,7 +7,11 @@ import pytest
 
 from promptdeploy.frontmatter import parse_frontmatter
 from promptdeploy.manifest import MANIFEST_FILENAME
-from promptdeploy.targets.opencode import OpenCodeTarget
+from promptdeploy.targets.opencode import (
+    OpenCodeTarget,
+    _convert_claude_tools_string,
+    _transform_for_opencode,
+)
 
 
 def _make_target(tmp_path: Path) -> OpenCodeTarget:
@@ -770,3 +774,172 @@ class TestRemoveHookNoop:
         target = _make_target(tmp_path)
         # Should not raise
         target.remove_hook("git-ai")
+
+
+# ------------------------------------------------------------------
+# Frontmatter transformation for OpenCode
+# ------------------------------------------------------------------
+
+
+class TestConvertClaudeToolsString:
+    def test_basic_tool_names(self):
+        result = _convert_claude_tools_string("Read, Grep, Glob")
+        assert result == {"read": True, "grep": True, "glob": True}
+
+    def test_bash_with_qualifiers(self):
+        result = _convert_claude_tools_string(
+            "Read, Grep, Glob, Bash(grep:*), Bash(wc:*)"
+        )
+        assert result == {"read": True, "grep": True, "glob": True, "bash": True}
+
+    def test_unknown_tools_dropped(self):
+        result = _convert_claude_tools_string(
+            "mcp__perplexity__perplexity_search_web, mcp__perplexity__perplexity_fetch_web"
+        )
+        assert result == {}
+
+    def test_mixed_known_and_unknown(self):
+        result = _convert_claude_tools_string("Read, mcp__foo__bar, Bash(git:*)")
+        assert result == {"read": True, "bash": True}
+
+    def test_empty_string(self):
+        result = _convert_claude_tools_string("")
+        assert result == {}
+
+    def test_whitespace_handling(self):
+        result = _convert_claude_tools_string("  Read ,  Grep  ,  Glob  ")
+        assert result == {"read": True, "grep": True, "glob": True}
+
+    def test_all_known_tools(self):
+        result = _convert_claude_tools_string(
+            "bash, edit, glob, grep, list, lsp, patch, read, skill, "
+            "todoread, todowrite, webfetch, websearch, write, task, question"
+        )
+        assert len(result) == 16
+        for tool in [
+            "bash",
+            "edit",
+            "glob",
+            "grep",
+            "list",
+            "lsp",
+            "patch",
+            "read",
+            "skill",
+            "todoread",
+            "todowrite",
+            "webfetch",
+            "websearch",
+            "write",
+            "task",
+            "question",
+        ]:
+            assert result[tool] is True
+
+
+class TestTransformForOpencode:
+    def test_converts_tools_string_to_object(self):
+        content = (
+            b"---\nname: reviewer\ntools: Read, Grep, Glob, Bash(grep:*)\n"
+            b"model: sonnet\n---\nBody.\n"
+        )
+        result = _transform_for_opencode(content, "opencode")
+        meta, body = parse_frontmatter(result)
+        assert meta is not None
+        assert meta["tools"] == {"read": True, "grep": True, "glob": True, "bash": True}
+        assert "model" not in meta
+        assert meta["name"] == "reviewer"
+        assert body == b"Body.\n"
+
+    def test_strips_model_field(self):
+        content = b"---\nname: agent\nmodel: sonnet\n---\nBody.\n"
+        result = _transform_for_opencode(content, "opencode")
+        meta, body = parse_frontmatter(result)
+        assert meta is not None
+        assert "model" not in meta
+        assert meta["name"] == "agent"
+
+    def test_strips_deployment_fields(self):
+        content = b"---\nname: agent\nonly:\n  - opencode\n---\nBody.\n"
+        result = _transform_for_opencode(content, "opencode")
+        meta, body = parse_frontmatter(result)
+        assert meta is not None
+        assert "only" not in meta
+
+    def test_tools_already_object_preserved(self):
+        content = b"---\nname: agent\ntools:\n  bash: false\n  read: true\n---\nBody.\n"
+        result = _transform_for_opencode(content, "opencode")
+        meta, body = parse_frontmatter(result)
+        assert meta is not None
+        # Object-valued tools should pass through unchanged.
+        assert meta["tools"] == {"bash": False, "read": True}
+
+    def test_tools_string_all_unknown_removed(self):
+        content = b"---\nname: agent\ntools: mcp__foo__bar, mcp__baz__qux\n---\nBody.\n"
+        result = _transform_for_opencode(content, "opencode")
+        meta, body = parse_frontmatter(result)
+        assert meta is not None
+        assert "tools" not in meta
+
+    def test_no_frontmatter_unchanged(self):
+        content = b"No frontmatter here.\n"
+        result = _transform_for_opencode(content, "opencode")
+        assert result == content
+
+    def test_no_tools_or_model_unchanged(self):
+        content = b"---\nname: agent\ndescription: test\n---\nBody.\n"
+        result = _transform_for_opencode(content, "opencode")
+        meta, body = parse_frontmatter(result)
+        assert meta is not None
+        assert meta == {"name": "agent", "description": "test"}
+
+
+class TestDeployAgentTransformation:
+    """Verify that deploy_agent applies the OpenCode-specific transformation."""
+
+    def test_tools_converted_in_deployed_agent(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        content = (
+            b"---\nname: reviewer\ndescription: A reviewer\n"
+            b"tools: Read, Grep, Glob, Bash(grep:*), Bash(wc:*)\n"
+            b"model: sonnet\n---\nReview body.\n"
+        )
+        target.deploy_agent("reviewer", content)
+
+        dest = tmp_path / ".opencode" / "agents" / "reviewer.md"
+        meta, body = parse_frontmatter(dest.read_bytes())
+        assert meta is not None
+        assert isinstance(meta["tools"], dict)
+        assert meta["tools"]["read"] is True
+        assert meta["tools"]["bash"] is True
+        assert "model" not in meta
+        assert body == b"Review body.\n"
+
+    def test_command_tools_converted(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        content = (
+            b"---\nname: cmd\ntools: Read, Bash(git:*)\nmodel: sonnet\n---\nCmd.\n"
+        )
+        target.deploy_command("cmd", content)
+
+        dest = tmp_path / ".opencode" / "commands" / "cmd.md"
+        meta, body = parse_frontmatter(dest.read_bytes())
+        assert meta is not None
+        assert isinstance(meta["tools"], dict)
+        assert "model" not in meta
+
+    def test_skill_tools_converted(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "src-skill"
+        src.mkdir()
+        (src / "SKILL.md").write_bytes(
+            b"---\nname: sk\ntools: Read, Grep\nmodel: sonnet\n---\nSkill.\n"
+        )
+        target.deploy_skill("sk", src)
+
+        dest = tmp_path / ".opencode" / "skills" / "sk" / "SKILL.md"
+        meta, body = parse_frontmatter(dest.read_bytes())
+        assert meta is not None
+        assert isinstance(meta["tools"], dict)
+        assert meta["tools"] == {"read": True, "grep": True}
+        assert "model" not in meta
