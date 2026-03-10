@@ -185,7 +185,10 @@ def deploy(
                 current_hash = _compute_hash(item)
                 deployed_names.add((category, item.name))
 
-                if force or has_changed(manifest, category, item.name, current_hash):
+                changed = has_changed(manifest, category, item.name, current_hash)
+                exists_on_target = target.item_exists(item.item_type, item.name)
+
+                if force or changed or not exists_on_target:
                     # Determine if create or update
                     is_update = (
                         category in manifest.items
@@ -193,11 +196,7 @@ def deploy(
                     )
 
                     # Detect pre-existing: new item but target already has something
-                    if (
-                        not force
-                        and not is_update
-                        and target.item_exists(item.item_type, item.name)
-                    ):
+                    if not force and not is_update and exists_on_target:
                         actions.append(
                             DeployAction(
                                 action="pre-existing",
