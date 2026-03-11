@@ -793,6 +793,24 @@ class TestRemoveHookNoop:
         target.remove_hook("git-ai")
 
 
+class TestShouldSkip:
+    def test_skips_hooks(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("hook", "my-hook") is True
+
+    def test_does_not_skip_agents(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("agent", "helper") is False
+
+    def test_does_not_skip_commands(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("command", "fix") is False
+
+    def test_does_not_skip_models(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("models", "models") is False
+
+
 # ------------------------------------------------------------------
 # Frontmatter transformation for OpenCode
 # ------------------------------------------------------------------

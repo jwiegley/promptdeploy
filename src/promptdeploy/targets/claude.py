@@ -7,6 +7,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from ..frontmatter import transform_for_target
 from ..manifest import MANIFEST_FILENAME
@@ -73,6 +74,15 @@ class ClaudeTarget(Target):
         skill_md = dest / "SKILL.md"
         if skill_md.exists():
             skill_md.write_bytes(transform_for_target(skill_md.read_bytes(), self._id))
+
+    def should_skip(
+        self,
+        item_type: str,
+        name: str,
+        content: Optional[bytes] = None,
+        metadata: Optional[dict] = None,
+    ) -> bool:
+        return item_type == "models"
 
     def deploy_models(self, config: dict) -> None:
         pass  # Claude Code does not support custom models

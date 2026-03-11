@@ -790,3 +790,44 @@ class TestRemoveHookNoop:
         target = _make_target(tmp_path)
         # Should not raise
         target.remove_hook("git-ai")
+
+
+# ------------------------------------------------------------------
+# should_skip
+# ------------------------------------------------------------------
+
+
+class TestShouldSkip:
+    def test_skips_hooks(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("hook", "my-hook") is True
+
+    def test_skips_plain_command(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        content = b"---\nname: fix\n---\nFix things.\n"
+        assert target.should_skip("command", "fix", content=content) is True
+
+    def test_skips_command_without_content(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("command", "fix") is True
+
+    def test_does_not_skip_droid_deploy_skill_command(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        content = b"---\nname: fix\ndroid_deploy: skill\n---\nFix things.\n"
+        assert target.should_skip("command", "fix", content=content) is False
+
+    def test_does_not_skip_agents(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("agent", "helper") is False
+
+    def test_does_not_skip_skills(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("skill", "my-skill") is False
+
+    def test_does_not_skip_mcp(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("mcp", "server") is False
+
+    def test_does_not_skip_models(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("models", "models") is False

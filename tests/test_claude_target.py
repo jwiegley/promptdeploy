@@ -436,6 +436,24 @@ class TestItemExists:
         assert not target.item_exists("models", "m")
 
 
+class TestShouldSkip:
+    def test_skips_models(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("models", "models") is True
+
+    def test_does_not_skip_agents(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("agent", "helper") is False
+
+    def test_does_not_skip_commands(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("command", "fix") is False
+
+    def test_does_not_skip_hooks(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("hook", "my-hook") is False
+
+
 class TestTargetProperties:
     def test_id(self, tmp_path: Path):
         target = ClaudeTarget("my-id", tmp_path)

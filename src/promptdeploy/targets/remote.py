@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from typing import Optional
 
 from ..ssh import ssh_exists, ssh_pull, ssh_push
 from .base import Target
@@ -68,6 +69,15 @@ class RemoteTarget(Target):
     # ------------------------------------------------------------------
     # Delegated Target methods
     # ------------------------------------------------------------------
+
+    def should_skip(
+        self,
+        item_type: str,
+        name: str,
+        content: Optional[bytes] = None,
+        metadata: Optional[dict] = None,
+    ) -> bool:
+        return self._inner.should_skip(item_type, name, content, metadata)
 
     def deploy_agent(self, name: str, content: bytes) -> None:
         self._inner.deploy_agent(name, content)

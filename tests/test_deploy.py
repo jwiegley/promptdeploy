@@ -510,6 +510,78 @@ class TestHookDeploy:
         assert any(a.name == "hook" and a.item_type == "hook" for a in removes)
 
 
+class TestShouldSkipIntegration:
+    """Items that a target would no-op are excluded from deploy and manifest."""
+
+    def test_droid_skips_plain_commands_and_hooks(self, tmp_path: Path):
+        src = tmp_path / "source"
+        src.mkdir()
+
+        # Create an agent (should deploy), a plain command (should skip),
+        # and a hook (should skip).
+        agents = src / "agents"
+        agents.mkdir()
+        (agents / "helper.md").write_bytes(b"---\nname: helper\n---\nAgent.\n")
+
+        commands = src / "commands"
+        commands.mkdir()
+        (commands / "fix.md").write_bytes(b"---\nname: fix\n---\nFix things.\n")
+
+        hooks = src / "hooks"
+        hooks.mkdir()
+        (hooks / "my-hook.yaml").write_bytes(
+            b"name: my-hook\nhooks:\n  Stop:\n    - matcher: ''\n      hooks:\n        - command: 'echo'\n          type: command\n"
+        )
+
+        target_dir = tmp_path / "droid-target"
+        target_dir.mkdir()
+        tc = TargetConfig(id="droid-t", type="droid", path=target_dir)
+        config = _make_config(src, {tc.id: tc})
+
+        actions = deploy(config)
+        creates = [a for a in actions if a.action == "create"]
+        # Only the agent should be created
+        assert len(creates) == 1
+        assert creates[0].name == "helper"
+
+        # Second deploy should be fully idempotent
+        actions2 = deploy(config)
+        non_skips = [a for a in actions2 if a.action != "skip"]
+        assert len(non_skips) == 0
+
+        # Skipped items should not be in manifest
+        manifest = load_manifest(target_dir / MANIFEST_FILENAME)
+        assert "fix" not in manifest.items.get("commands", {})
+        assert "my-hook" not in manifest.items.get("hooks", {})
+
+    def test_claude_skips_models(self, tmp_path: Path):
+        src = tmp_path / "source"
+        src.mkdir()
+
+        agents = src / "agents"
+        agents.mkdir()
+        (agents / "helper.md").write_bytes(b"---\nname: helper\n---\nAgent.\n")
+
+        # Create a models.yaml
+        (src / "models.yaml").write_bytes(
+            b"providers:\n  acme:\n    display_name: Acme\n    base_url: https://acme.com\n    api_key: key\n    models:\n      m1:\n        display_name: Model 1\n"
+        )
+
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        actions = deploy(config)
+        creates = [a for a in actions if a.action == "create"]
+        # Only agent, not models
+        assert len(creates) == 1
+        assert creates[0].name == "helper"
+
+        # Second deploy should be fully idempotent
+        actions2 = deploy(config)
+        non_skips = [a for a in actions2 if a.action != "skip"]
+        assert len(non_skips) == 0
+
+
 class TestForce:
     """--force bypasses checksum and pre-existing checks."""
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Optional
 
 
 class Target(ABC):
@@ -28,6 +29,21 @@ class Target(ABC):
         Returning None (the default) syncs the entire directory.
         """
         return None
+
+    def should_skip(
+        self,
+        item_type: str,
+        name: str,
+        content: Optional[bytes] = None,
+        metadata: Optional[dict] = None,
+    ) -> bool:
+        """Return True if this target would no-op the deploy for this item.
+
+        When True, the deploy loop will not call the deploy method and will
+        not record the item in the manifest -- ensuring idempotency for
+        items that a target silently ignores.
+        """
+        return False
 
     @abstractmethod
     def deploy_agent(self, name: str, content: bytes) -> None: ...

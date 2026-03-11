@@ -89,3 +89,9 @@ class TestCreateTarget:
         target = create_target(tc)
         # Call the base class default directly
         assert Target.rsync_includes(target) is None
+
+    def test_base_target_should_skip_returns_false(self, tmp_path: Path) -> None:
+        tc = TargetConfig(id="t", type="claude", path=tmp_path)
+        target = create_target(tc)
+        # Call the base class default directly
+        assert Target.should_skip(target, "agent", "x") is False

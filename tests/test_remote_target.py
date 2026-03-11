@@ -209,6 +209,16 @@ class TestRemoteTargetDelegation:
         remote_target.remove_hook("hook1")
         mock_inner.remove_hook.assert_called_once_with("hook1")
 
+    def test_should_skip(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        mock_inner.should_skip.return_value = True
+        result = remote_target.should_skip("hook", "hook1", b"content", {"key": "val"})
+        assert result is True
+        mock_inner.should_skip.assert_called_once_with(
+            "hook", "hook1", b"content", {"key": "val"}
+        )
+
     def test_item_exists(
         self, remote_target: RemoteTarget, mock_inner: MagicMock
     ) -> None:

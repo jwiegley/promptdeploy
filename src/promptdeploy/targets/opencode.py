@@ -8,6 +8,7 @@ import re
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from ..frontmatter import (
     parse_frontmatter,
@@ -140,6 +141,15 @@ class OpenCodeTarget(Target):
             "opencode.json",
             MANIFEST_FILENAME,
         ]
+
+    def should_skip(
+        self,
+        item_type: str,
+        name: str,
+        content: Optional[bytes] = None,
+        metadata: Optional[dict] = None,
+    ) -> bool:
+        return item_type == "hook"
 
     # ------------------------------------------------------------------
     # Deploy

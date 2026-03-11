@@ -7,6 +7,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from ..frontmatter import parse_frontmatter, transform_for_target
 from ..manifest import MANIFEST_FILENAME
@@ -45,6 +46,23 @@ class DroidTarget(Target):
             "mcp.json",
             MANIFEST_FILENAME,
         ]
+
+    def should_skip(
+        self,
+        item_type: str,
+        name: str,
+        content: Optional[bytes] = None,
+        metadata: Optional[dict] = None,
+    ) -> bool:
+        if item_type == "hook":
+            return True
+        if item_type == "command":
+            if content is not None:
+                fm, _ = parse_frontmatter(content)
+                if fm and fm.get("droid_deploy") == "skill":
+                    return False
+            return True
+        return False
 
     # ------------------------------------------------------------------
     # Deploy

@@ -181,6 +181,12 @@ def deploy(
                 ):
                     continue
 
+                # Skip items the target would no-op
+                if target.should_skip(
+                    item.item_type, item.name, item.content, item.metadata
+                ):
+                    continue
+
                 category = _TYPE_TO_CATEGORY[item.item_type]
                 current_hash = _compute_hash(item)
                 deployed_names.add((category, item.name))
