@@ -90,6 +90,9 @@ providers:
       Qwen3.5-27B:
         display_name: "Qwen3.5-27B"
         max_output_tokens: 128000
+      mlx-community/Qwen3.5-27B-4bit:
+        display_name: "Qwen3.5-27B (MLX)"
+        max_output_tokens: 128000
 
   llama-cpp-local:
     display_name: "Llama.cpp"
@@ -138,6 +141,11 @@ providers:
         context_limit: 262144
         output_limit: 65536
         only: [opencode]
+      mlx-community/Qwen3.5-27B-4bit:
+        display_name: "Qwen3.5-27B (MLX)"
+        max_output_tokens: 128000
+        context_limit: 262144
+        output_limit: 65536
       Qwen3.5-27B:
         display_name: "Qwen3.5-27B"
         max_output_tokens: 128000
