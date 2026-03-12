@@ -1,10 +1,7 @@
 name: pal
 description: PAL MCP - Provider Abstraction Layer for multi-model AI collaboration
-command: uvx
-args:
-  - "--from"
-  - "git+https://github.com/BeehiveInnovations/pal-mcp-server.git"
-  - pal-mcp-server
+command: /etc/profiles/per-user/johnw/bin/pal-mcp-server
+args: []
 env:
   ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
   GEMINI_API_KEY: "${GEMINI_API_KEY}"
