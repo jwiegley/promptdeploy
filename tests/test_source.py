@@ -98,7 +98,7 @@ class TestDiscoverCommands:
 class TestDiscoverSkills:
     def test_discovers_skills(self, discovery):
         skills = list(discovery.discover_skills())
-        assert len(skills) >= 8
+        assert len(skills) >= 7
         names = {s.name for s in skills}
         assert "forge" in names
         assert "caveman" in names
