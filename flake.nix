@@ -84,6 +84,7 @@
           packages = [
             pythonWithDeps
             pkgs.ruff
+            pkgs.lefthook
           ];
         };
       })
