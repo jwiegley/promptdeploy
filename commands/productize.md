@@ -18,7 +18,7 @@
 - Add build target to generate performance profiling report
 - Add pre-commit check that performance numbers do not drop by more than 5%
 - Add build target that performs full linting
-- Ensure that the build has all warnings enabled, and warnings and treated as
+- Ensure that the build has all warnings enabled, and warnings are treated as
   errors (where this is applicable)
 - Add build target to ensure the full build contains no warnings and passes
   cleanly
