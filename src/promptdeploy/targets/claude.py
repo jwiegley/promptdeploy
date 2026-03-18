@@ -135,6 +135,10 @@ class ClaudeTarget(Target):
             claude_config = {
                 k: v for k, v in config.items() if k not in _MCP_STRIP_KEYS
             }
+            if "env" in claude_config:
+                from ..envsubst import expand_env_in_dict
+
+                claude_config["env"] = expand_env_in_dict(claude_config["env"])
             settings.setdefault("mcpServers", {})[name] = claude_config
 
         self._save_json(self._settings_path(), settings)

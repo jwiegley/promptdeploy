@@ -296,6 +296,58 @@ class TestDeployMcpServer:
         assert result["mcpServers"]["existing"] == {"command": "keep"}
         assert result["mcpServers"]["new"] == {"command": "added"}
 
+    def test_expands_env_vars_in_env_dict(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("MY_API_KEY", "secret123")
+        target = _make_target(tmp_path)
+        config = {
+            "command": "npx",
+            "args": ["-y", "server"],
+            "env": {"API_KEY": "${MY_API_KEY}"},
+        }
+        target.deploy_mcp_server("srv", config)
+
+        settings_path = tmp_path / ".claude" / "settings.json"
+        result = json.loads(settings_path.read_text())
+        assert result["mcpServers"]["srv"]["env"]["API_KEY"] == "secret123"
+
+    def test_non_env_keys_not_affected_by_expansion(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("SOME_VAR", "expanded")
+        target = _make_target(tmp_path)
+        config = {
+            "command": "${SOME_VAR}",
+            "env": {"KEY": "${SOME_VAR}"},
+        }
+        target.deploy_mcp_server("srv", config)
+
+        settings_path = tmp_path / ".claude" / "settings.json"
+        result = json.loads(settings_path.read_text())
+        # command is NOT in env sub-dict, so it stays literal
+        assert result["mcpServers"]["srv"]["command"] == "${SOME_VAR}"
+        # env values ARE expanded
+        assert result["mcpServers"]["srv"]["env"]["KEY"] == "expanded"
+
+    def test_unset_env_vars_preserved(self, tmp_path: Path, monkeypatch):
+        monkeypatch.delenv("UNSET_KEY_XYZ", raising=False)
+        target = _make_target(tmp_path)
+        config = {
+            "command": "echo",
+            "env": {"KEY": "${UNSET_KEY_XYZ}"},
+        }
+        target.deploy_mcp_server("srv", config)
+
+        settings_path = tmp_path / ".claude" / "settings.json"
+        result = json.loads(settings_path.read_text())
+        assert result["mcpServers"]["srv"]["env"]["KEY"] == "${UNSET_KEY_XYZ}"
+
+    def test_no_env_key_no_expansion(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {"command": "echo", "args": ["hello"]}
+        target.deploy_mcp_server("srv", config)
+
+        settings_path = tmp_path / ".claude" / "settings.json"
+        result = json.loads(settings_path.read_text())
+        assert result["mcpServers"]["srv"] == {"command": "echo", "args": ["hello"]}
+
 
 class TestRemoveMcpServer:
     def test_removes_existing(self, tmp_path: Path):
