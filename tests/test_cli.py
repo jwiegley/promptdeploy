@@ -121,6 +121,34 @@ class TestMainDeploy:
 # ===================================================================
 
 
+class TestRunDeployLoadsDotenv:
+    def test_load_dotenv_called_with_source_root(self, tmp_path, monkeypatch, capsys):
+        """_run_deploy calls load_dotenv with config.source_root / '.env'."""
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        calls: list = []
+        monkeypatch.setattr(
+            "promptdeploy.envsubst.load_dotenv",
+            lambda path: calls.append(path),
+        )
+
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=True,
+            target=None,
+            only_type=None,
+            target_root=None,
+            force=False,
+        )
+        _run_deploy(args)
+        assert len(calls) == 1
+        assert calls[0] == src / ".env"
+
+
 class TestRunDeploy:
     def test_deploy_normal_verbosity(self, tmp_path, monkeypatch, capsys):
         src = _make_source(tmp_path)

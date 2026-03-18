@@ -97,6 +97,11 @@ def _run_deploy(args):
     out.start_timer()
 
     config = load_config()
+
+    from .envsubst import load_dotenv
+
+    load_dotenv(config.source_root / ".env")
+
     if args.target_root:
         from .config import remap_targets_to_root
 
