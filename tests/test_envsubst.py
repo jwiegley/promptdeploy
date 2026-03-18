@@ -1,6 +1,8 @@
 """Tests for environment variable expansion."""
 
-from promptdeploy.envsubst import expand_env_in_dict, expand_env_vars
+from pathlib import Path
+
+from promptdeploy.envsubst import expand_env_in_dict, expand_env_vars, load_dotenv
 
 
 class TestExpandEnvVars:
@@ -83,3 +85,61 @@ class TestExpandEnvInDict:
 
     def test_empty_dict(self):
         assert expand_env_in_dict({}) == {}
+
+
+class TestLoadDotenv:
+    def test_basic(self, tmp_path: Path, monkeypatch):
+        monkeypatch.delenv("DOTENV_TEST_A", raising=False)
+        (tmp_path / ".env").write_text("DOTENV_TEST_A=hello\n")
+        load_dotenv(tmp_path / ".env")
+        import os
+
+        assert os.environ.get("DOTENV_TEST_A") == "hello"
+        monkeypatch.delenv("DOTENV_TEST_A")
+
+    def test_skips_comments_and_blanks(self, tmp_path: Path, monkeypatch):
+        monkeypatch.delenv("DOTENV_REAL", raising=False)
+        (tmp_path / ".env").write_text("# comment\n\n  \nDOTENV_REAL=yes\n")
+        load_dotenv(tmp_path / ".env")
+        import os
+
+        assert os.environ.get("DOTENV_REAL") == "yes"
+        monkeypatch.delenv("DOTENV_REAL")
+
+    def test_no_overwrite(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("DOTENV_EXISTING", "original")
+        (tmp_path / ".env").write_text("DOTENV_EXISTING=replaced\n")
+        load_dotenv(tmp_path / ".env")
+        import os
+
+        assert os.environ["DOTENV_EXISTING"] == "original"
+
+    def test_missing_file(self, tmp_path: Path):
+        load_dotenv(tmp_path / "nonexistent")  # should not raise
+
+    def test_quoted_values(self, tmp_path: Path, monkeypatch):
+        monkeypatch.delenv("DOTENV_DQ", raising=False)
+        monkeypatch.delenv("DOTENV_SQ", raising=False)
+        (tmp_path / ".env").write_text(
+            "DOTENV_DQ=\"double quoted\"\nDOTENV_SQ='single quoted'\n"
+        )
+        load_dotenv(tmp_path / ".env")
+        import os
+
+        assert os.environ.get("DOTENV_DQ") == "double quoted"
+        assert os.environ.get("DOTENV_SQ") == "single quoted"
+        monkeypatch.delenv("DOTENV_DQ")
+        monkeypatch.delenv("DOTENV_SQ")
+
+    def test_skips_lines_without_equals(self, tmp_path: Path, monkeypatch):
+        monkeypatch.delenv("DOTENV_GOOD", raising=False)
+        (tmp_path / ".env").write_text("no-equals-here\nDOTENV_GOOD=ok\n")
+        load_dotenv(tmp_path / ".env")
+        import os
+
+        assert os.environ.get("DOTENV_GOOD") == "ok"
+        monkeypatch.delenv("DOTENV_GOOD")
+
+    def test_empty_key_skipped(self, tmp_path: Path):
+        (tmp_path / ".env").write_text("=value\n")
+        load_dotenv(tmp_path / ".env")  # should not raise or set empty key
