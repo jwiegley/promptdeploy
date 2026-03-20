@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator, List, Optional
 
 import yaml
 
+from promptdeploy.filetags import parse_filetags
 from promptdeploy.frontmatter import parse_frontmatter
 
 
@@ -20,6 +21,7 @@ class SourceItem:
     path: Path
     metadata: Optional[dict]
     content: bytes
+    filetags: List[str] = field(default_factory=list)
 
 
 class SourceDiscovery:
@@ -71,17 +73,20 @@ class SourceDiscovery:
             skill_md = entry / "SKILL.md"
             if not skill_md.exists():
                 continue
+            # Parse filetags from directory name
+            base_name, tags = parse_filetags(entry.name)
             # Resolve symlinks for content but preserve original path
             resolved = skill_md.resolve()
             content = resolved.read_bytes()
             metadata, _ = parse_frontmatter(content)
-            name = (metadata or {}).get("name", entry.name)
+            name = (metadata or {}).get("name", base_name)
             yield SourceItem(
                 item_type="skill",
                 name=name,
                 path=skill_md,
                 metadata=metadata,
                 content=content,
+                filetags=tags,
             )
 
     def discover_mcp_servers(self) -> Iterator[SourceItem]:
@@ -92,6 +97,7 @@ class SourceDiscovery:
         for path in sorted(mcp_dir.iterdir()):
             if path.name.startswith(".") or path.suffix != ".yaml":
                 continue
+            base_name, tags = parse_filetags(path.stem)
             content = path.read_bytes()
             try:
                 metadata = yaml.safe_load(content)
@@ -99,13 +105,14 @@ class SourceDiscovery:
                 metadata = None
             if not isinstance(metadata, dict):
                 metadata = None
-            name = (metadata or {}).get("name", path.stem)
+            name = (metadata or {}).get("name", base_name)
             yield SourceItem(
                 item_type="mcp",
                 name=name,
                 path=path,
                 metadata=metadata,
                 content=content,
+                filetags=tags,
             )
 
     def discover_models(self) -> Iterator[SourceItem]:
@@ -136,6 +143,7 @@ class SourceDiscovery:
         for path in sorted(hooks_dir.iterdir()):
             if path.name.startswith(".") or path.suffix != ".yaml":
                 continue
+            base_name, tags = parse_filetags(path.stem)
             content = path.read_bytes()
             try:
                 metadata = yaml.safe_load(content)
@@ -143,25 +151,28 @@ class SourceDiscovery:
                 metadata = None
             if not isinstance(metadata, dict):
                 metadata = None
-            name = (metadata or {}).get("name", path.stem)
+            name = (metadata or {}).get("name", base_name)
             yield SourceItem(
                 item_type="hook",
                 name=name,
                 path=path,
                 metadata=metadata,
                 content=content,
+                filetags=tags,
             )
 
     def _load_markdown_item(self, item_type: str, path: Path) -> SourceItem:
         """Load a markdown file as a SourceItem, parsing frontmatter for metadata."""
+        base_name, tags = parse_filetags(path.stem)
         resolved = path.resolve()
         content = resolved.read_bytes()
         metadata, _ = parse_frontmatter(content)
-        name = (metadata or {}).get("name", path.stem)
+        name = (metadata or {}).get("name", base_name)
         return SourceItem(
             item_type=item_type,
             name=name,
             path=path,
             metadata=metadata,
             content=content,
+            filetags=tags,
         )

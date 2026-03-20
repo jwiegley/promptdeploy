@@ -175,9 +175,13 @@ def deploy(
                 if allowed_types is not None and item.item_type not in allowed_types:
                     continue
 
-                # Apply environment filters (only/except in frontmatter)
+                # Apply environment filters (filetags + only/except)
                 if not should_deploy_to(
-                    target_id, item.metadata, config, str(item.path)
+                    target_id,
+                    item.metadata,
+                    config,
+                    str(item.path),
+                    filetags=item.filetags,
                 ):
                     continue
 

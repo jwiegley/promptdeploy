@@ -86,13 +86,17 @@ class TestDiscoverCommands:
             assert not cmd.path.name.startswith(".")
 
     def test_command_name_fallback_to_stem(self, discovery):
+        from promptdeploy.filetags import parse_filetags
+
         commands = list(discovery.discover_commands())
         for cmd in commands:
             # Name comes from frontmatter 'name' or falls back to stem
+            # (with filetags stripped)
             if cmd.metadata and "name" in cmd.metadata:
                 assert cmd.name == cmd.metadata["name"]
             else:
-                assert cmd.name == cmd.path.stem
+                base_name, _ = parse_filetags(cmd.path.stem)
+                assert cmd.name == base_name
 
 
 class TestDiscoverSkills:
@@ -202,6 +206,115 @@ class TestDiscoverAll:
             if not types_seen or types_seen[-1] != item.item_type:
                 types_seen.append(item.item_type)
         assert types_seen == ["agent", "command", "skill", "mcp", "models", "hook"]
+
+
+class TestFiletagParsing:
+    """Filetags in filenames are parsed and stored on SourceItem."""
+
+    def test_command_filetags_parsed(self, tmp_path):
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "heavy -- positron.md").write_bytes(b"Heavy body.\n")
+        d = SourceDiscovery(tmp_path)
+        commands = list(d.discover_commands())
+        assert len(commands) == 1
+        assert commands[0].name == "heavy"
+        assert commands[0].filetags == ["positron"]
+
+    def test_command_multiple_filetags(self, tmp_path):
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "heavy -- positron local.md").write_bytes(b"Body.\n")
+        d = SourceDiscovery(tmp_path)
+        commands = list(d.discover_commands())
+        assert len(commands) == 1
+        assert commands[0].name == "heavy"
+        assert commands[0].filetags == ["positron", "local"]
+
+    def test_command_no_filetags(self, tmp_path):
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "simple.md").write_bytes(b"Body.\n")
+        d = SourceDiscovery(tmp_path)
+        commands = list(d.discover_commands())
+        assert len(commands) == 1
+        assert commands[0].name == "simple"
+        assert commands[0].filetags == []
+
+    def test_agent_filetags_parsed(self, tmp_path):
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "helper -- personal.md").write_bytes(
+            b"---\nname: helper\ndescription: test\n---\nBody.\n"
+        )
+        d = SourceDiscovery(tmp_path)
+        agents = list(d.discover_agents())
+        assert len(agents) == 1
+        assert agents[0].name == "helper"
+        assert agents[0].filetags == ["personal"]
+
+    def test_skill_filetags_from_dirname(self, tmp_path):
+        skills_dir = tmp_path / "skills"
+        skill = skills_dir / "my-skill -- positron"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_bytes(
+            b"---\nname: my-skill\ndescription: A skill\n---\nBody.\n"
+        )
+        d = SourceDiscovery(tmp_path)
+        skills = list(d.discover_skills())
+        assert len(skills) == 1
+        assert skills[0].name == "my-skill"
+        assert skills[0].filetags == ["positron"]
+
+    def test_mcp_filetags_parsed(self, tmp_path):
+        mcp_dir = tmp_path / "mcp"
+        mcp_dir.mkdir()
+        (mcp_dir / "server -- personal.yaml").write_bytes(
+            b"name: server\ncommand: echo\n"
+        )
+        d = SourceDiscovery(tmp_path)
+        mcps = list(d.discover_mcp_servers())
+        assert len(mcps) == 1
+        assert mcps[0].name == "server"
+        assert mcps[0].filetags == ["personal"]
+
+    def test_hook_filetags_parsed(self, tmp_path):
+        hooks_dir = tmp_path / "hooks"
+        hooks_dir.mkdir()
+        (hooks_dir / "my-hook -- claude.yaml").write_bytes(
+            b"name: my-hook\nhooks: {}\n"
+        )
+        d = SourceDiscovery(tmp_path)
+        hooks = list(d.discover_hooks())
+        assert len(hooks) == 1
+        assert hooks[0].name == "my-hook"
+        assert hooks[0].filetags == ["claude"]
+
+    def test_models_no_filetags(self, tmp_path):
+        (tmp_path / "models.yaml").write_bytes(b"providers: {}\n")
+        d = SourceDiscovery(tmp_path)
+        models = list(d.discover_models())
+        assert len(models) == 1
+        assert models[0].filetags == []
+
+    def test_frontmatter_name_overrides_filetag_base(self, tmp_path):
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "heavy -- positron.md").write_bytes(
+            b"---\nname: custom-name\n---\nBody.\n"
+        )
+        d = SourceDiscovery(tmp_path)
+        commands = list(d.discover_commands())
+        assert len(commands) == 1
+        assert commands[0].name == "custom-name"
+        assert commands[0].filetags == ["positron"]
+
+    def test_real_heavy_command(self, discovery):
+        """The actual heavy -- positron.md file in the repo is parsed correctly."""
+        commands = {c.name: c for c in discovery.discover_commands()}
+        assert "heavy" in commands
+        heavy = commands["heavy"]
+        assert heavy.filetags == ["positron"]
 
 
 class TestNonExistentDirectories:

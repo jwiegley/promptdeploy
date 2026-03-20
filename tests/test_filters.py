@@ -155,3 +155,202 @@ class TestShouldDeployTo:
         metadata: dict[str, list[str]] = {"except": []}
         for target in ALL_TARGETS:
             assert should_deploy_to(target, metadata, config, "t.md") is True
+
+
+@pytest.fixture
+def labeled_config() -> Config:
+    """Config with targets that have labels, matching deploy.yaml structure."""
+    targets = {
+        "claude-personal": TargetConfig(
+            id="claude-personal",
+            type="claude",
+            path=Path("/tmp/claude-personal"),
+            labels=["claude", "personal", "local"],
+        ),
+        "claude-positron": TargetConfig(
+            id="claude-positron",
+            type="claude",
+            path=Path("/tmp/claude-positron"),
+            labels=["claude", "positron", "local"],
+        ),
+        "droid": TargetConfig(
+            id="droid",
+            type="droid",
+            path=Path("/tmp/droid"),
+            labels=["personal", "local"],
+        ),
+    }
+    # Auto-generate groups from labels
+    groups: dict[str, list[str]] = {}
+    for tid, tc in targets.items():
+        for label in tc.labels:
+            groups.setdefault(label, [])
+            if tid not in groups[label]:
+                groups[label].append(tid)
+    return Config(source_root=Path("/tmp"), targets=targets, groups=groups)
+
+
+class TestFiletagFiltering:
+    def test_empty_filetags_deploys_everywhere(self, labeled_config: Config) -> None:
+        for target in labeled_config.targets:
+            assert (
+                should_deploy_to(target, None, labeled_config, "t.md", filetags=[])
+                is True
+            )
+
+    def test_single_tag_filters_to_matching_targets(
+        self, labeled_config: Config
+    ) -> None:
+        # positron tag should match only claude-positron
+        assert (
+            should_deploy_to(
+                "claude-positron", None, labeled_config, "t.md", filetags=["positron"]
+            )
+            is True
+        )
+        assert (
+            should_deploy_to(
+                "claude-personal", None, labeled_config, "t.md", filetags=["positron"]
+            )
+            is False
+        )
+        assert (
+            should_deploy_to(
+                "droid", None, labeled_config, "t.md", filetags=["positron"]
+            )
+            is False
+        )
+
+    def test_multiple_tags_require_all(self, labeled_config: Config) -> None:
+        # claude + personal = only claude-personal
+        assert (
+            should_deploy_to(
+                "claude-personal",
+                None,
+                labeled_config,
+                "t.md",
+                filetags=["claude", "personal"],
+            )
+            is True
+        )
+        assert (
+            should_deploy_to(
+                "claude-positron",
+                None,
+                labeled_config,
+                "t.md",
+                filetags=["claude", "personal"],
+            )
+            is False
+        )
+        assert (
+            should_deploy_to(
+                "droid",
+                None,
+                labeled_config,
+                "t.md",
+                filetags=["claude", "personal"],
+            )
+            is False
+        )
+
+    def test_filetags_and_compose_with_frontmatter_only(
+        self, labeled_config: Config
+    ) -> None:
+        # filetags=[local] matches all three targets, but only=[claude] narrows
+        metadata = {"only": ["claude"]}
+        assert (
+            should_deploy_to(
+                "claude-personal",
+                metadata,
+                labeled_config,
+                "t.md",
+                filetags=["local"],
+            )
+            is True
+        )
+        assert (
+            should_deploy_to(
+                "droid", metadata, labeled_config, "t.md", filetags=["local"]
+            )
+            is False
+        )
+
+    def test_filetags_and_compose_with_frontmatter_except(
+        self, labeled_config: Config
+    ) -> None:
+        # filetags=[claude] matches both claude targets; except=[claude-personal]
+        metadata = {"except": ["claude-personal"]}
+        assert (
+            should_deploy_to(
+                "claude-positron",
+                metadata,
+                labeled_config,
+                "t.md",
+                filetags=["claude"],
+            )
+            is True
+        )
+        assert (
+            should_deploy_to(
+                "claude-personal",
+                metadata,
+                labeled_config,
+                "t.md",
+                filetags=["claude"],
+            )
+            is False
+        )
+
+    def test_filetags_group_expansion(self, labeled_config: Config) -> None:
+        # "local" is a label on all three targets
+        for target in labeled_config.targets:
+            assert (
+                should_deploy_to(
+                    target, None, labeled_config, "t.md", filetags=["local"]
+                )
+                is True
+            )
+
+    def test_filetag_nonmatching_tag(self, labeled_config: Config) -> None:
+        # "positron" label only on claude-positron
+        assert (
+            should_deploy_to(
+                "droid", None, labeled_config, "t.md", filetags=["positron"]
+            )
+            is False
+        )
+
+    def test_invalid_filetag_raises(self, labeled_config: Config) -> None:
+        with pytest.raises(FilterError, match="Invalid environment ID 'bogus'"):
+            should_deploy_to("droid", None, labeled_config, "t.md", filetags=["bogus"])
+
+    def test_filetag_target_id_match(self, labeled_config: Config) -> None:
+        # A filetag equal to a target ID should match that specific target
+        assert (
+            should_deploy_to(
+                "claude-personal",
+                None,
+                labeled_config,
+                "t.md",
+                filetags=["claude-personal"],
+            )
+            is True
+        )
+        assert (
+            should_deploy_to(
+                "claude-positron",
+                None,
+                labeled_config,
+                "t.md",
+                filetags=["claude-personal"],
+            )
+            is False
+        )
+
+    def test_none_filetags_deploys_everywhere(self, labeled_config: Config) -> None:
+        for target in labeled_config.targets:
+            assert (
+                should_deploy_to(target, None, labeled_config, "t.md", filetags=None)
+                is True
+            )

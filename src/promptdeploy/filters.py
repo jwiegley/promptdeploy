@@ -41,20 +41,55 @@ def validate_environments(
             )
 
 
+def _filetags_match(
+    target_id: str,
+    filetags: List[str],
+    config: Config,
+    source_path: str,
+) -> bool:
+    """Check if ALL filetags match the target's labels.
+
+    Each filetag is treated as a label/group name.  The target must be
+    a member of *every* tag's expanded group for the match to succeed.
+    """
+    validate_environments(filetags, config, source_path)
+    target_labels = set(config.targets[target_id].labels)
+    for tag in filetags:
+        if (
+            tag == target_id
+            or tag in target_labels
+            or tag in config.groups
+            and target_id in expand_list([tag], config)
+        ):
+            continue
+        # Tag doesn't match this target
+        return False
+    return True
+
+
 def should_deploy_to(
     target_id: str,
     metadata: Optional[dict],
     config: Config,
     source_path: str,
+    filetags: Optional[List[str]] = None,
 ) -> bool:
     """Determine if an item should be deployed to a target.
 
     Rules:
+    - Filetags (if present) act as implicit ``only`` labels with AND
+      semantics: the target must match ALL tags.
     - No metadata or no only/except keys: deploy everywhere.
     - only: deploy only to listed environments (groups expanded).
     - except: deploy everywhere except listed environments.
     - Both only and except: raises FilterError.
+    - Filetags AND-compose with frontmatter only/except.
     """
+    # Check filetags first — they restrict independently of metadata
+    if filetags:
+        if not _filetags_match(target_id, filetags, config, source_path):
+            return False
+
     if metadata is None:
         return True
 

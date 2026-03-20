@@ -582,6 +582,116 @@ class TestShouldSkipIntegration:
         assert len(non_skips) == 0
 
 
+class TestFiletagDeploy:
+    """Filetags in filenames control which targets receive items."""
+
+    def test_filetag_restricts_deployment(self, tmp_path: Path):
+        """A tagged file only deploys to targets with matching labels."""
+        src = tmp_path / "source"
+        src.mkdir()
+        commands = src / "commands"
+        commands.mkdir()
+        # Create a command tagged for positron only
+        (commands / "heavy -- positron.md").write_bytes(b"Heavy command body.\n")
+
+        tc_personal = _make_claude_target(tmp_path, "claude-personal")
+        tc_positron = _make_claude_target(tmp_path, "claude-positron")
+
+        targets = {
+            tc_personal.id: TargetConfig(
+                id=tc_personal.id,
+                type="claude",
+                path=tc_personal.path,
+                labels=["claude", "personal", "local"],
+            ),
+            tc_positron.id: TargetConfig(
+                id=tc_positron.id,
+                type="claude",
+                path=tc_positron.path,
+                labels=["claude", "positron", "local"],
+            ),
+        }
+        groups: dict[str, list[str]] = {}
+        for tid, tc in targets.items():
+            for label in tc.labels:
+                groups.setdefault(label, [])
+                if tid not in groups[label]:
+                    groups[label].append(tid)
+        config = Config(source_root=src, targets=targets, groups=groups)
+
+        actions = deploy(config)
+
+        # Should only deploy to positron
+        positron_actions = [a for a in actions if a.target_id == "claude-positron"]
+        personal_actions = [a for a in actions if a.target_id == "claude-personal"]
+        assert len(positron_actions) == 1
+        assert positron_actions[0].action == "create"
+        assert positron_actions[0].name == "heavy"
+        assert len(personal_actions) == 0
+
+        # File should exist on positron as heavy.md (not heavy -- positron.md)
+        assert (tc_positron.path / "commands" / "heavy.md").exists()
+        assert not (tc_personal.path / "commands").exists()
+
+    def test_filetag_removal_on_tag_change(self, tmp_path: Path):
+        """When tags change, item is removed from previously matching targets."""
+        src = tmp_path / "source"
+        src.mkdir()
+        commands = src / "commands"
+        commands.mkdir()
+        # Initially untagged — deploys everywhere
+        (commands / "heavy.md").write_bytes(b"Heavy body.\n")
+
+        tc_personal = _make_claude_target(tmp_path, "claude-personal")
+        tc_positron = _make_claude_target(tmp_path, "claude-positron")
+
+        targets = {
+            tc_personal.id: TargetConfig(
+                id=tc_personal.id,
+                type="claude",
+                path=tc_personal.path,
+                labels=["claude", "personal"],
+            ),
+            tc_positron.id: TargetConfig(
+                id=tc_positron.id,
+                type="claude",
+                path=tc_positron.path,
+                labels=["claude", "positron"],
+            ),
+        }
+        groups: dict[str, list[str]] = {}
+        for tid, tc in targets.items():
+            for label in tc.labels:
+                groups.setdefault(label, [])
+                if tid not in groups[label]:
+                    groups[label].append(tid)
+        config = Config(source_root=src, targets=targets, groups=groups)
+
+        # First deploy — untagged, goes to both
+        deploy(config)
+        assert (tc_personal.path / "commands" / "heavy.md").exists()
+        assert (tc_positron.path / "commands" / "heavy.md").exists()
+
+        # Now rename with a tag — only positron
+        (commands / "heavy.md").rename(commands / "heavy -- positron.md")
+
+        actions = deploy(config)
+
+        # Personal should get a remove, positron should skip (same content)
+        personal_removes = [
+            a
+            for a in actions
+            if a.target_id == "claude-personal" and a.action == "remove"
+        ]
+        assert len(personal_removes) == 1
+        assert personal_removes[0].name == "heavy"
+
+        # File removed from personal
+        assert not (tc_personal.path / "commands" / "heavy.md").exists()
+        # File still on positron
+        assert (tc_positron.path / "commands" / "heavy.md").exists()
+
+
 class TestForce:
     """--force bypasses checksum and pre-existing checks."""
 

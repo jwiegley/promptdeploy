@@ -28,6 +28,8 @@ def validate_all(config: Config) -> List[ValidationIssue]:
     issues: List[ValidationIssue] = []
     discovery = SourceDiscovery(config.source_root)
 
+    all_items: List[SourceItem] = []
+
     # Discover each type separately, catching parse errors during discovery
     for discover_fn, dir_name in [
         (discovery.discover_agents, "agents"),
@@ -39,6 +41,7 @@ def validate_all(config: Config) -> List[ValidationIssue]:
     ]:
         try:
             for item in discover_fn():
+                all_items.append(item)
                 issues.extend(validate_item(item, config))
         except (FrontmatterError, yaml.YAMLError) as e:
             # Discovery itself failed on a file - report as validation error
@@ -49,6 +52,25 @@ def validate_all(config: Config) -> List[ValidationIssue]:
                     file_path=config.source_root / dir_name,
                 )
             )
+
+    # Detect duplicate resolved names within each item type
+    seen: dict[tuple[str, str], Path] = {}
+    for item in all_items:
+        key = (item.item_type, item.name)
+        if key in seen:
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message=(
+                        f"Duplicate {item.item_type} name '{item.name}' "
+                        f"(also defined by {seen[key]})"
+                    ),
+                    file_path=item.path,
+                )
+            )
+        else:
+            seen[key] = item.path
+
     return issues
 
 
@@ -95,6 +117,19 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                 file_path=item.path,
             )
         ]
+
+    # Validate filetag labels
+    if item.filetags:
+        valid_ids = set(config.targets.keys()) | set(config.groups.keys())
+        for tag in item.filetags:
+            if tag not in valid_ids:
+                issues.append(
+                    ValidationIssue(
+                        level="error",
+                        message=f"Invalid filetag label '{tag}'",
+                        file_path=item.path,
+                    )
+                )
 
     if metadata is None:
         return issues

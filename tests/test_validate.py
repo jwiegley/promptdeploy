@@ -485,6 +485,27 @@ class TestValidateAll:
         assert "Invalid environment ID" in issues[0].message
         assert issues[0].file_path == agents_dir / "bad-env.md"
 
+    def test_duplicate_names_detected(self, tmp_path: Path) -> None:
+        # Two commands with different filetags that resolve to the same name
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "deploy -- prod.md").write_bytes(b"Deploy to prod")
+        (commands_dir / "deploy -- dev.md").write_bytes(b"Deploy to dev")
+
+        config = Config(
+            source_root=tmp_path,
+            targets={
+                "t": TargetConfig(
+                    id="t", type="claude", path=tmp_path, labels=["prod", "dev"]
+                )
+            },
+            groups={"prod": ["t"], "dev": ["t"]},
+        )
+        issues = validate_all(config)
+        dup_issues = [i for i in issues if "Duplicate" in i.message]
+        assert len(dup_issues) == 1
+        assert "deploy" in dup_issues[0].message
+
 
 class TestValidateItemHook:
     def _make_hook_item(self, content_dict: dict) -> SourceItem:
@@ -653,6 +674,53 @@ class TestValidateItemHook:
         )
         issues = validate_all(config)
         assert any("missing or invalid 'hooks'" in i.message for i in issues)
+
+
+class TestValidateFiletags:
+    def test_valid_filetags(self, config: Config) -> None:
+        item = SourceItem(
+            "agent",
+            "test",
+            Path("/tmp/test.md"),
+            None,
+            b"No frontmatter",
+            filetags=["claude"],
+        )
+        issues = validate_item(item, config)
+        assert issues == []
+
+    def test_invalid_filetag_label(self, config: Config) -> None:
+        item = SourceItem(
+            "agent",
+            "test",
+            Path("/tmp/test.md"),
+            None,
+            b"No frontmatter",
+            filetags=["nonexistent"],
+        )
+        issues = validate_item(item, config)
+        assert len(issues) == 1
+        assert "Invalid filetag label 'nonexistent'" in issues[0].message
+
+    def test_multiple_filetags_one_invalid(self, config: Config) -> None:
+        item = SourceItem(
+            "agent",
+            "test",
+            Path("/tmp/test.md"),
+            None,
+            b"No frontmatter",
+            filetags=["claude", "bogus"],
+        )
+        issues = validate_item(item, config)
+        assert len(issues) == 1
+        assert "Invalid filetag label 'bogus'" in issues[0].message
+
+    def test_empty_filetags_no_issues(self, config: Config) -> None:
+        item = SourceItem(
+            "agent", "test", Path("/tmp/test.md"), None, b"No frontmatter", filetags=[]
+        )
+        issues = validate_item(item, config)
+        assert issues == []
 
 
 class TestValidationIssue:
