@@ -1,1 +1,0 @@
-Read the meeting transcript in $ARGUMENTS and clean it up so that it uses proper grammar and eliminates filler words like "um", "uh", etc. When you are done it should be easier to read, but without changing the actual content being communicated in any way beyond minor grammatical corrections and a bit of sentence restructuring.

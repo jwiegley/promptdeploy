@@ -494,7 +494,7 @@ class TestDiscoverHooks:
         hooks = list(discovery.discover_hooks())
         assert len(hooks) >= 1
         names = {h.name for h in hooks}
-        assert "git-ai" in names
+        assert "claude-vault" in names
 
     def test_hook_properties(self, discovery):
         hooks = list(discovery.discover_hooks())
@@ -506,16 +506,16 @@ class TestDiscoverHooks:
 
     def test_hook_full_yaml_parse(self, discovery):
         hooks = {h.name: h for h in discovery.discover_hooks()}
-        git_ai = hooks["git-ai"]
-        assert git_ai.metadata is not None
-        assert "hooks" in git_ai.metadata
-        assert "PostToolUse" in git_ai.metadata["hooks"]
+        vault = hooks["claude-vault"]
+        assert vault.metadata is not None
+        assert "hooks" in vault.metadata
+        assert "PreCompact" in vault.metadata["hooks"]
 
     def test_hook_name_from_frontmatter(self, discovery):
         hooks = {h.name: h for h in discovery.discover_hooks()}
-        git_ai = hooks["git-ai"]
-        assert git_ai.metadata["name"] == "git-ai"
-        assert git_ai.path.name == "git-ai.yaml"
+        vault = hooks["claude-vault"]
+        assert vault.metadata["name"] == "claude-vault"
+        assert vault.path.name == "claude-vault.yaml"
 
     def test_missing_hooks_dir(self, tmp_path):
         d = SourceDiscovery(tmp_path)

@@ -1,7 +1,0 @@
-name: user
-description: Save every prompt to a log file
-hooks:
-  UserPromptSubmit:
-    - hooks:
-        - type: "command"
-          command: "cat >> ~/.claude/prompts.jsonl"
