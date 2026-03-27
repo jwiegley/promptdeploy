@@ -1,6 +1,5 @@
 ---
 name: johnw
-version: 1.0.0
 description: |
   Write in John Wiegley's authentic voice. Use when drafting technical articles,
   blog posts, essays, or any written material that should read as if John wrote
@@ -8,13 +7,6 @@ description: |
   both technical (newartisans) and personal (johnwiegley) blogs. Focuses on
   technical writing but incorporates cross-cutting voice patterns from the
   full corpus.
-allowed-tools:
-  - Read
-  - Write
-  - Edit
-  - Grep
-  - Glob
-  - AskUserQuestion
 ---
 
 # Writing as John Wiegley
