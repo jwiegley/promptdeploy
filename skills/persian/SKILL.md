@@ -41,6 +41,7 @@ Create a translation review team and spawn specialist reviewers to examine your 
    ```
    TeamCreate with team_name: "persian-translation"
    ```
+   Use the `opus` model with `max` effort for ALL review team members.
 
 2. **Spawn all six reviewers in parallel** using the Task tool. Each teammate receives:
    - The original source text
@@ -269,6 +270,8 @@ Once you have received all six reviews, synthesize the feedback into a final tra
 7. **Aesthetic preferences** (from beauty-eloquence) -- lowest priority when conflicting with above
 
 Produce your revised, final translation incorporating the best suggestions from each reviewer.
+
+Once this is completed, run Phase 3 again on the synthesis, and then come back here to phase 4 to produce the final synthesis. That way, we give the reviewers a chance to catch any errors that may have occurred while producing this synthesis the first time.
 
 ### Phase 5: Delivery
 
