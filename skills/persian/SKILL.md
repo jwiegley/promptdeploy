@@ -51,7 +51,7 @@ Create a translation review team and spawn specialist reviewers to examine your 
 
    Launch all six simultaneously in a single message with six Task tool calls:
 
-   **Teammate 1: `diction-grammar`** (subagent_type: `persian-pro`)
+   **Teammate 1: `diction-grammar`** (subagent_type: `persian-translator`)
    ```
    You are a Persian linguistic specialist reviewing a translation. Your dual mandate:
 
@@ -80,7 +80,7 @@ Create a translation review team and spawn specialist reviewers to examine your 
    - If no issues found in a category, say so explicitly
    ```
 
-   **Teammate 2: `beauty-eloquence`** (subagent_type: `persian-pro`)
+   **Teammate 2: `beauty-eloquence`** (subagent_type: `persian-translator`)
    ```
    You are a Persian literary specialist reviewing a translation for aesthetic
    and rhetorical quality. Your dual mandate:
@@ -111,7 +111,7 @@ Create a translation review team and spawn specialist reviewers to examine your 
    - Highlight any passages that are particularly well-rendered
    ```
 
-   **Teammate 3: `modern-standards`** (subagent_type: `persian-pro`)
+   **Teammate 3: `modern-standards`** (subagent_type: `persian-translator`)
    ```
    You are a contemporary Persian language specialist. Your mandate:
 
@@ -144,7 +144,7 @@ Create a translation review team and spawn specialist reviewers to examine your 
    - Note any passages where formality and accessibility are well-balanced
    ```
 
-   **Teammate 4: `bwc-style`** (subagent_type: `persian-pro`)
+   **Teammate 4: `bwc-style`** (subagent_type: `persian-translator`)
    ```
    You are a specialist in the translation conventions of the Baha'i World
    Centre. Your mandate:
@@ -205,7 +205,7 @@ Create a translation review team and spawn specialist reviewers to examine your 
    - Rate overall semantic fidelity (1-10)
    ```
 
-   **Teammate 6: `oral-spiritual`** (subagent_type: `persian-pro`)
+   **Teammate 6: `oral-spiritual`** (subagent_type: `persian-translator`)
    ```
    You are a specialist in the oral and devotional quality of sacred
    translation. Your mandate:

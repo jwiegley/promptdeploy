@@ -1,5 +1,5 @@
 ---
-name: persian-pro
+name: persian-translator
 description: Translate English language text into high quality, accurate Persian (Farsi) text.
 ---
 
