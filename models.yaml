@@ -104,6 +104,24 @@ providers:
       hera/Bonsai-8B:
         display_name: "Bonsai 8B"
         max_output_tokens: 65536
+      hera/Qwen3.5-397B-A17B-unsloth-mlx-4bit:
+        display_name: "Qwen 3.5 397B (MLX)"
+        max_output_tokens: 65536
+      hera/Qwen3.5-27B-unsloth-mlx:
+        display_name: "Qwen 3.5 27B (MLX)"
+        max_output_tokens: 65536
+      hera/Qwen3.5-9B-unsloth-mlx:
+        display_name: "Qwen 3.5 9B (MLX)"
+        max_output_tokens: 65536
+      hera/gpt-oss-20b-MXFP4-Q8:
+        display_name: "GPT-OSS 20B (MLX)"
+        max_output_tokens: 65536
+      hera/gpt-oss-120b-MXFP4-Q8:
+        display_name: "GPT-OSS 120B (MLX)"
+        max_output_tokens: 65536
+      hera/gemma-4-31b-8bit:
+        display_name: "Gemma 4 31B (MLX)"
+        max_output_tokens: 65536
 
   llama-cpp-remote:
     display_name: "Llama.cpp"
