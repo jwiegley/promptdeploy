@@ -26,6 +26,12 @@ targets:
     path: ~/.config/opencode
     labels: [personal, local]
 
+  opencode-vulcan:
+    type: opencode
+    path: ~/.config/opencode
+    host: vulcan
+    labels: [personal, remote]
+
   claude-vulcan:
     type: claude
     path: ~/.claude
