@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 dependencies = ["PyYAML>=6.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov"]
+dev = ["pytest>=9.0.3", "pytest-cov"]
 
 [project.scripts]
 promptdeploy = "promptdeploy.cli:main"
