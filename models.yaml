@@ -1,36 +1,11 @@
 providers:
 
-  claude-max:
-    display_name: "Claude Max"
-    base_url: "http://localhost:8317"
-    api_key: "dummy-not-used"
-    droid:
-      provider_type: anthropic
-    only: [droid]
-    models:
-      claude-haiku-4-5-20251001:
-        display_name: "Claude Haiku 4.5"
-        max_output_tokens: 81920
-      claude-opus-4-6-thinking-32000:
-        display_name: "Claude Opus 4.6 (Thinking)"
-        max_output_tokens: 81920
-      claude-opus-4-6:
-        display_name: "Claude Opus 4.6"
-        max_output_tokens: 81920
-      claude-sonnet-4-6-thinking-32000:
-        display_name: "Claude Sonnet 4.6 (Thinking)"
-        max_output_tokens: 81920
-      claude-sonnet-4-6:
-        display_name: "Claude Sonnet 4.6"
-        max_output_tokens: 81920
-
   positron-anthropic:
     display_name: "Positron"
     base_url: "https://api.anthropic.com"
     api_key: "${ANTHROPIC_API_KEY}"
     droid:
       provider_type: anthropic
-    only: [droid, opencode]
     models:
       claude-haiku-4-5-20251001:
         display_name: "Claude Haiku 4.5"
@@ -49,7 +24,6 @@ providers:
     droid:
       provider_type: generic-chat-completion-api
       no_image_support: true
-    only: [droid, opencode]
     models:
       gemini-3-pro-preview:
         display_name: "Gemini 3 Pro Preview"
@@ -64,186 +38,10 @@ providers:
     api_key: "${OPENAI_API_KEY}"
     droid:
       provider_type: openai
-    only: [droid, opencode]
     models:
       gpt-5.3-codex:
         display_name: "ChatGPT 5.3 Codex"
         max_output_tokens: 32000
-
-  litellm:
-    display_name: "LiteLLM"
-    base_url: "https://litellm.vulcan.lan/v1/"
-    api_key: "${LITELLM_API_KEY}"
-    droid:
-      provider_type: generic-chat-completion-api
-      no_image_support: true
-      extra_args:
-        min_p: 0
-        temperature: 1
-        top_p: 1
-      extra_headers:
-        x-litellm-tags: droid
-    opencode:
-      npm: "@ai-sdk/openai-compatible"
-      name: "LiteLLM"
-      timeout: false
-    except: [opencode-vulcan]
-    models:
-      hera/Bonsai-8B:
-        display_name: "Bonsai 8B"
-        max_output_tokens: 65536
-        context_limit: 131072
-        output_limit: 65536
-        only: [droid]
-      hera/claude-haiku-4-5-20251001:
-        display_name: "Claude Haiku 4.5"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/claude-opus-4-6-thinking-32000:
-        display_name: "Claude Opus 4.6 (Thinking)"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/claude-opus-4-6:
-        display_name: "Claude Opus 4.6"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/claude-sonnet-4-6-thinking-32000:
-        display_name: "Claude Sonnet 4.6 (Thinking)"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/claude-sonnet-4-6:
-        display_name: "Claude Sonnet 4.6"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/omlx/cohere-transcribe-03-2026-mlx-fp16:
-        display_name: "Cohere Transcribe 03 2026 MLX Fp 16 (MLX)"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/DeepSeek-V3.2:
-        display_name: "Deepseek V 3.2"
-        max_output_tokens: 65536
-        context_limit: 12000
-        output_limit: 65536
-      hera/omlx/gemma-4-31b-8bit:
-        display_name: "Gemma 4 31B (MLX)"
-        max_output_tokens: 65536
-        context_limit: 131072
-        output_limit: 65536
-      hera/GLM-5.1:
-        display_name: "GLM 5.1"
-        max_output_tokens: 65536
-        context_limit: 200000
-        output_limit: 65536
-      hera/gpt-oss-120b:
-        display_name: "GPT-OSS 120B"
-        max_output_tokens: 65536
-        context_limit: 131072
-        output_limit: 65536
-      hera/omlx/gpt-oss-120b-MXFP4-Q8:
-        display_name: "GPT-OSS 120B (MLX)"
-        max_output_tokens: 65536
-        context_limit: 131072
-        output_limit: 65536
-      hera/omlx/gpt-oss-20b-MXFP4-Q8:
-        display_name: "GPT-OSS 20B (MLX)"
-        max_output_tokens: 65536
-        context_limit: 131072
-        output_limit: 65536
-      hera/Kimi-K2.5:
-        display_name: "Kimi K 2.5"
-        max_output_tokens: 65536
-        context_limit: 98304
-        output_limit: 65536
-      hera/omlx/Kimi-K2.5-MLX-2.8bit:
-        display_name: "Kimi K 2.5 MLX 2.8BIT (MLX)"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/omlx/MiniMax-M2.7-4bit-mxfp4:
-        display_name: "Minimax M 2.7 4BIT Mxfp 4 (MLX)"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/omlx/MLX-Qwen3.5-35B-A3B-Claude-4.6-Opus-Reasoning-Distilled-8bit:
-        display_name: "MLX Qwen 3.5 35B A 3B Claude 4.6 Opus Reasoning Distilled (MLX)"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/Qwen3-Coder-Next:
-        display_name: "Qwen 3 Coder Next"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/Qwen3.5-27B:
-        display_name: "Qwen 3.5 27B"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/omlx/Qwen3.5-27B-unsloth-mlx:
-        display_name: "Qwen 3.5 27B (MLX)"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/omlx/Qwen3.5-35B-A3B-8bit:
-        display_name: "Qwen 3.5 35B (MLX)"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/omlx/Qwen3.5-397B-A17B-unsloth-mlx-4bit:
-        display_name: "Qwen 3.5 397B (MLX)"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/omlx/Qwen3.5-9B-8bit:
-        display_name: "Qwen 3.5 9B (MLX)"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-        only: [droid]
-      hera/omlx/Qwen3.5-9B-unsloth-mlx:
-        display_name: "Qwen 3.5 9B (MLX)"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-        only: [droid]
-
-  llama-cpp-remote:
-    display_name: "Llama.cpp"
-    base_url: "https://10.7.0.1/v1/"
-    api_key: "dummy-api-key"
-    droid:
-      provider_type: generic-chat-completion-api
-      no_image_support: true
-    except: [opencode-vulcan]
-    models:
-      Bonsai-8B:
-        display_name: "Bonsai 8B"
-        max_output_tokens: 128000
-        only: [droid]
-      DeepSeek-V3.2:
-        display_name: "Deepseek V 3.2"
-        max_output_tokens: 128000
-      GLM-5.1:
-        display_name: "GLM 5.1"
-        max_output_tokens: 128000
-      gpt-oss-120b:
-        display_name: "GPT-OSS 120B"
-        max_output_tokens: 128000
-      Kimi-K2.5:
-        display_name: "Kimi K 2.5"
-        max_output_tokens: 128000
-      Qwen3-Coder-Next:
-        display_name: "Qwen 3 Coder Next"
-        max_output_tokens: 128000
-      Qwen3.5-27B:
-        display_name: "Qwen 3.5 27B"
-        max_output_tokens: 128000
 
   omlx:
     display_name: "oMLX"
@@ -260,6 +58,7 @@ providers:
       cohere-transcribe-03-2026-mlx-fp16:
         display_name: "Cohere Transcribe 03 2026 MLX Fp 16 (MLX)"
         max_output_tokens: 128000
+        context_limit: 262144
         output_limit: 65536
       gemma-4-31b-8bit:
         display_name: "Gemma 4 31B (MLX)"
@@ -311,195 +110,8 @@ providers:
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
-        only: [droid]
       Qwen3.5-9B-unsloth-mlx:
         display_name: "Qwen 3.5 9B (MLX)"
         max_output_tokens: 128000
         context_limit: 262144
-        output_limit: 65536
-        only: [droid]
-
-  llama-cpp-local:
-    display_name: "Llama.cpp"
-    base_url: "http://127.0.0.1:8080/v1"
-    api_key: "not-needed"
-    droid:
-      provider_type: generic-chat-completion-api
-      no_image_support: true
-    opencode:
-      npm: "@ai-sdk/openai-compatible"
-      name: "Llama-Swap"
-      timeout: false
-    except: [opencode-vulcan]
-    models:
-      Bonsai-8B:
-        display_name: "Bonsai 8B"
-        max_output_tokens: 128000
-        context_limit: 131072
-        output_limit: 65536
-        only: [droid]
-      DeepSeek-V3.2:
-        display_name: "Deepseek V 3.2"
-        max_output_tokens: 128000
-        context_limit: 12000
-        output_limit: 65536
-      Devstral-2-123B-Instruct-2512:
-        display_name: "Devstral 2 123B Instruct"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-        only: [opencode]
-      Devstral-Small-2-24B-Instruct-2512:
-        display_name: "Devstral Small 2 24B Instruct"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-        only: [opencode]
-      Devstral-Small-2-24B-Instruct-2512:
-        display_name: "Devstral Small 2 24B Instruct"
-        max_output_tokens: 128000
-        context_limit: 140000
-        output_limit: 65536
-        only: [opencode]
-      GLM-4.7-Flash:
-        display_name: "GLM 4.7 Flash"
-        max_output_tokens: 128000
-        context_limit: 202752
-        output_limit: 65536
-        only: [droid]
-      GLM-5.1:
-        display_name: "GLM 5.1"
-        max_output_tokens: 128000
-        context_limit: 200000
-        output_limit: 65536
-      gpt-oss-120b:
-        display_name: "GPT-OSS 120B"
-        max_output_tokens: 128000
-        context_limit: 131072
-        output_limit: 65536
-      gpt-oss-20b:
-        display_name: "GPT-OSS 20B"
-        max_output_tokens: 128000
-        context_limit: 131072
-        output_limit: 65536
-      gpt-oss-safeguard-20b:
-        display_name: "GPT-OSS Safeguard 20B"
-        max_output_tokens: 128000
-        context_limit: 131072
-        output_limit: 65536
-        only: [droid]
-      Kimi-K2.5:
-        display_name: "Kimi K 2.5"
-        max_output_tokens: 128000
-        context_limit: 98304
-        output_limit: 65536
-      Leanstral-2603:
-        display_name: "Leanstral"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      LFM2.5-350M:
-        display_name: "LFM 2.5 350M"
-        max_output_tokens: 128000
-        context_limit: 131072
-        output_limit: 65536
-        only: [droid]
-      Nemotron-3-Nano-30B-A3B:
-        display_name: "Nemotron 3 Nano 30B"
-        max_output_tokens: 128000
-        context_limit: 1048576
-        output_limit: 65536
-        only: [droid]
-      Nemotron-Cascade-2-30B-A3B:
-        display_name: "Nemotron Cascade 2 30B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-        only: [droid]
-      NVIDIA-Nemotron-3-Super-120B-A12B:
-        display_name: "NVIDIA Nemotron 3 Super 120B"
-        max_output_tokens: 128000
-        context_limit: 1048576
-        output_limit: 65536
-      Phi-4-reasoning-plus:
-        display_name: "Phi 4 Reasoning Plus"
-        max_output_tokens: 128000
-        context_limit: 32768
-        output_limit: 65536
-      Qwen3-30B-A3B:
-        display_name: "Qwen 3 30B"
-        max_output_tokens: 128000
-        context_limit: 40000
-        output_limit: 65536
-      Qwen3-Coder-Next:
-        display_name: "Qwen 3 Coder Next"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-0.8B:
-        display_name: "Qwen 3.5 0.8B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-        only: [droid]
-      Qwen3.5-27B:
-        display_name: "Qwen 3.5 27B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-27B:
-        display_name: "Qwen 3.5 27B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-27B-Instruct:
-        display_name: "Qwen 3.5 27B Instruct"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-2B:
-        display_name: "Qwen 3.5 2B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-        only: [droid]
-      Qwen3.5-2B-Instruct:
-        display_name: "Qwen 3.5 2B Instruct"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-        only: [droid]
-      Qwen3.5-35B-A3B:
-        display_name: "Qwen 3.5 35B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-4B:
-        display_name: "Qwen 3.5 4B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-        only: [droid]
-      Qwen3.5-4B-Instruct:
-        display_name: "Qwen 3.5 4B Instruct"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-        only: [droid]
-      Qwen3.5-9B:
-        display_name: "Qwen 3.5 9B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-        only: [droid]
-      Qwen3.5-9B-Instruct:
-        display_name: "Qwen 3.5 9B Instruct"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-        only: [droid]
-      SERA-32B:
-        display_name: "SERA 32B"
-        max_output_tokens: 128000
-        context_limit: 40960
         output_limit: 65536
