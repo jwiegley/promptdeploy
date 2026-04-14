@@ -30,7 +30,7 @@ providers:
     api_key: "${ANTHROPIC_API_KEY}"
     droid:
       provider_type: anthropic
-    only: [droid]
+    only: [droid, opencode]
     models:
       claude-haiku-4-5-20251001:
         display_name: "Claude Haiku 4.5"
@@ -49,7 +49,7 @@ providers:
     droid:
       provider_type: generic-chat-completion-api
       no_image_support: true
-    only: [droid]
+    only: [droid, opencode]
     models:
       gemini-3-pro-preview:
         display_name: "Gemini 3 Pro Preview"
@@ -64,7 +64,7 @@ providers:
     api_key: "${OPENAI_API_KEY}"
     droid:
       provider_type: openai
-    only: [droid]
+    only: [droid, opencode]
     models:
       gpt-5.3-codex:
         display_name: "ChatGPT 5.3 Codex"
@@ -87,7 +87,7 @@ providers:
       npm: "@ai-sdk/openai-compatible"
       name: "LiteLLM"
       timeout: false
-    only: [droid, opencode-vulcan]
+    except: [opencode-vulcan]
     models:
       hera/Bonsai-8B:
         display_name: "Bonsai 8B"
@@ -220,7 +220,7 @@ providers:
     droid:
       provider_type: generic-chat-completion-api
       no_image_support: true
-    only: [droid]
+    except: [opencode-vulcan]
     models:
       Bonsai-8B:
         display_name: "Bonsai 8B"
@@ -256,7 +256,6 @@ providers:
       npm: "@ai-sdk/openai-compatible"
       name: "oMLX"
       timeout: false
-    except: [opencode-vulcan]
     models:
       cohere-transcribe-03-2026-mlx-fp16:
         display_name: "Cohere Transcribe 03 2026 MLX Fp 16 (MLX)"
