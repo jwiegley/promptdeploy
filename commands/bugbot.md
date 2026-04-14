@@ -5,9 +5,9 @@ There are bot comments on this PR (from BugBot, Graphite, Cursor, Devin, or simi
 Before making any code changes, build a complete inventory of every unresolved bot comment.
 
 1. Determine the current PR number (`gh pr view --json number -q .number`).
-2. Use `gh api graphql` to fetch ALL review threads for this PR, including each thread's `id`, `isResolved`, `path`, `line`, and the `author.login` and `body` of each comment in the thread.
-3. Also fetch all top-level PR comments (issue comments) with their `id`, `author.login`, `body`, and `isMinimized` status.
-4. Filter to only **unresolved** items from bot/automated authors. Include any author whose login contains "bot", "[bot]", or "app/", plus known tools: BugBot, Graphite, Cursor, Devin, CodeRabbit, Copilot. **Exclude all human authors.**
+2. Use `gh api graphql` to fetch ALL review threads for this PR, including each thread's `id`, `isResolved`, `path`, `line`, and the `author.login`, `author.__typename`, and `body` of each comment in the thread.
+3. Also fetch all top-level PR comments (issue comments) with their `id`, `author.login`, `author.__typename`, `body`, and `isMinimized` status.
+4. Filter to only **unresolved** items from bot/automated authors. An author is a bot if `author.__typename` is `"Bot"` (this catches cursor, graphite-app, github-actions, etc. regardless of login naming). As a fallback for any API response missing `__typename`, also match logins containing "bot", "[bot]", or "app/". **Exclude all human authors** (`__typename: "User"`).
 5. Categorize each item:
    - **Review thread**: inline code comment with a resolvable thread ID
    - **Top-level comment**: PR-level comment (can be replied to but not "resolved" in GitHub's sense)

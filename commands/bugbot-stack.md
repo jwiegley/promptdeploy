@@ -26,7 +26,7 @@ For each PR in order:
 
 After all PRs have been processed:
 
-1. For each PR in the stack, use `gh api graphql` to fetch the count of unresolved review threads where the original comment author is a bot.
+1. For each PR in the stack, use `gh api graphql` to fetch the count of unresolved review threads where the original comment's `author.__typename` is `"Bot"` (or login matches bot heuristics as a fallback).
 2. Output a summary table:
    - PR number and branch name
    - Total bot comments found

@@ -7,8 +7,8 @@ providers:
       provider_type: anthropic
     only: [droid]
     models:
-      claude-opus-4-5-20251101-thinking-32000:
-        display_name: "Opus 4.5 (High)"
+      claude-opus-4-6-thinking-32000:
+        display_name: "Opus 4.6 (High)"
 
   positron-anthropic:
     display_name: "Positron"
@@ -18,8 +18,14 @@ providers:
       provider_type: anthropic
     only: [droid]
     models:
-      claude-opus-4-5-20251101:
-        display_name: "Claude Opus 4.5"
+      claude-opus-4-6:
+        display_name: "Claude Opus 4.6"
+        max_output_tokens: 32768
+      claude-sonnet-4-6:
+        display_name: "Claude Sonnet 4.6"
+        max_output_tokens: 32768
+      claude-haiku-4-5-20251001:
+        display_name: "Claude Haiku 4.5"
         max_output_tokens: 32768
 
   positron-google:
@@ -31,8 +37,11 @@ providers:
       no_image_support: true
     only: [droid]
     models:
-      gemini-3.1-pro-preview:
+      gemini-3-pro-preview:
         display_name: "Gemini 3 Pro"
+        max_output_tokens: 32000
+      gemini-2.5-pro:
+        display_name: "Gemini 2.5 Pro"
         max_output_tokens: 32000
 
   positron-openai:
@@ -43,14 +52,17 @@ providers:
       provider_type: openai
     only: [droid]
     models:
-      gpt-5.4:
-        display_name: "ChatGPT 5.4"
+      gpt-5.3-codex:
+        display_name: "ChatGPT 5.3 Codex"
         max_output_tokens: 32000
-      gpt-5.4-pro:
-        display_name: "ChatGPT 5.4 Pro"
+      gpt-5.2:
+        display_name: "ChatGPT 5.2"
         max_output_tokens: 32000
-      gpt-5.4-codex:
-        display_name: "ChatGPT 5.4 Codex"
+      gpt-5.2-codex:
+        display_name: "ChatGPT 5.2 Codex"
+        max_output_tokens: 32000
+      gpt-5.1:
+        display_name: "ChatGPT 5.1"
         max_output_tokens: 32000
 
   litellm:
@@ -373,6 +385,11 @@ providers:
       # --- LFM ---
       LFM2.5-350M:
         display_name: "LFM 2.5 350M"
+        max_output_tokens: 128000
+        only: [droid]
+      # --- Bonsai ---
+      Bonsai-8B:
+        display_name: "Bonsai 8B"
         max_output_tokens: 128000
         only: [droid]
       # --- Legacy models ---
