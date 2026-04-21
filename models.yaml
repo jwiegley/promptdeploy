@@ -292,6 +292,11 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
+      hera/Qwen3.5-27B-Instruct:
+        display_name: "Qwen 3.5 27B Instruct"
+        max_output_tokens: 65536
+        context_limit: 262144
+        output_limit: 65536
       hera/omlx/Qwen3.5-27B-unsloth-mlx:
         display_name: "Qwen 3.5 27B (MLX)"
         max_output_tokens: 65536
@@ -309,11 +314,6 @@ providers:
         output_limit: 65536
       hera/omlx/Huihui-Qwen3.5-27B-Claude-4.6-Opus-abliterated-mlx-8bit:
         display_name: "Huihui Qwen 3.5 27B Claude 4.6 Opus Abliterated (MLX)"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/Qwen3.5-27B-Instruct:
-        display_name: "Qwen 3.5 27B Instruct"
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
@@ -362,13 +362,18 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
+      hera/omlx/Qwen3.5-9B-Instruct-unsloth-mlx:
+        display_name: "Qwen 3.5 9B Instruct (MLX)"
+        max_output_tokens: 65536
+        context_limit: 262144
+        output_limit: 65536
       hera/Qwen3.5-9B-Instruct:
         display_name: "Qwen 3.5 9B Instruct"
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
-      hera/omlx/Qwen3.5-9B-Instruct-unsloth-mlx:
-        display_name: "Qwen 3.5 9B Instruct (MLX)"
+      hera/omlx/Qwen3.6-35B-A3B-UD-MLX-4bit:
+        display_name: "Qwen 3.6 35B A 3B Ud (MLX)"
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
@@ -573,6 +578,11 @@ providers:
         output_limit: 65536
       Qwen3.5-9B-Instruct-unsloth-mlx:
         display_name: "Qwen 3.5 9B Instruct (MLX)"
+        max_output_tokens: 128000
+        context_limit: 262144
+        output_limit: 65536
+      Qwen3.6-35B-A3B-UD-MLX-4bit:
+        display_name: "Qwen 3.6 35B A 3B Ud (MLX)"
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
