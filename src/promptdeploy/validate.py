@@ -71,6 +71,21 @@ def validate_all(config: Config) -> List[ValidationIssue]:
         else:
             seen[key] = item.path
 
+    # Target-level rule: per-target model: only applies to claude targets.
+    for target in config.targets.values():
+        if target.model is not None and target.type != "claude":
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message=(
+                        f"Target '{target.id}' has 'model' set but type is "
+                        f"'{target.type}'; model injection only applies to "
+                        f"claude targets"
+                    ),
+                    file_path=config.source_root / "deploy.yaml",
+                )
+            )
+
     return issues
 
 

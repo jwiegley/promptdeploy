@@ -571,6 +571,56 @@ class TestValidateAll:
         assert len(dup_issues) == 1
         assert "deploy" in dup_issues[0].message
 
+    def test_per_target_model_on_non_claude_target_is_error(
+        self, tmp_path: Path
+    ) -> None:
+        config = Config(
+            source_root=tmp_path,
+            targets={
+                "d": TargetConfig(
+                    id="d",
+                    type="droid",
+                    path=tmp_path / "d",
+                    model="claude-opus-4-7",
+                ),
+            },
+            groups={},
+        )
+        issues = validate_all(config)
+        errors = [
+            i
+            for i in issues
+            if i.level == "error" and "'model'" in i.message and "'d'" in i.message
+        ]
+        assert len(errors) == 1
+        assert "only applies to claude targets" in errors[0].message
+
+    def test_per_target_model_on_claude_target_is_ok(self, tmp_path: Path) -> None:
+        # Include a models.yaml so the model name is recognized and Task 4.4's
+        # unknown-model warning does not fire for this valid configuration.
+        (tmp_path / "models.yaml").write_text(
+            "providers:\n"
+            "  anthropic:\n"
+            "    display_name: Anthropic\n"
+            "    models:\n"
+            "      claude-opus-4-7:\n"
+            "        display_name: Claude Opus 4.7\n"
+        )
+        config = Config(
+            source_root=tmp_path,
+            targets={
+                "c": TargetConfig(
+                    id="c",
+                    type="claude",
+                    path=tmp_path / "c",
+                    model="claude-opus-4-7",
+                ),
+            },
+            groups={},
+        )
+        issues = validate_all(config)
+        assert issues == []
+
 
 class TestValidateItemHook:
     def _make_hook_item(self, content_dict: dict) -> SourceItem:
