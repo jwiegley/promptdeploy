@@ -78,6 +78,128 @@ class TestFullDeploy:
         assert "my-skill" in manifest.items["skills"]
 
 
+class TestDeployModelInjection:
+    def test_agent_deployed_with_injected_model_from_models_yaml(
+        self, tmp_path: Path
+    ) -> None:
+        # Full integration: deploy() reads models.yaml, threads the default
+        # through create_target, which threads it into ClaudeTarget.
+        from promptdeploy.config import Config, TargetConfig
+        from promptdeploy.deploy import deploy
+
+        source_root = tmp_path / "src"
+        source_root.mkdir()
+        (source_root / "agents").mkdir()
+        (source_root / "agents" / "helper.md").write_bytes(
+            b"---\nname: helper\n---\nAgent body.\n"
+        )
+        (source_root / "models.yaml").write_text(
+            "providers:\n"
+            "  anthropic:\n"
+            "    display_name: Anthropic\n"
+            "    claude:\n"
+            "      default_model: claude-opus-4-7\n"
+            "    models:\n"
+            "      claude-opus-4-7:\n"
+            "        display_name: Claude Opus 4.7\n"
+        )
+
+        target_dir = tmp_path / "target"
+        target_dir.mkdir()
+        config = Config(
+            source_root=source_root,
+            targets={
+                "c": TargetConfig(id="c", type="claude", path=target_dir),
+            },
+            groups={},
+        )
+
+        deploy(config)
+
+        from promptdeploy.frontmatter import parse_frontmatter
+
+        deployed = target_dir / "agents" / "helper.md"
+        meta, _ = parse_frontmatter(deployed.read_bytes())
+        assert meta is not None
+        assert meta["model"] == "claude-opus-4-7"
+
+    def test_per_target_model_overrides_global(self, tmp_path: Path) -> None:
+        from promptdeploy.config import Config, TargetConfig
+        from promptdeploy.deploy import deploy
+
+        source_root = tmp_path / "src"
+        source_root.mkdir()
+        (source_root / "agents").mkdir()
+        (source_root / "agents" / "helper.md").write_bytes(
+            b"---\nname: helper\n---\nAgent body.\n"
+        )
+        (source_root / "models.yaml").write_text(
+            "providers:\n"
+            "  anthropic:\n"
+            "    display_name: Anthropic\n"
+            "    claude:\n"
+            "      default_model: claude-opus-4-7\n"
+            "    models:\n"
+            "      claude-opus-4-7:\n"
+            "        display_name: Claude Opus 4.7\n"
+        )
+
+        target_dir = tmp_path / "target"
+        target_dir.mkdir()
+        config = Config(
+            source_root=source_root,
+            targets={
+                "c": TargetConfig(
+                    id="c",
+                    type="claude",
+                    path=target_dir,
+                    model="claude-sonnet-4-6",
+                ),
+            },
+            groups={},
+        )
+
+        deploy(config)
+
+        from promptdeploy.frontmatter import parse_frontmatter
+
+        deployed = target_dir / "agents" / "helper.md"
+        meta, _ = parse_frontmatter(deployed.read_bytes())
+        assert meta is not None
+        assert meta["model"] == "claude-sonnet-4-6"
+
+    def test_no_models_yaml_means_no_injection(self, tmp_path: Path) -> None:
+        from promptdeploy.config import Config, TargetConfig
+        from promptdeploy.deploy import deploy
+
+        source_root = tmp_path / "src"
+        source_root.mkdir()
+        (source_root / "agents").mkdir()
+        (source_root / "agents" / "helper.md").write_bytes(
+            b"---\nname: helper\n---\nAgent body.\n"
+        )
+        # No models.yaml at all.
+
+        target_dir = tmp_path / "target"
+        target_dir.mkdir()
+        config = Config(
+            source_root=source_root,
+            targets={
+                "c": TargetConfig(id="c", type="claude", path=target_dir),
+            },
+            groups={},
+        )
+
+        deploy(config)
+
+        from promptdeploy.frontmatter import parse_frontmatter
+
+        deployed = target_dir / "agents" / "helper.md"
+        meta, _ = parse_frontmatter(deployed.read_bytes())
+        assert meta is not None
+        assert "model" not in meta
+
+
 class TestIdempotency:
     """Second deploy with no changes should produce all skips."""
 

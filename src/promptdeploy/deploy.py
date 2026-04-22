@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Optional, Set
 
-from .config import Config
+from .config import Config, load_anthropic_default_model
 from .filters import should_deploy_to
 from .manifest import (
     Manifest,
@@ -157,11 +157,16 @@ def deploy(
     discovery = SourceDiscovery(config.source_root)
     all_items = list(discovery.discover_all())
 
+    # Resolve the Anthropic default model once from models.yaml; threaded
+    # into ClaudeTarget via create_target so that agents/skills receive the
+    # injected `model` frontmatter field (overridable per-target).
+    global_model = load_anthropic_default_model(config.source_root / "models.yaml")
+
     actions: List[DeployAction] = []
 
     for target_id in target_ids:
         target_config = config.targets[target_id]
-        target = create_target(target_config)
+        target = create_target(target_config, global_model=global_model)
         try:
             target.prepare(verbose=verbose)
             manifest = load_manifest(target.manifest_path())
