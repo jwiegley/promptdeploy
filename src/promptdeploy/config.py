@@ -59,12 +59,14 @@ def load_config(config_path: Optional[Path] = None) -> Config:
         if host is None:
             path = path.expanduser()
         labels = target_data.get("labels", [])
+        model = target_data.get("model")
         targets[target_id] = TargetConfig(
             id=target_id,
             type=target_data["type"],
             path=path,
             host=host,
             labels=labels,
+            model=model,
         )
 
     groups: Dict[str, List[str]] = dict(data.get("groups", {}))

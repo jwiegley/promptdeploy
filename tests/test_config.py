@@ -90,6 +90,28 @@ class TestLoadConfig:
         for tc in config.targets.values():
             assert tc.model is None
 
+    def test_target_model_parsed_from_config(self, tmp_path: Path) -> None:
+        data = {
+            "source_root": ".",
+            "targets": {
+                "claude-vulcan": {
+                    "type": "claude",
+                    "path": str(tmp_path / "claude-vulcan"),
+                    "model": "claude-sonnet-4-6",
+                },
+                "claude-personal": {
+                    "type": "claude",
+                    "path": str(tmp_path / "claude-personal"),
+                },
+            },
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        assert config.targets["claude-vulcan"].model == "claude-sonnet-4-6"
+        assert config.targets["claude-personal"].model is None
+
 
 class TestFindConfigFile:
     def test_finds_in_current_dir(self, config_dir: Path) -> None:
