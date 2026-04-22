@@ -161,3 +161,33 @@ def load_anthropic_default_model(models_yaml_path: Path) -> Optional[str]:
     if not isinstance(default_model, str):
         return None
     return default_model
+
+
+def load_anthropic_known_models(models_yaml_path: Path) -> Optional[set[str]]:
+    """Return the set of keys under ``providers.anthropic.models`` in a models.yaml.
+
+    Returns ``None`` when the file is missing, cannot be parsed, the top-level
+    structure is wrong, or any intermediate key is absent. Returns an empty
+    set when ``models:`` is present but empty. Used by
+    :mod:`promptdeploy.validate` to surface warnings for unknown model strings;
+    treated as the same permissive contract as
+    :func:`load_anthropic_default_model`.
+    """
+    if not models_yaml_path.exists():
+        return None
+    try:
+        data = yaml.safe_load(models_yaml_path.read_text("utf-8"))
+    except yaml.YAMLError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    providers = data.get("providers")
+    if not isinstance(providers, dict):
+        return None
+    anthropic = providers.get("anthropic")
+    if not isinstance(anthropic, dict):
+        return None
+    models = anthropic.get("models")
+    if not isinstance(models, dict):
+        return None
+    return set(models.keys())

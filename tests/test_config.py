@@ -515,3 +515,75 @@ class TestLoadAnthropicDefaultModel:
         models_path = tmp_path / "models.yaml"
         models_path.write_text("- just\n- a\n- list\n")
         assert load_anthropic_default_model(models_path) is None
+
+
+class TestLoadAnthropicKnownModels:
+    def test_returns_model_keys(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_known_models
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text(
+            "providers:\n"
+            "  anthropic:\n"
+            "    display_name: Anthropic\n"
+            "    models:\n"
+            "      claude-opus-4-7:\n"
+            "        display_name: Claude Opus 4.7\n"
+            "      claude-sonnet-4-6:\n"
+            "        display_name: Claude Sonnet 4.6\n"
+        )
+        assert load_anthropic_known_models(models_path) == {
+            "claude-opus-4-7",
+            "claude-sonnet-4-6",
+        }
+
+    def test_returns_none_when_file_missing(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_known_models
+
+        assert load_anthropic_known_models(tmp_path / "nope.yaml") is None
+
+    def test_returns_none_when_yaml_invalid(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_known_models
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text("providers: [unclosed\n")
+        assert load_anthropic_known_models(models_path) is None
+
+    def test_returns_none_when_data_not_dict(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_known_models
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text("- just\n- a\n- list\n")
+        assert load_anthropic_known_models(models_path) is None
+
+    def test_returns_none_when_providers_missing(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_known_models
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text("something_else: 1\n")
+        assert load_anthropic_known_models(models_path) is None
+
+    def test_returns_none_when_anthropic_missing(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_known_models
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text("providers:\n  other:\n    display_name: Other\n")
+        assert load_anthropic_known_models(models_path) is None
+
+    def test_returns_none_when_models_key_missing(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_known_models
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text(
+            "providers:\n  anthropic:\n    display_name: Anthropic\n"
+        )
+        assert load_anthropic_known_models(models_path) is None
+
+    def test_returns_empty_set_when_models_empty(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_known_models
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text(
+            "providers:\n  anthropic:\n    display_name: Anthropic\n    models: {}\n"
+        )
+        assert load_anthropic_known_models(models_path) == set()
