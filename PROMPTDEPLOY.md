@@ -54,6 +54,53 @@ only:
 - Both cannot be used on the same item.
 - Group names (defined in `deploy.yaml`) expand to their members.
 
+## Model Injection (Claude targets)
+
+For every agent and skill deployed to a Claude Code target, `promptdeploy` injects a `model:` field into the YAML frontmatter so the deployed copy explicitly pins the model. Injection is applied only to agents and skills -- commands, MCP servers, hooks, and models are not touched.
+
+The effective model is resolved in this order:
+
+1. **Per-target override** -- `model:` set on a specific target in `deploy.yaml` wins.
+2. **Global default** -- `providers.anthropic.claude.default_model` in `models.yaml`.
+3. **No injection** -- if neither is set, no `model:` field is written.
+
+Injection overwrites any `model:` field authored in the source item. Remove the source `model:` if you want deployed behavior to match source behavior exactly, or set a per-target override when a specific target should use a different model.
+
+### Per-target override
+
+```yaml
+# deploy.yaml
+targets:
+  claude-personal:
+    type: claude
+    path: ~/.config/claude/personal
+    labels: [claude, personal, local]
+    model: claude-sonnet-4-6
+```
+
+Accepted values: any model alias accepted by Claude Code's `model:` frontmatter field (e.g., `opus`, `sonnet`, `haiku`, `claude-opus-4-7`, `inherit`). The value is written verbatim. Setting `model:` on a non-claude target is a validation error.
+
+### Global default
+
+```yaml
+# models.yaml
+providers:
+  anthropic:
+    display_name: "Anthropic"
+    except: [droid, opencode, opencode-vulcan]
+    claude:
+      default_model: claude-opus-4-7
+    models:
+      claude-haiku-4-5-20251001:
+        display_name: "Claude Haiku 4.5"
+      claude-opus-4-7:
+        display_name: "Claude Opus 4.7"
+      claude-sonnet-4-6:
+        display_name: "Claude Sonnet 4.6"
+```
+
+The `anthropic` provider itself is scoped to claude targets via `except:` so it does not leak into Droid or OpenCode configuration. The `models:` dict is informational -- it lets `promptdeploy validate` warn when a per-target `model:` references a model not listed here (typo detection). `models:` entries require no credentials; `base_url` and `api_key` are only required when a provider deploys to Droid or OpenCode.
+
 ## Development
 
 ### Running from source with Nix (recommended)
