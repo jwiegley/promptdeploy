@@ -1,5 +1,18 @@
 providers:
 
+  anthropic:
+    display_name: "Anthropic"
+    except: [droid, opencode, opencode-vulcan]
+    claude:
+      default_model: claude-opus-4-7
+    models:
+      claude-haiku-4-5-20251001:
+        display_name: "Claude Haiku 4.5"
+      claude-opus-4-7:
+        display_name: "Claude Opus 4.7"
+      claude-sonnet-4-6:
+        display_name: "Claude Sonnet 4.6"
+
   positron-anthropic:
     display_name: "Positron"
     base_url: "https://api.anthropic.com"
