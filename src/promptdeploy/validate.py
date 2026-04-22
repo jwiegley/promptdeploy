@@ -8,7 +8,11 @@ from typing import List, Optional
 
 import yaml
 
-from .config import Config
+from .config import (
+    Config,
+    load_anthropic_default_model,
+    load_anthropic_known_models,
+)
 from .frontmatter import FrontmatterError, parse_frontmatter
 from .source import SourceDiscovery, SourceItem
 
@@ -71,7 +75,16 @@ def validate_all(config: Config) -> List[ValidationIssue]:
         else:
             seen[key] = item.path
 
-    # Target-level rule: per-target model: only applies to claude targets.
+    # Target-level rules: (a) per-target model: only applies to claude targets;
+    # (b) warn when the effective model on a claude target is neither in
+    # providers.anthropic.models nor an always-accepted alias.
+    models_yaml_path = config.source_root / "models.yaml"
+    default_model = load_anthropic_default_model(models_yaml_path)
+    known_models = load_anthropic_known_models(models_yaml_path)
+    always_accepted_aliases = {"opus", "sonnet", "haiku", "inherit"}
+    allowed_models = always_accepted_aliases | (known_models or set())
+    deploy_yaml_path = config.source_root / "deploy.yaml"
+
     for target in config.targets.values():
         if target.model is not None and target.type != "claude":
             issues.append(
@@ -82,7 +95,25 @@ def validate_all(config: Config) -> List[ValidationIssue]:
                         f"'{target.type}'; model injection only applies to "
                         f"claude targets"
                     ),
-                    file_path=config.source_root / "deploy.yaml",
+                    file_path=deploy_yaml_path,
+                )
+            )
+            continue
+        if target.type != "claude":
+            continue
+        effective = target.model or default_model
+        if effective is None:
+            continue
+        if effective not in allowed_models:
+            issues.append(
+                ValidationIssue(
+                    level="warning",
+                    message=(
+                        f"Target '{target.id}' effective model '{effective}' "
+                        f"is not listed in providers.anthropic.models and is "
+                        f"not a known alias"
+                    ),
+                    file_path=deploy_yaml_path,
                 )
             )
 

@@ -621,6 +621,116 @@ class TestValidateAll:
         issues = validate_all(config)
         assert issues == []
 
+    def test_unknown_effective_model_produces_warning(self, tmp_path: Path) -> None:
+        (tmp_path / "models.yaml").write_text(
+            "providers:\n"
+            "  anthropic:\n"
+            "    display_name: Anthropic\n"
+            "    claude:\n"
+            "      default_model: claude-opus-4-7\n"
+            "    models:\n"
+            "      claude-opus-4-7:\n"
+            "        display_name: Claude Opus 4.7\n"
+        )
+        config = Config(
+            source_root=tmp_path,
+            targets={
+                "c": TargetConfig(
+                    id="c",
+                    type="claude",
+                    path=tmp_path / "c",
+                    model="made-up-model",
+                ),
+            },
+            groups={},
+        )
+        issues = validate_all(config)
+        warnings = [
+            i for i in issues if i.level == "warning" and "made-up-model" in i.message
+        ]
+        assert len(warnings) == 1
+
+    def test_known_effective_model_no_warning(self, tmp_path: Path) -> None:
+        (tmp_path / "models.yaml").write_text(
+            "providers:\n"
+            "  anthropic:\n"
+            "    display_name: Anthropic\n"
+            "    claude:\n"
+            "      default_model: claude-opus-4-7\n"
+            "    models:\n"
+            "      claude-opus-4-7:\n"
+            "        display_name: Claude Opus 4.7\n"
+        )
+        config = Config(
+            source_root=tmp_path,
+            targets={
+                "c": TargetConfig(id="c", type="claude", path=tmp_path / "c"),
+            },
+            groups={},
+        )
+        issues = validate_all(config)
+        warnings = [i for i in issues if i.level == "warning"]
+        assert warnings == []
+
+    def test_alias_opus_is_always_accepted(self, tmp_path: Path) -> None:
+        config = Config(
+            source_root=tmp_path,
+            targets={
+                "c": TargetConfig(
+                    id="c",
+                    type="claude",
+                    path=tmp_path / "c",
+                    model="opus",
+                ),
+            },
+            groups={},
+        )
+        issues = validate_all(config)
+        warnings = [i for i in issues if i.level == "warning"]
+        assert warnings == []
+
+    def test_no_effective_model_no_warning(self, tmp_path: Path) -> None:
+        config = Config(
+            source_root=tmp_path,
+            targets={
+                "c": TargetConfig(id="c", type="claude", path=tmp_path / "c"),
+            },
+            groups={},
+        )
+        issues = validate_all(config)
+        warnings = [i for i in issues if i.level == "warning"]
+        assert warnings == []
+
+    def test_unknown_model_without_models_yaml_warns(self, tmp_path: Path) -> None:
+        config = Config(
+            source_root=tmp_path,
+            targets={
+                "c": TargetConfig(
+                    id="c",
+                    type="claude",
+                    path=tmp_path / "c",
+                    model="claude-opus-4-7",
+                ),
+            },
+            groups={},
+        )
+        issues = validate_all(config)
+        warnings = [
+            i for i in issues if i.level == "warning" and "claude-opus-4-7" in i.message
+        ]
+        assert len(warnings) == 1
+
+    def test_non_claude_target_without_model_is_silent(self, tmp_path: Path) -> None:
+        config = Config(
+            source_root=tmp_path,
+            targets={
+                "d": TargetConfig(id="d", type="droid", path=tmp_path / "d"),
+            },
+            groups={},
+        )
+        issues = validate_all(config)
+        assert [i for i in issues if i.level in ("error", "warning")] == []
+
 
 class TestValidateItemHook:
     def _make_hook_item(self, content_dict: dict) -> SourceItem:
