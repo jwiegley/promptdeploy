@@ -15,7 +15,7 @@ A single-source repository of AI coding prompts (agents, commands, skills, MCP s
 | Skills | `skills/*/SKILL.md` | Directory with `SKILL.md` (YAML frontmatter) + optional files | `humanizer` is a git submodule |
 | MCP Servers | `mcp/*.yaml` | YAML with `name`, transport (`command`+`args` or `url`), `env`, `scope` | Schema in `mcp/schema.md` |
 | Hooks | `hooks/*.yaml` | YAML with `name`, event handlers, matchers | Claude-only |
-| Models | `models.yaml` | Single YAML file, providers with nested models | Droid and OpenCode only; Claude skipped |
+| Models | `models.yaml` | Single YAML file, providers with nested models | Droid and OpenCode consume the full config; claude targets only read `providers.anthropic.claude.default_model` to inject `model:` frontmatter into deployed agents and skills |
 
 All content items support `only`/`except` filtering by target or group name (defined in `deploy.yaml`).
 
@@ -47,6 +47,7 @@ All content items support `only`/`except` filtering by target or group name (def
 - **Frontmatter transformation** -- `frontmatter.py` `transform_for_target()` strips deployment metadata (`only`/`except`) before writing to targets.
 - **Models filtering** -- `only`/`except` applies at both provider and individual model level.
 - **Remote deployment** -- Targets with `host:` in `deploy.yaml` are deployed via rsync over SSH. The `Target` ABC has `prepare()`/`finalize()`/`cleanup()` lifecycle hooks (no-ops for local targets). `RemoteTarget` wraps any inner target, using a local staging dir: `prepare()` pulls remote state, `finalize()` pushes back. Path `~` expansion is skipped for remote targets (rsync expands `~` on the remote). `--target-root` strips `host` to force local preview.
+- **Claude model injection** -- For every agent and skill deployed to a claude target, `ClaudeTarget` injects a `model:` field into the YAML frontmatter via `frontmatter.transform_for_target(..., inject={"model": effective_model})`. The effective model is resolved by `targets.__init__.create_target` from `TargetConfig.model` (per-target override) with fallback to `load_anthropic_default_model` (global `providers.anthropic.claude.default_model` in `models.yaml`); `None` skips injection. Commands, MCP, hooks, and models are not touched.
 
 ## Development Commands
 
