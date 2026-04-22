@@ -89,6 +89,34 @@ class TestClaudeTargetModelInjection:
             tmp_path / ".claude" / "agents" / "plain.md"
         ).read_bytes() == b"Plain body, no frontmatter.\n"
 
+    def test_skill_md_gets_injected_model(self, tmp_path: Path) -> None:
+        config = tmp_path / ".claude"
+        config.mkdir()
+        target = ClaudeTarget("my-target", config, model="claude-opus-4-7")
+
+        src = tmp_path / "src-skill"
+        src.mkdir()
+        (src / "SKILL.md").write_bytes(b"---\nname: s\n---\nSkill body.\n")
+
+        target.deploy_skill("s", src)
+
+        deployed_md = tmp_path / ".claude" / "skills" / "s" / "SKILL.md"
+        meta, _ = parse_frontmatter(deployed_md.read_bytes())
+        assert meta is not None
+        assert meta["model"] == "claude-opus-4-7"
+
+    def test_command_is_not_injected(self, tmp_path: Path) -> None:
+        # Commands must never receive the injected model field.
+        config = tmp_path / ".claude"
+        config.mkdir()
+        target = ClaudeTarget("my-target", config, model="claude-opus-4-7")
+        target.deploy_command("fix", b"---\nname: fix\n---\nFix things.\n")
+        meta, _ = parse_frontmatter(
+            (tmp_path / ".claude" / "commands" / "fix.md").read_bytes()
+        )
+        assert meta is not None
+        assert "model" not in meta
+
 
 class TestRemoveAgent:
     def test_removes_existing(self, tmp_path: Path):
