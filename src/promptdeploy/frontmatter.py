@@ -57,9 +57,17 @@ def serialize_frontmatter(metadata: dict, body: bytes) -> bytes:
     return b"---\n" + yaml_text.encode("utf-8") + b"---\n" + body
 
 
-def transform_for_target(content: bytes, target_id: str) -> bytes:
-    """Parse frontmatter, strip deployment fields, and re-serialize.
+def transform_for_target(
+    content: bytes,
+    target_id: str,
+    inject: Optional[dict] = None,
+) -> bytes:
+    """Parse frontmatter, strip deployment fields, inject overrides, and re-serialize.
 
+    When ``inject`` is provided and non-empty, each key is written into the
+    metadata dict after deployment fields are stripped, overwriting any existing
+    value. Keys whose value is ``None`` are skipped (not emitted as ``null``)
+    and leave any existing value untouched.
     Returns original content unchanged if no frontmatter is present.
     """
     metadata, body = parse_frontmatter(content)
@@ -67,4 +75,9 @@ def transform_for_target(content: bytes, target_id: str) -> bytes:
         return content
 
     cleaned = strip_deployment_fields(metadata)
+    if inject:
+        for key, value in inject.items():
+            if value is None:
+                continue
+            cleaned[key] = value
     return serialize_frontmatter(cleaned, body)

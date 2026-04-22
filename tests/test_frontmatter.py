@@ -153,3 +153,39 @@ class TestTransformForTarget:
         content = b"---\nonly:\n  - target-a\n---\nBody.\n"
         result = transform_for_target(content, "target-a")
         assert result == b"Body.\n"
+
+
+class TestTransformForTargetInjection:
+    def test_inject_none_is_noop(self):
+        content = b"---\nname: test\nonly:\n  - target-a\n---\nBody.\n"
+        result = transform_for_target(content, "target-a", inject=None)
+        meta, body = parse_frontmatter(result)
+        assert meta == {"name": "test"}
+        assert body == b"Body.\n"
+        assert "model" not in meta
+
+    def test_inject_empty_dict_is_noop(self):
+        content = b"---\nname: test\n---\nBody.\n"
+        result = transform_for_target(content, "target-a", inject={})
+        meta, _ = parse_frontmatter(result)
+        assert meta == {"name": "test"}
+
+    def test_inject_no_frontmatter_returns_original(self):
+        content = b"No frontmatter here.\n"
+        result = transform_for_target(content, "target-a", inject={"model": "opus"})
+        assert result == content
+
+    def test_inject_overwrites_existing_key(self):
+        content = b"---\nname: test\nmodel: sonnet\n---\nBody.\n"
+        result = transform_for_target(
+            content, "target-a", inject={"model": "claude-opus-4-7"}
+        )
+        meta, _ = parse_frontmatter(result)
+        assert meta["model"] == "claude-opus-4-7"
+
+    def test_inject_none_value_is_skipped(self):
+        content = b"---\nname: test\nmodel: sonnet\n---\nBody.\n"
+        result = transform_for_target(content, "target-a", inject={"model": None})
+        meta, _ = parse_frontmatter(result)
+        # None-valued inject key is a no-op for that key: existing value preserved.
+        assert meta["model"] == "sonnet"
