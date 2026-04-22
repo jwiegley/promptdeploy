@@ -437,3 +437,81 @@ class TestExpandTargetArg:
     def test_unknown_target_raises(self, config: Config) -> None:
         with pytest.raises(ValueError, match="Unknown target: nonexistent"):
             expand_target_arg(["nonexistent"], config)
+
+
+class TestLoadAnthropicDefaultModel:
+    def test_returns_default_model(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_default_model
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text(
+            "providers:\n"
+            "  anthropic:\n"
+            "    display_name: Anthropic\n"
+            "    claude:\n"
+            "      default_model: claude-opus-4-7\n"
+            "    models:\n"
+            "      claude-opus-4-7:\n"
+            "        display_name: Claude Opus 4.7\n"
+        )
+        assert load_anthropic_default_model(models_path) == "claude-opus-4-7"
+
+    def test_returns_none_when_file_missing(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_default_model
+
+        assert load_anthropic_default_model(tmp_path / "nope.yaml") is None
+
+    def test_returns_none_when_providers_missing(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_default_model
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text("something_else: 1\n")
+        assert load_anthropic_default_model(models_path) is None
+
+    def test_returns_none_when_anthropic_missing(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_default_model
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text("providers:\n  other:\n    display_name: Other\n")
+        assert load_anthropic_default_model(models_path) is None
+
+    def test_returns_none_when_claude_subsection_missing(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_default_model
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text(
+            "providers:\n  anthropic:\n    display_name: Anthropic\n"
+        )
+        assert load_anthropic_default_model(models_path) is None
+
+    def test_returns_none_when_default_model_missing(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_default_model
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text(
+            "providers:\n  anthropic:\n    display_name: Anthropic\n    claude: {}\n"
+        )
+        assert load_anthropic_default_model(models_path) is None
+
+    def test_returns_none_when_yaml_invalid(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_default_model
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text("providers: [unclosed\n")
+        assert load_anthropic_default_model(models_path) is None
+
+    def test_returns_none_when_default_model_not_string(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_default_model
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text(
+            "providers:\n  anthropic:\n    claude:\n      default_model: 42\n"
+        )
+        assert load_anthropic_default_model(models_path) is None
+
+    def test_returns_none_when_yaml_root_not_mapping(self, tmp_path: Path) -> None:
+        from promptdeploy.config import load_anthropic_default_model
+
+        models_path = tmp_path / "models.yaml"
+        models_path.write_text("- just\n- a\n- list\n")
+        assert load_anthropic_default_model(models_path) is None

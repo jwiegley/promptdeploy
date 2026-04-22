@@ -129,3 +129,35 @@ def expand_target_arg(targets_arg: Optional[List[str]], config: Config) -> List[
         else:
             raise ValueError(f"Unknown target: {t}")
     return result
+
+
+def load_anthropic_default_model(models_yaml_path: Path) -> Optional[str]:
+    """Read ``providers.anthropic.claude.default_model`` from a models.yaml.
+
+    Returns ``None`` when the file is missing, YAML cannot be parsed, any
+    intermediate key is absent, or the final value is not a string. Validation
+    of the file's structure is the responsibility of :mod:`promptdeploy.validate`;
+    this helper is deliberately permissive so deploy-time can short-circuit
+    cleanly when the feature is not configured.
+    """
+    if not models_yaml_path.exists():
+        return None
+    try:
+        data = yaml.safe_load(models_yaml_path.read_text("utf-8"))
+    except yaml.YAMLError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    providers = data.get("providers")
+    if not isinstance(providers, dict):
+        return None
+    anthropic = providers.get("anthropic")
+    if not isinstance(anthropic, dict):
+        return None
+    claude = anthropic.get("claude")
+    if not isinstance(claude, dict):
+        return None
+    default_model = claude.get("default_model")
+    if not isinstance(default_model, str):
+        return None
+    return default_model
