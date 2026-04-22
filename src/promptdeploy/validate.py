@@ -248,15 +248,30 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                         )
                     )
                     continue
-                for required in ("display_name", "base_url", "api_key"):
-                    if required not in prov:
-                        issues.append(
-                            ValidationIssue(
-                                level="error",
-                                message=f"Provider '{prov_key}' missing required field '{required}'",
-                                file_path=item.path,
-                            )
+                # display_name is always required.
+                if "display_name" not in prov:
+                    issues.append(
+                        ValidationIssue(
+                            level="error",
+                            message=f"Provider '{prov_key}' missing required field 'display_name'",
+                            file_path=item.path,
                         )
+                    )
+                # base_url and api_key are required only when the provider has
+                # a droid: or opencode: subsection — those targets actually
+                # dispatch HTTP requests. A claude-only provider carries no
+                # credentials because Claude Code does not read them from
+                # models.yaml.
+                if "droid" in prov or "opencode" in prov:
+                    for required in ("base_url", "api_key"):
+                        if required not in prov:
+                            issues.append(
+                                ValidationIssue(
+                                    level="error",
+                                    message=f"Provider '{prov_key}' missing required field '{required}'",
+                                    file_path=item.path,
+                                )
+                            )
                 models = prov.get("models")
                 if not isinstance(models, dict) or not models:
                     issues.append(

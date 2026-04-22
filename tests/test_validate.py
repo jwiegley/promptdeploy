@@ -190,10 +190,12 @@ class TestValidateItemModels:
         assert any("must be a mapping" in i.message for i in issues)
 
     def test_missing_required_fields(self, config: Config) -> None:
+        # Provider has a droid: subsection, so all three fields are required.
         item = self._make_models_item(
             {
                 "providers": {
                     "acme": {
+                        "droid": {"type": "openai"},
                         "models": {"m": {}},
                     },
                 },
@@ -202,6 +204,69 @@ class TestValidateItemModels:
         issues = validate_item(item, config)
         messages = [i.message for i in issues]
         assert any("'display_name'" in m for m in messages)
+        assert any("'base_url'" in m for m in messages)
+        assert any("'api_key'" in m for m in messages)
+
+    def test_claude_only_provider_does_not_require_credentials(
+        self, config: Config
+    ) -> None:
+        # A provider with only a claude: subsection (no droid:, no opencode:)
+        # does not need base_url or api_key — Claude Code reads no credentials
+        # from models.yaml.
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "anthropic": {
+                        "display_name": "Anthropic",
+                        "claude": {"default_model": "claude-opus-4-7"},
+                        "models": {
+                            "claude-opus-4-7": {"display_name": "Claude Opus 4.7"},
+                        },
+                    },
+                },
+            }
+        )
+        issues = validate_item(item, config)
+        messages = [i.message for i in issues]
+        assert not any("'base_url'" in m for m in messages)
+        assert not any("'api_key'" in m for m in messages)
+
+    def test_claude_only_provider_still_requires_display_name(
+        self, config: Config
+    ) -> None:
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "anthropic": {
+                        "claude": {"default_model": "claude-opus-4-7"},
+                        "models": {
+                            "claude-opus-4-7": {"display_name": "Claude Opus 4.7"},
+                        },
+                    },
+                },
+            }
+        )
+        issues = validate_item(item, config)
+        messages = [i.message for i in issues]
+        assert any("'display_name'" in m for m in messages)
+
+    def test_provider_with_opencode_subsection_requires_credentials(
+        self, config: Config
+    ) -> None:
+        # A provider with opencode: (or droid:) still requires base_url and api_key.
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "vendor": {
+                        "display_name": "Vendor",
+                        "opencode": {"type": "openai"},
+                        "models": {"m": {"display_name": "M"}},
+                    },
+                },
+            }
+        )
+        issues = validate_item(item, config)
+        messages = [i.message for i in issues]
         assert any("'base_url'" in m for m in messages)
         assert any("'api_key'" in m for m in messages)
 
