@@ -42,6 +42,54 @@ class TestDeployAgent:
         assert (tmp_path / ".claude" / "agents" / "a.md").exists()
 
 
+class TestClaudeTargetModelInjection:
+    def test_constructor_without_model_is_backward_compatible(
+        self, tmp_path: Path
+    ) -> None:
+        # Two-argument form must continue to work — no model, no injection.
+        config = tmp_path / ".claude"
+        config.mkdir()
+        target = ClaudeTarget("my-target", config)
+        target.deploy_agent("a", b"---\nname: a\n---\nBody.\n")
+        meta, _ = parse_frontmatter(
+            (tmp_path / ".claude" / "agents" / "a.md").read_bytes()
+        )
+        assert meta is not None
+        assert "model" not in meta
+
+    def test_agent_frontmatter_gets_injected_model(self, tmp_path: Path) -> None:
+        config = tmp_path / ".claude"
+        config.mkdir()
+        target = ClaudeTarget("my-target", config, model="claude-opus-4-7")
+        target.deploy_agent("a", b"---\nname: a\n---\nBody.\n")
+        meta, _ = parse_frontmatter(
+            (tmp_path / ".claude" / "agents" / "a.md").read_bytes()
+        )
+        assert meta is not None
+        assert meta["model"] == "claude-opus-4-7"
+
+    def test_agent_existing_model_is_overwritten(self, tmp_path: Path) -> None:
+        config = tmp_path / ".claude"
+        config.mkdir()
+        target = ClaudeTarget("my-target", config, model="claude-opus-4-7")
+        target.deploy_agent("a", b"---\nname: a\nmodel: sonnet\n---\nBody.\n")
+        meta, _ = parse_frontmatter(
+            (tmp_path / ".claude" / "agents" / "a.md").read_bytes()
+        )
+        assert meta is not None
+        assert meta["model"] == "claude-opus-4-7"
+
+    def test_agent_no_frontmatter_is_unchanged(self, tmp_path: Path) -> None:
+        # Source files without frontmatter are written as-is.
+        config = tmp_path / ".claude"
+        config.mkdir()
+        target = ClaudeTarget("my-target", config, model="claude-opus-4-7")
+        target.deploy_agent("plain", b"Plain body, no frontmatter.\n")
+        assert (
+            tmp_path / ".claude" / "agents" / "plain.md"
+        ).read_bytes() == b"Plain body, no frontmatter.\n"
+
+
 class TestRemoveAgent:
     def test_removes_existing(self, tmp_path: Path):
         target = _make_target(tmp_path)

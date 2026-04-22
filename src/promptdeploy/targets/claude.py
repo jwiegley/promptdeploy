@@ -22,9 +22,17 @@ _MCP_STRIP_KEYS = frozenset(
 class ClaudeTarget(Target):
     """Deploy prompts and MCP servers into a Claude Code configuration directory."""
 
-    def __init__(self, target_id: str, config_path: Path) -> None:
+    def __init__(
+        self,
+        target_id: str,
+        config_path: Path,
+        *,
+        model: Optional[str] = None,
+    ) -> None:
         self._id = target_id
         self._config_path = config_path.expanduser().resolve()
+        self._model = model
+        self._injected = {"model": model} if model else None
 
     @property
     def id(self) -> str:
@@ -55,7 +63,7 @@ class ClaudeTarget(Target):
     def deploy_agent(self, name: str, content: bytes) -> None:
         dest = self._config_path / "agents" / f"{name}.md"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(transform_for_target(content, self._id))
+        dest.write_bytes(transform_for_target(content, self._id, inject=self._injected))
 
     def deploy_command(self, name: str, content: bytes) -> None:
         dest = self._config_path / "commands" / f"{name}.md"
@@ -73,7 +81,11 @@ class ClaudeTarget(Target):
         # Transform the SKILL.md inside the deployed copy.
         skill_md = dest / "SKILL.md"
         if skill_md.exists():
-            skill_md.write_bytes(transform_for_target(skill_md.read_bytes(), self._id))
+            skill_md.write_bytes(
+                transform_for_target(
+                    skill_md.read_bytes(), self._id, inject=self._injected
+                )
+            )
 
     def should_skip(
         self,
