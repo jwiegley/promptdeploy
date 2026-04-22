@@ -8,7 +8,8 @@ Deploy prompts, agents, skills, and MCP servers from a single source repository 
 |--------|------|------|
 | claude-personal | Claude Code | ~/.config/claude/personal |
 | claude-positron | Claude Code | ~/.config/claude/positron |
-| claude-git-ai | Claude Code | ~/.config/claude/git-ai |
+| claude-git-ai-local | Claude Code | ~/.config/claude/git-ai |
+| claude-git-ai-remote | Claude Code | git-ai:~/.claude |
 | droid | Factory Droid | ~/.factory |
 | opencode | OpenCode | ~/.config/opencode |
 
@@ -48,7 +49,7 @@ only:
 ---
 ```
 
-- `only: [claude]` -- Deploy only to the `claude` group (personal, positron, git-ai).
+- `only: [claude]` -- Deploy only to the `claude` group.
 - `except: [droid]` -- Deploy everywhere except Factory Droid.
 - Both cannot be used on the same item.
 - Group names (defined in `deploy.yaml`) expand to their members.

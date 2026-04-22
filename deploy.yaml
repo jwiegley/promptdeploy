@@ -11,10 +11,16 @@ targets:
     path: ~/.config/claude/positron
     labels: [claude, positron, local]
 
-  claude-git-ai:
+  claude-git-ai-local:
     type: claude
     path: ~/.config/claude/git-ai
     labels: [claude, personal, local]
+
+  claude-git-ai-remote:
+    type: claude
+    path: ~/.claude
+    host: git-ai
+    labels: [claude, git-ai, remote]
 
   droid:
     type: droid
