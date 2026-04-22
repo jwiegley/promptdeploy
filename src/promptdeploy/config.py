@@ -103,7 +103,12 @@ def remap_targets_to_root(config: Config, root: Path) -> Config:
     new_targets = {}
     for tid, tc in config.targets.items():
         new_targets[tid] = TargetConfig(
-            id=tc.id, type=tc.type, path=root / tid, host=None, labels=list(tc.labels)
+            id=tc.id,
+            type=tc.type,
+            path=root / tid,
+            host=None,
+            labels=list(tc.labels),
+            model=tc.model,
         )
     return Config(
         source_root=config.source_root,

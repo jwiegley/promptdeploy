@@ -196,6 +196,17 @@ class TestRemapTargetsToRoot:
         remapped = remap_targets_to_root(cfg, root)
         assert remapped.targets["my-target"].path == root / "my-target"
 
+    def test_remap_preserves_model(self, tmp_path: Path) -> None:
+        tc = TargetConfig(
+            id="claude-remote",
+            type="claude",
+            path=Path("/remote/path"),
+            model="claude-sonnet-4-6",
+        )
+        cfg = Config(source_root=tmp_path, targets={"claude-remote": tc}, groups={})
+        remapped = remap_targets_to_root(cfg, tmp_path / "preview")
+        assert remapped.targets["claude-remote"].model == "claude-sonnet-4-6"
+
 
 class TestHostField:
     def test_host_preserved_in_target_config(self, tmp_path: Path) -> None:
