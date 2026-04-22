@@ -84,7 +84,12 @@ Target table: replace the `claude-git-ai` row with two rows:
 | claude-git-ai-local | Claude Code | ~/.config/claude/git-ai |
 | claude-git-ai-remote | Claude Code | git-ai:~/.claude |
 
-Update the parenthetical on line 51 from `(personal, positron, git-ai)` to `(personal, positron, git-ai-local, git-ai-remote)`.
+Drop the `(personal, positron, git-ai)` parenthetical on line 51 entirely. It was already stale before this change — the `claude` group also includes `claude-vulcan`, `claude-vps`, and `claude-andoria`, and chasing a complete enumeration makes the line unwieldy. The revised line:
+
+```
+- `only: [claude]` -- Deploy only to the `claude` group.
+```
+
 
 ### 4. `README.md`
 
