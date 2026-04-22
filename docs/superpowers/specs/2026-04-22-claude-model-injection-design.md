@@ -62,9 +62,10 @@ providers:
 ```
 
 Notes:
-- `api_key` / `base_url` are **omitted** (Claude Code authenticates through its own `claude login` flow; `promptdeploy` never reads Anthropic credentials from `models.yaml`).
-- `except: [droid, opencode, opencode-vulcan]` prevents the Droid and OpenCode targets from trying to consume a provider that has no `droid:` or `opencode:` subsection. This mirrors the existing `except:` pattern used by `litellm:` for `opencode-vulcan`.
-- `models:` subsection is informational — used only for soft validation (see §5). Claude target continues to `should_skip` item_type `models` and no provider data is written to any Claude target file.
+- `api_key` / `base_url` are **omitted** (Claude Code authenticates through its own `claude login` flow; `promptdeploy` never reads Anthropic credentials from `models.yaml`). This requires a corresponding change in `validate.py` (see §4 — the current validator at `validate.py:251-259` requires those fields on *every* provider).
+- `except: [droid, opencode, opencode-vulcan]` is primarily needed for the **Droid** target — `droid.py::deploy_models` does not check for a `droid:` subsection and would fall back to `provider_type: "generic-chat-completion-api"` on a claude-only provider. The OpenCode target already guards with `if not oc_cfg: continue` (`opencode.py:197`) and would skip the provider silently; the opencode entries in `except:` are belt-and-suspenders. This mirrors the existing `except:` pattern used by `litellm:` for `opencode-vulcan`.
+- The list contains **target IDs**, not target types. If a second Droid or OpenCode target is added to `deploy.yaml` later, it must be added here too. An alternative future-proof approach would be to support a group-based `except: [droid-group, opencode-group]` or invert the filter to `only: [claude]` — deferred as out-of-scope to keep this change minimal.
+- `models:` subsection is informational — used only for soft validation (see §5). Claude target continues to `should_skip` item_type `models` and no provider data is written to any Claude target file. The current `validate.py:261-268` requires `models:` to be non-empty; the three models listed above satisfy that without further changes.
 - The subsection is named `claude:` (mirroring `droid:` / `opencode:`) to reserve namespace for future Claude-specific options.
 
 ### 3. Schema — `deploy.yaml`
@@ -101,17 +102,26 @@ claude-vulcan:
   ) -> bytes:
   ```
   When `inject` is provided and non-empty, after `strip_deployment_fields`, each key in `inject` is set (overwriting any existing value) in the metadata dict. Key insertion order: existing keys retain their position; new keys are appended (Python dict insertion order; `yaml.dump(sort_keys=False)` preserves this).
+- Semantics:
+  - `inject=None` (default) → no-op, existing behavior preserved.
+  - `inject={}` → no-op (treated identically to `None`).
+  - `inject={"model": None}` → key is **skipped** (not written as `model: null`). This symmetry lets the effective-model resolver pass a raw `{"model": effective_model}` without needing to filter `None` upstream.
 - Backward-compatible default: existing callers that pass only `(content, target_id)` continue to work unchanged.
 
 **`src/promptdeploy/targets/claude.py`:**
-- `ClaudeTarget.__init__` gains a `model: Optional[str] = None` parameter.
+- `ClaudeTarget.__init__` gains a `model: Optional[str] = None` keyword parameter (defaulted so existing test instantiations like `ClaudeTarget(id, path)` continue to work unchanged).
 - Compute once: `self._injected = {"model": self._model} if self._model else None`.
 - `deploy_agent` and `deploy_skill` pass `inject=self._injected` to `transform_for_target`.
-- `deploy_command` continues to pass no `inject` argument (commands are excluded per scope).
+- `deploy_command` continues to pass no `inject` argument — relying on the `inject=None` default — so commands are untouched per scope.
 - Skill handling: the existing post-copytree `SKILL.md` rewrite (line 74–76) gets the same `inject` argument.
 
 **`src/promptdeploy/targets/__init__.py` (factory `create_target`):**
 - Propagate the resolved effective model into `ClaudeTarget(...)`. The factory looks up `target.model` (per-target override) and the global default from wherever the caller provides it, and passes the resolved value into the constructor.
+
+**`src/promptdeploy/validate.py`:**
+- Relax the required-provider-fields check at lines 251-259. Currently every provider must have `display_name`, `base_url`, and `api_key`. After this change, `base_url` and `api_key` are required **only when the provider has a `droid:` or `opencode:` subsection** (i.e., when a deployment target will actually consume credentials). `display_name` remains required for all providers as an identity/readability concern. Claude-only providers (providers with a `claude:` subsection and no `droid:` / `opencode:`) pass validation without credentials.
+- Add a new error for per-target `model:` set on a non-`claude` target (iterate `config.targets.values()` in `validate_all`).
+- Add a new **warning** (level `"warning"`, reusing the existing `ValidationIssue` shape at lines 16-23) when `effective_model(target)` resolves to a string not found in `providers.anthropic.models:` **and** not in the always-accepted set `{"opus", "sonnet", "haiku", "inherit"}` (Claude Code's canonical aliases plus the default). The warning does not change the CLI exit code — the existing `_run_validate` distinction between errors and warnings is preserved.
 
 **No changes to:**
 - `source.py` — existing `item_type` distinction between `"agent"`, `"skill"`, `"command"` is enough; gating happens in `claude.py`.
@@ -121,29 +131,34 @@ claude-vulcan:
 
 ### 5. Validation
 
-Added to `promptdeploy validate` (and reused as a load-time check in `load_config`):
+Implemented in `validate.py` (see §4 for the exact code changes). Summary of resulting behavior:
 
-- **Hard error**: per-target `model:` specified on a non-`claude` target.
-- **Soft warning** (stderr, not exit-code failure): `effective_model` resolves to a string that does not appear as a key in `providers.anthropic.models:`. Soft because Claude Code also accepts aliases (`opus`, `sonnet`, `haiku`), date-stamped IDs (`claude-opus-4-7-20260416`), and the `[1m]` suffix; maintaining an exhaustive list of valid strings isn't worth the churn. The warning tells users the value isn't in their own documented list and may be a typo.
+- **Hard error**: per-target `model:` specified on a non-`claude` target (probably a user mistake).
+- **Warning** (level `"warning"` on `ValidationIssue`): `effective_model` resolves to a string that is not in `providers.anthropic.models:` **and** not one of `{"opus", "sonnet", "haiku", "inherit"}`. Aliases are always accepted so users don't get nagged on the obvious shortcuts. Date-stamped IDs (`claude-opus-4-7-20260416`) and `[1m]` suffixes would still trigger the warning — that's acceptable, since those users can either add the value to `providers.anthropic.models:` (silencing it) or live with the one-line warning.
 - **No warning** when `providers.anthropic` is absent entirely — the feature is opt-in.
+- Relaxed provider-fields rule: `base_url` / `api_key` no longer required on providers that lack a `droid:` / `opencode:` subsection. `display_name` still required everywhere.
 
 ### 6. Behavior for existing source-file `model:` fields
 
-Current repo state: a `rg "^model:" agents/ skills/` run at plan time will tell us how many source files already carry a `model:` frontmatter field. **All of them get overwritten** at deploy time (force semantics per Q1). This is by design — the user explicitly chose force over respect-existing. The source files themselves are not modified; only the deployed copies.
+Current repo state (grepped at spec time): **11 agents** already carry `model: sonnet` in their frontmatter (`agents/*-reviewer.md` — the 11 reviewer agents). **0 skills** currently set a frontmatter `model:` field (the match in `skills/forge/SKILL.md` is in the body, not the frontmatter).
+
+**All 11 reviewer agents' `model:` fields get overwritten** at deploy time (force semantics per Q1). This is by design — the user explicitly chose force over respect-existing. The source files themselves are not modified; only the deployed copies. This gives implementers a concrete test surface: the Claude-target integration test can assert that a reviewer agent's deployed frontmatter has `model: claude-opus-4-7` (or whatever is configured), not the source's `model: sonnet`.
 
 If a future need for per-agent pinning emerges, the escape hatch is: do not configure the feature (leave `providers.anthropic.claude.default_model` unset and no per-target `model:`), in which case the source file's `model:` field is preserved unchanged.
 
 ## File impact summary
 
 Modified:
-- `src/promptdeploy/config.py` — `TargetConfig.model` field; models.yaml global default lookup
+- `src/promptdeploy/config.py` — `TargetConfig.model` field; models.yaml global default lookup; `remap_targets_to_root()` must propagate `model=` through to the remapped `TargetConfig` construction
 - `src/promptdeploy/frontmatter.py` — `transform_for_target(..., inject=)` parameter
 - `src/promptdeploy/targets/claude.py` — injection wiring in agent/skill deploy paths
 - `src/promptdeploy/targets/__init__.py` — factory passes effective model to `ClaudeTarget`
+- `src/promptdeploy/validate.py` — relaxed required-fields rule for claude-only providers; new error on per-target `model:` on non-claude target; new warning on unknown model string
 - `models.yaml` — new `anthropic:` provider with `claude.default_model: claude-opus-4-7`
-- `tests/test_frontmatter.py` — injection, key-order preservation, override behavior
-- `tests/test_claude_target.py` — agent/skill receive `model:`, command does not
-- `tests/test_config.py` (or `tests/test_config_loading.py` if different) — per-target override parsed, models.yaml global default parsed, non-claude-target warning
+- `tests/test_frontmatter.py` — injection no-op (None, {}), key-order preservation, overwrite-existing behavior, `None`-value skip semantics
+- `tests/test_claude_target.py` — agent receives injected `model:`, skill's `SKILL.md` receives injected `model:`, command does NOT, `ClaudeTarget(id, path)` still works with no model arg
+- `tests/test_config.py` (or the current config-loading test file) — per-target `model:` parsed, models.yaml global default parsed, `remap_targets_to_root()` round-trips `model=`, non-claude-target `model:` produces an error
+- `tests/test_models_deploy.py` / `tests/test_validate.py` — relaxed required-fields rule accepts a claude-only provider; droid/opencode still skip an anthropic-only provider via `except:`
 - `PROMPTDEPLOY.md` — document the two new config sites
 - `CLAUDE.md` — update the "models.yaml -- Droid and OpenCode only; Claude skipped" note to reflect that Claude now reads a narrow slice (`providers.anthropic.claude.default_model`)
 
