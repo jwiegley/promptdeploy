@@ -183,9 +183,50 @@ class TestTransformForTargetInjection:
         meta, _ = parse_frontmatter(result)
         assert meta["model"] == "claude-opus-4-7"
 
+    def test_inject_adds_new_key_when_absent(self):
+        content = b"---\nname: test\n---\nBody.\n"
+        result = transform_for_target(
+            content, "target-a", inject={"model": "claude-opus-4-7"}
+        )
+        meta, _ = parse_frontmatter(result)
+        assert meta["model"] == "claude-opus-4-7"
+        assert meta["name"] == "test"
+
     def test_inject_none_value_is_skipped(self):
         content = b"---\nname: test\nmodel: sonnet\n---\nBody.\n"
         result = transform_for_target(content, "target-a", inject={"model": None})
         meta, _ = parse_frontmatter(result)
         # None-valued inject key is a no-op for that key: existing value preserved.
         assert meta["model"] == "sonnet"
+
+    def test_inject_preserves_existing_key_order(self):
+        # When inject overwrites an existing key, its position is preserved.
+        content = b"---\nname: a\nmodel: old\ndescription: d\n---\nBody.\n"
+        result = transform_for_target(content, "target-a", inject={"model": "new"})
+        text = result.decode("utf-8")
+        # Confirm order: name, then model, then description.
+        assert text.index("name:") < text.index("model:") < text.index("description:")
+        meta, _ = parse_frontmatter(result)
+        assert meta["model"] == "new"
+
+    def test_inject_new_key_appended_last(self):
+        # A new key is appended after existing ones.
+        content = b"---\nname: a\ndescription: d\n---\nBody.\n"
+        result = transform_for_target(
+            content, "target-a", inject={"model": "claude-opus-4-7"}
+        )
+        text = result.decode("utf-8")
+        assert text.index("description:") < text.index("model:")
+
+    def test_inject_multiple_keys(self):
+        # Multi-key inject: each non-None key is written, each None is skipped.
+        content = b"---\nname: a\n---\nBody.\n"
+        result = transform_for_target(
+            content,
+            "target-a",
+            inject={"model": "claude-opus-4-7", "tools": None, "priority": 1},
+        )
+        meta, _ = parse_frontmatter(result)
+        assert meta["model"] == "claude-opus-4-7"
+        assert meta["priority"] == 1
+        assert "tools" not in meta
