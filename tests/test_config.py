@@ -85,6 +85,11 @@ class TestLoadConfig:
         assert "claude" in config.groups
         assert config.groups["claude"] == ["claude-personal", "claude-positron"]
 
+    def test_target_model_defaults_to_none(self, config: Config) -> None:
+        # Without an explicit model field, TargetConfig.model is None.
+        for tc in config.targets.values():
+            assert tc.model is None
+
 
 class TestFindConfigFile:
     def test_finds_in_current_dir(self, config_dir: Path) -> None:

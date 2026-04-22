@@ -12,6 +12,7 @@ class TargetConfig:
     path: Path
     host: Optional[str] = None
     labels: List[str] = None  # type: ignore[assignment]
+    model: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.labels is None:
