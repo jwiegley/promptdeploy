@@ -1,18 +1,5 @@
 providers:
 
-  anthropic:
-    display_name: "Anthropic"
-    except: [droid, opencode, opencode-vulcan]
-    claude:
-      default_model: claude-opus-4-7
-    models:
-      claude-haiku-4-5-20251001:
-        display_name: "Claude Haiku 4.5"
-      claude-opus-4-7:
-        display_name: "Claude Opus 4.7"
-      claude-sonnet-4-6:
-        display_name: "Claude Sonnet 4.6"
-
   positron-anthropic:
     display_name: "Positron"
     base_url: "https://api.anthropic.com"
@@ -385,6 +372,21 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
+      hera/omlx/Qwen3.6-27B-MLX-8bit:
+        display_name: "Qwen 3.6 27B (MLX)"
+        max_output_tokens: 65536
+        context_limit: 262144
+        output_limit: 65536
+      clio/omlx/Qwen3.6-27B-UD-MLX-4bit:
+        display_name: "Qwen 3.6 27B Ud (MLX)"
+        max_output_tokens: 65536
+        context_limit: 262144
+        output_limit: 65536
+      hera/omlx/Qwen3.6-35B-A3B-MLX-8bit:
+        display_name: "Qwen 3.6 35B (MLX)"
+        max_output_tokens: 65536
+        context_limit: 262144
+        output_limit: 65536
       hera/omlx/Qwen3.6-35B-A3B-UD-MLX-4bit:
         display_name: "Qwen 3.6 35B A 3B Ud (MLX)"
         max_output_tokens: 65536
@@ -591,6 +593,21 @@ providers:
         output_limit: 65536
       Qwen3.5-9B-Instruct-unsloth-mlx:
         display_name: "Qwen 3.5 9B Instruct (MLX)"
+        max_output_tokens: 128000
+        context_limit: 262144
+        output_limit: 65536
+      Qwen3.6-27B-MLX-8bit:
+        display_name: "Qwen 3.6 27B (MLX)"
+        max_output_tokens: 128000
+        context_limit: 262144
+        output_limit: 65536
+      Qwen3.6-27B-UD-MLX-4bit:
+        display_name: "Qwen 3.6 27B Ud (MLX)"
+        max_output_tokens: 128000
+        context_limit: 262144
+        output_limit: 65536
+      Qwen3.6-35B-A3B-MLX-8bit:
+        display_name: "Qwen 3.6 35B (MLX)"
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
