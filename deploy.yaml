@@ -1,5 +1,7 @@
 source_root: .
 
+hosts: [hera, clio]
+
 targets:
   claude-personal:
     type: claude

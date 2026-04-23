@@ -96,13 +96,17 @@ def load_config(config_path: Optional[Path] = None) -> Config:
             if target_id not in groups[label]:
                 groups[label].append(target_id)
 
-    # Auto-inject the current hostname as a group containing all local
-    # targets (those without an explicit ``host:``). This lets models.yaml
-    # use ``only: [hera]`` / ``only: [clio]`` to gate machine-specific
-    # entries — deployments on hera pick up the hera-tagged models; clio
-    # picks up clio-tagged models; shared models (no only:) go everywhere.
-    # ``PROMPTDEPLOY_HOST`` overrides the detected hostname.
+    # Register every hostname listed under ``hosts:`` as a group. All of
+    # them are valid ``only:``/``except:`` env IDs; only the current host's
+    # group is populated with the local targets. This lets models.yaml
+    # use ``only: [hera]`` / ``only: [clio]`` on any machine — the
+    # non-current host resolves to an empty group (zero matching targets),
+    # while the current host expands to every local target (those without
+    # an explicit ``host:``). ``PROMPTDEPLOY_HOST`` overrides detection.
+    declared_hosts = list(data.get("hosts", []))
     host_group = current_host()
+    for h in declared_hosts:
+        groups.setdefault(h, [])
     if host_group:
         local_targets = [tid for tid, tc in targets.items() if tc.host is None]
         existing = groups.setdefault(host_group, [])

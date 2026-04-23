@@ -471,6 +471,25 @@ class TestHostGroupInjection:
         config = load_config(config_path)
         assert set(config.groups["hera"]) == {"droid", "opencode"}
 
+    def test_declared_hosts_registered_as_empty_groups(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Non-current hosts listed under `hosts:` exist as empty groups."""
+        monkeypatch.setenv("PROMPTDEPLOY_HOST", "hera")
+        data = {
+            "source_root": ".",
+            "hosts": ["hera", "clio"],
+            "targets": {
+                "droid": {"type": "droid", "path": "~/.factory"},
+            },
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        assert config.groups["clio"] == []
+        assert config.groups["hera"] == ["droid"]
+
     def test_host_group_merges_with_explicit_group_of_same_name(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
