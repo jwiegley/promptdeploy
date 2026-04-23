@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Optional, Set
@@ -79,10 +80,23 @@ def _filter_models_config(config_dict: dict, target_id: str, config: Config) -> 
     return {"providers": filtered_providers}
 
 
-def _compute_hash(item: SourceItem) -> str:
+def _compute_hash(item: SourceItem, target: Target) -> str:
+    """Hash that reflects the effective deployed output, not just source bytes.
+
+    The base hash covers the source content (or directory for skills). If the
+    target reports a ``content_fingerprint`` -- e.g. an injected model -- it
+    is mixed in so that config changes affecting deployed bytes invalidate
+    the manifest cache even when source bytes are unchanged.
+    """
     if item.item_type == "skill":
-        return compute_directory_hash(item.path.parent.resolve())
-    return compute_file_hash(item.content)
+        base = compute_directory_hash(item.path.parent.resolve())
+    else:
+        base = compute_file_hash(item.content)
+    fingerprint = target.content_fingerprint(item.item_type)
+    if fingerprint is None:
+        return base
+    digest = hashlib.sha256(f"{base}|{fingerprint}".encode()).hexdigest()
+    return f"sha256:{digest}"
 
 
 def _deploy_item(
@@ -197,7 +211,7 @@ def deploy(
                     continue
 
                 category = _TYPE_TO_CATEGORY[item.item_type]
-                current_hash = _compute_hash(item)
+                current_hash = _compute_hash(item, target)
                 deployed_names.add((category, item.name))
 
                 changed = has_changed(manifest, category, item.name, current_hash)

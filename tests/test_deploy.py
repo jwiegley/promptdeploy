@@ -862,3 +862,135 @@ class TestForce:
 
         manifest = load_manifest(tc.path / MANIFEST_FILENAME)
         assert "helper" in manifest.items.get("agents", {})
+
+
+class TestCacheInvalidation:
+    """Config-dependent transforms must invalidate the manifest cache.
+
+    The manifest tracks the effective deployed content -- not just source
+    bytes -- so that changing an input that affects the transform (e.g. the
+    Anthropic default_model or a per-target model override) invalidates the
+    cached hash and causes a redeploy.
+    """
+
+    def _write_models_yaml(self, root: Path, default_model: str) -> None:
+        (root / "models.yaml").write_text(
+            "providers:\n"
+            "  anthropic:\n"
+            "    display_name: Anthropic\n"
+            "    claude:\n"
+            f"      default_model: {default_model}\n"
+            "    models:\n"
+            "      claude-opus-4-7:\n"
+            "        display_name: Opus 4.7\n"
+            "      claude-sonnet-4-6:\n"
+            "        display_name: Sonnet 4.6\n"
+        )
+
+    def test_default_model_change_invalidates_agent_cache(self, tmp_path: Path):
+        src = _make_source(tmp_path)
+        self._write_models_yaml(src, "claude-opus-4-7")
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        deploy(config)
+
+        # Source content unchanged, but models.yaml default_model flipped.
+        self._write_models_yaml(src, "claude-sonnet-4-6")
+
+        actions = deploy(config)
+        updates = [
+            a for a in actions if a.action == "update" and a.item_type == "agent"
+        ]
+        assert len(updates) == 1
+
+        from promptdeploy.frontmatter import parse_frontmatter
+
+        meta, _ = parse_frontmatter((tc.path / "agents" / "helper.md").read_bytes())
+        assert meta is not None
+        assert meta["model"] == "claude-sonnet-4-6"
+
+    def test_default_model_change_invalidates_skill_cache(self, tmp_path: Path):
+        src = _make_source(tmp_path)
+        self._write_models_yaml(src, "claude-opus-4-7")
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        deploy(config)
+
+        self._write_models_yaml(src, "claude-sonnet-4-6")
+
+        actions = deploy(config)
+        updates = [
+            a for a in actions if a.action == "update" and a.item_type == "skill"
+        ]
+        assert len(updates) == 1
+
+        from promptdeploy.frontmatter import parse_frontmatter
+
+        skill_md = tc.path / "skills" / "my-skill" / "SKILL.md"
+        meta, _ = parse_frontmatter(skill_md.read_bytes())
+        assert meta is not None
+        assert meta["model"] == "claude-sonnet-4-6"
+
+    def test_default_model_change_does_not_update_commands(self, tmp_path: Path):
+        src = _make_source(tmp_path)
+        self._write_models_yaml(src, "claude-opus-4-7")
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        deploy(config)
+        self._write_models_yaml(src, "claude-sonnet-4-6")
+
+        actions = deploy(config)
+        command_updates = [
+            a for a in actions if a.action == "update" and a.item_type == "command"
+        ]
+        assert command_updates == []
+
+    def test_per_target_model_change_invalidates_cache(self, tmp_path: Path):
+        from promptdeploy.config import Config, TargetConfig
+
+        src = _make_source(tmp_path)
+        target_dir = tmp_path / "t"
+        target_dir.mkdir()
+
+        cfg_v1 = Config(
+            source_root=src,
+            targets={
+                "t": TargetConfig(
+                    id="t", type="claude", path=target_dir, model="claude-opus-4-7"
+                ),
+            },
+            groups={},
+        )
+        deploy(cfg_v1)
+
+        cfg_v2 = Config(
+            source_root=src,
+            targets={
+                "t": TargetConfig(
+                    id="t",
+                    type="claude",
+                    path=target_dir,
+                    model="claude-sonnet-4-6",
+                ),
+            },
+            groups={},
+        )
+        actions = deploy(cfg_v2)
+        updates = [a for a in actions if a.action == "update"]
+        assert any(a.item_type == "agent" for a in updates)
+        assert any(a.item_type == "skill" for a in updates)
+
+    def test_same_config_still_skips(self, tmp_path: Path):
+        """Regression: unchanged source + unchanged config = skip."""
+        src = _make_source(tmp_path)
+        self._write_models_yaml(src, "claude-opus-4-7")
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        deploy(config)
+        actions = deploy(config)
+        non_skips = [a for a in actions if a.action != "skip"]
+        assert non_skips == []

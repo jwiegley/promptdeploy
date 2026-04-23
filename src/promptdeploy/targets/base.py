@@ -45,6 +45,16 @@ class Target(ABC):
         """
         return False
 
+    def content_fingerprint(self, item_type: str) -> Optional[str]:
+        """Return a string describing target-side transform inputs, or None.
+
+        The deploy loop folds this value into the manifest hash so that a
+        config change which alters deployed bytes (e.g. a flipped injected
+        model) invalidates the cache even when source bytes are unchanged.
+        Default: no target-side transforms.
+        """
+        return None
+
     @abstractmethod
     def deploy_agent(self, name: str, content: bytes) -> None: ...
 

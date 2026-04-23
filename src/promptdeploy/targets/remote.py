@@ -79,6 +79,9 @@ class RemoteTarget(Target):
     ) -> bool:
         return self._inner.should_skip(item_type, name, content, metadata)
 
+    def content_fingerprint(self, item_type: str) -> Optional[str]:
+        return self._inner.content_fingerprint(item_type)
+
     def deploy_agent(self, name: str, content: bytes) -> None:
         self._inner.deploy_agent(name, content)
 

@@ -219,6 +219,14 @@ class TestRemoteTargetDelegation:
             "hook", "hook1", b"content", {"key": "val"}
         )
 
+    def test_content_fingerprint_delegates_to_inner(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        mock_inner.content_fingerprint.return_value = "model=claude-opus-4-7"
+        result = remote_target.content_fingerprint("agent")
+        assert result == "model=claude-opus-4-7"
+        mock_inner.content_fingerprint.assert_called_once_with("agent")
+
     def test_item_exists(
         self, remote_target: RemoteTarget, mock_inner: MagicMock
     ) -> None:

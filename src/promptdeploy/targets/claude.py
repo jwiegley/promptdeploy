@@ -96,6 +96,11 @@ class ClaudeTarget(Target):
     ) -> bool:
         return item_type == "models"
 
+    def content_fingerprint(self, item_type: str) -> Optional[str]:
+        if self._injected is not None and item_type in ("agent", "skill"):
+            return f"model={self._model}"
+        return None
+
     def deploy_models(self, config: dict) -> None:
         pass  # Claude Code does not support custom models
 
