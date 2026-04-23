@@ -8,6 +8,7 @@ import yaml
 from promptdeploy.config import (
     Config,
     TargetConfig,
+    current_host,
     expand_target_arg,
     find_config_file,
     load_config,
@@ -415,6 +416,102 @@ class TestLabels:
     def test_target_config_labels_default(self) -> None:
         tc = TargetConfig(id="t", type="claude", path=Path("/p"))
         assert tc.labels == []
+
+
+class TestCurrentHost:
+    def test_override_via_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("PROMPTDEPLOY_HOST", "CLIO")
+        assert current_host() == "clio"
+
+    def test_override_stripped_and_lowercased(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PROMPTDEPLOY_HOST", "  Hera.Local  ")
+        # Override path preserves dotted suffix; it only trims/lowercases
+        assert current_host() == "hera.local"
+
+    def test_strips_local_suffix(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("PROMPTDEPLOY_HOST", raising=False)
+        monkeypatch.setattr("socket.gethostname", lambda: "Hera.local")
+        assert current_host() == "hera"
+
+    def test_strips_fqdn(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("PROMPTDEPLOY_HOST", raising=False)
+        monkeypatch.setattr("socket.gethostname", lambda: "clio.example.com")
+        assert current_host() == "clio"
+
+    def test_empty_override_falls_through(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PROMPTDEPLOY_HOST", "")
+        monkeypatch.setattr("socket.gethostname", lambda: "hera")
+        assert current_host() == "hera"
+
+
+class TestHostGroupInjection:
+    def test_host_group_contains_local_targets(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PROMPTDEPLOY_HOST", "hera")
+        data = {
+            "source_root": ".",
+            "targets": {
+                "droid": {"type": "droid", "path": "~/.factory"},
+                "opencode": {"type": "opencode", "path": "~/.config/opencode"},
+                "remote": {
+                    "type": "claude",
+                    "path": "~/.claude",
+                    "host": "vulcan",
+                },
+            },
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        assert set(config.groups["hera"]) == {"droid", "opencode"}
+
+    def test_host_group_merges_with_explicit_group_of_same_name(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PROMPTDEPLOY_HOST", "hera")
+        data = {
+            "source_root": ".",
+            "targets": {
+                "droid": {"type": "droid", "path": "~/.factory"},
+                "remote": {
+                    "type": "claude",
+                    "path": "~/.claude",
+                    "host": "vulcan",
+                },
+            },
+            "groups": {"hera": ["remote"]},
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        assert set(config.groups["hera"]) == {"droid", "remote"}
+
+    def test_host_group_no_duplicates(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("PROMPTDEPLOY_HOST", "hera")
+        data = {
+            "source_root": ".",
+            "targets": {
+                "droid": {
+                    "type": "droid",
+                    "path": "~/.factory",
+                    "labels": ["hera"],
+                },
+            },
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        assert config.groups["hera"] == ["droid"]
 
 
 class TestExpandTargetArg:

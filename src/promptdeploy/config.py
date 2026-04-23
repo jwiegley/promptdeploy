@@ -1,8 +1,26 @@
+import os
+import socket
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
+
+
+def current_host() -> str:
+    """Return the short, lowercased hostname of the current machine.
+
+    Honours the ``PROMPTDEPLOY_HOST`` environment variable as an override.
+    Otherwise derives the name from :func:`socket.gethostname`, stripping
+    any trailing domain component (e.g. ``Hera.local`` → ``hera``).
+    """
+    override = os.environ.get("PROMPTDEPLOY_HOST")
+    if override:
+        return override.strip().lower()
+    name = socket.gethostname()
+    # Strip DNS/mDNS suffixes like ".local", ".lan", fully-qualified domains.
+    name = name.split(".", 1)[0]
+    return name.lower()
 
 
 @dataclass
@@ -77,6 +95,20 @@ def load_config(config_path: Optional[Path] = None) -> Config:
             groups.setdefault(label, [])
             if target_id not in groups[label]:
                 groups[label].append(target_id)
+
+    # Auto-inject the current hostname as a group containing all local
+    # targets (those without an explicit ``host:``). This lets models.yaml
+    # use ``only: [hera]`` / ``only: [clio]`` to gate machine-specific
+    # entries — deployments on hera pick up the hera-tagged models; clio
+    # picks up clio-tagged models; shared models (no only:) go everywhere.
+    # ``PROMPTDEPLOY_HOST`` overrides the detected hostname.
+    host_group = current_host()
+    if host_group:
+        local_targets = [tid for tid, tc in targets.items() if tc.host is None]
+        existing = groups.setdefault(host_group, [])
+        for tid in local_targets:
+            if tid not in existing:
+                existing.append(tid)
 
     return Config(source_root=source_root, targets=targets, groups=groups)
 
