@@ -84,6 +84,36 @@ class TestCreateTarget:
         assert isinstance(target, ClaudeTarget)
         assert not isinstance(target, RemoteTarget)
 
+    def test_host_matching_current_host_treated_as_local(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        # When deploy.yaml lists e.g. opencode-hera with host: hera and we
+        # are running on hera, deploy locally rather than rsync-to-self.
+        monkeypatch.setenv("PROMPTDEPLOY_HOST", "hera")
+        tc = TargetConfig(
+            id="opencode-hera",
+            type="opencode",
+            path=tmp_path,
+            host="hera",
+        )
+        target = create_target(tc)
+        assert isinstance(target, OpenCodeTarget)
+        assert not isinstance(target, RemoteTarget)
+
+    def test_host_not_matching_current_host_is_remote(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        monkeypatch.setenv("PROMPTDEPLOY_HOST", "hera")
+        tc = TargetConfig(
+            id="opencode-clio",
+            type="opencode",
+            path=Path("/remote/oc"),
+            host="clio",
+        )
+        target = create_target(tc)
+        assert isinstance(target, RemoteTarget)
+        target.cleanup()
+
     def test_base_target_rsync_includes_returns_none(self, tmp_path: Path) -> None:
         tc = TargetConfig(id="t", type="claude", path=tmp_path)
         target = create_target(tc)
