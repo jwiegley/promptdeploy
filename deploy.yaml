@@ -29,15 +29,22 @@ targets:
     path: ~/.factory
     labels: [personal, local]
 
-  opencode:
-    type: opencode
-    path: ~/.config/opencode
-    labels: [personal, local]
-
   opencode-vulcan:
     type: opencode
     path: ~/.config/opencode
     host: vulcan
+    labels: [personal, remote]
+
+  opencode-hera:
+    type: opencode
+    path: ~/.config/opencode
+    host: hera
+    labels: [personal, remote]
+
+  opencode-clio:
+    type: opencode
+    path: ~/.config/opencode
+    host: clio
     labels: [personal, remote]
 
   claude-vulcan:
