@@ -532,6 +532,39 @@ class TestHostGroupInjection:
         config = load_config(config_path)
         assert config.groups["hera"] == ["droid"]
 
+    def test_host_group_includes_targets_with_matching_host_field(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # only: [hera] should match opencode-hera (host: hera) regardless
+        # of which machine runs the deploy, so models marked only: [hera]
+        # appear on hera whether deployed locally or pushed from clio.
+        monkeypatch.setenv("PROMPTDEPLOY_HOST", "clio")
+        data = {
+            "source_root": ".",
+            "hosts": ["hera", "clio"],
+            "targets": {
+                "opencode-hera": {
+                    "type": "opencode",
+                    "path": "~/.config/opencode",
+                    "host": "hera",
+                },
+                "opencode-clio": {
+                    "type": "opencode",
+                    "path": "~/.config/opencode",
+                    "host": "clio",
+                },
+                "droid": {"type": "droid", "path": "~/.factory"},
+            },
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        # hera group: opencode-hera (host: hera).  clio is current host so
+        # it also picks up host-less droid.
+        assert config.groups["hera"] == ["opencode-hera"]
+        assert set(config.groups["clio"]) == {"opencode-clio", "droid"}
+
 
 class TestExpandTargetArg:
     def test_none_returns_all(self, config: Config) -> None:

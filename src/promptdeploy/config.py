@@ -96,22 +96,25 @@ def load_config(config_path: Optional[Path] = None) -> Config:
             if target_id not in groups[label]:
                 groups[label].append(target_id)
 
-    # Register every hostname listed under ``hosts:`` as a group. All of
-    # them are valid ``only:``/``except:`` env IDs; only the current host's
-    # group is populated with the local targets. This lets models.yaml
-    # use ``only: [hera]`` / ``only: [clio]`` on any machine — the
-    # non-current host resolves to an empty group (zero matching targets),
-    # while the current host expands to every local target (those without
-    # an explicit ``host:``). ``PROMPTDEPLOY_HOST`` overrides detection.
+    # Register every hostname listed under ``hosts:`` as a group, and
+    # populate it with every target that deploys to that machine —
+    # whether locally (host: matches) or, on the current host, the
+    # host-less targets that always deploy to wherever the deploy is
+    # invoked from.  This lets models.yaml use ``only: [hera]`` to
+    # restrict a model to hera-resident targets regardless of which
+    # machine runs the deploy.  ``PROMPTDEPLOY_HOST`` overrides
+    # detection of the current host.
     declared_hosts = list(data.get("hosts", []))
     host_group = current_host()
     for h in declared_hosts:
-        groups.setdefault(h, [])
+        existing = groups.setdefault(h, [])
+        for tid, tc in targets.items():
+            if tc.host == h and tid not in existing:
+                existing.append(tid)
     if host_group:
-        local_targets = [tid for tid, tc in targets.items() if tc.host is None]
         existing = groups.setdefault(host_group, [])
-        for tid in local_targets:
-            if tid not in existing:
+        for tid, tc in targets.items():
+            if tc.host is None and tid not in existing:
                 existing.append(tid)
 
     return Config(source_root=source_root, targets=targets, groups=groups)
