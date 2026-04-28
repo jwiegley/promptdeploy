@@ -60,7 +60,9 @@ providers:
       npm: "@ai-sdk/openai-compatible"
       name: "LiteLLM"
       timeout: false
-    except: [opencode-vulcan]
+    overrides:
+      opencode-vulcan:
+        base_url: "http://localhost:4000/v1/"
     models:
       hera/Bonsai-8B:
         display_name: "Bonsai 8B"
