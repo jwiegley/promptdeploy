@@ -502,6 +502,81 @@ class TestValidateItemModels:
         env_issues = [i for i in issues if "invalid environment ID" in i.message]
         assert env_issues == []
 
+    def test_provider_overrides_must_be_a_mapping(self, config: Config) -> None:
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {"m": {}},
+                        "overrides": ["not-a-dict"],
+                    },
+                },
+            }
+        )
+        issues = validate_item(item, config)
+        assert any("'overrides' must be a mapping" in i.message for i in issues)
+
+    def test_provider_overrides_invalid_environment_id(self, config: Config) -> None:
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {"m": {}},
+                        "overrides": {"nonexistent-env": {"base_url": "x"}},
+                    },
+                },
+            }
+        )
+        issues = validate_item(item, config)
+        assert any(
+            "invalid environment ID 'nonexistent-env' in 'overrides'" in i.message
+            for i in issues
+        )
+
+    def test_provider_overrides_entry_must_be_a_mapping(self, config: Config) -> None:
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {"m": {}},
+                        "overrides": {"droid": "not-a-dict"},
+                    },
+                },
+            }
+        )
+        issues = validate_item(item, config)
+        assert any("'overrides.droid' must be a mapping" in i.message for i in issues)
+
+    def test_provider_overrides_valid(self, config: Config) -> None:
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": {"m": {}},
+                        "overrides": {
+                            "droid": {"base_url": "http://localhost:4000/v1/"},
+                            "claude": {"base_url": "http://other/v1/"},
+                        },
+                    },
+                },
+            }
+        )
+        issues = validate_item(item, config)
+        # Both target ID and group key resolve; no errors
+        assert not any("overrides" in i.message for i in issues)
+
 
 class TestValidateAll:
     def test_empty_source(self, tmp_path: Path) -> None:

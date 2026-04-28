@@ -358,6 +358,35 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                                             file_path=item.path,
                                         )
                                     )
+                # Validate provider-level overrides
+                p_overrides = prov.get("overrides")
+                if p_overrides is not None:
+                    if not isinstance(p_overrides, dict):
+                        issues.append(
+                            ValidationIssue(
+                                level="error",
+                                message=f"Provider '{prov_key}': 'overrides' must be a mapping",
+                                file_path=item.path,
+                            )
+                        )
+                    else:
+                        for env_id, override_data in p_overrides.items():
+                            if env_id not in valid_ids:
+                                issues.append(
+                                    ValidationIssue(
+                                        level="error",
+                                        message=f"Provider '{prov_key}': invalid environment ID '{env_id}' in 'overrides'",
+                                        file_path=item.path,
+                                    )
+                                )
+                            if not isinstance(override_data, dict):
+                                issues.append(
+                                    ValidationIssue(
+                                        level="error",
+                                        message=f"Provider '{prov_key}': 'overrides.{env_id}' must be a mapping",
+                                        file_path=item.path,
+                                    )
+                                )
                 # Validate model-level only/except
                 if isinstance(models, dict):
                     for model_id, model in models.items():
