@@ -54,12 +54,41 @@ class DeployAction:
     source_path: Optional[str] = None
 
 
+def _apply_provider_overrides(prov: dict, target_id: str, config: Config) -> dict:
+    """Shallow-merge per-target ``overrides`` onto a provider dict.
+
+    The ``overrides`` field maps a target ID or group name to a partial
+    provider config. Any entry whose key matches the target directly,
+    or via a group expansion containing the target, is merged on top of
+    the provider's defaults; later matches win on conflict. The
+    ``models`` and ``overrides`` keys inside an override entry are
+    ignored, and the ``overrides`` field itself is stripped from the
+    returned dict.
+    """
+    overrides = prov.get("overrides")
+    result = {k: v for k, v in prov.items() if k != "overrides"}
+    if not isinstance(overrides, dict):
+        return result
+    for env_id, override_data in overrides.items():
+        if not isinstance(override_data, dict):
+            continue
+        members = config.groups.get(env_id, [env_id])
+        if target_id not in members and env_id != target_id:
+            continue
+        for k, v in override_data.items():
+            if k in ("models", "overrides"):
+                continue
+            result[k] = v
+    return result
+
+
 def _filter_models_config(config_dict: dict, target_id: str, config: Config) -> dict:
     """Filter a models.yaml config dict, keeping only matching providers/models.
 
     Applies should_deploy_to() at both provider and model level so that
     only/except filtering works for the models item type (which is a single
-    SourceItem containing many providers and models).
+    SourceItem containing many providers and models). Then applies any
+    per-target ``overrides`` for the matching provider.
     """
     filtered_providers: dict = {}
     for prov_key, prov in config_dict.get("providers", {}).items():
@@ -74,7 +103,7 @@ def _filter_models_config(config_dict: dict, target_id: str, config: Config) -> 
                 continue
             filtered_models[model_id] = model
         if filtered_models:
-            filtered_prov = dict(prov)
+            filtered_prov = _apply_provider_overrides(prov, target_id, config)
             filtered_prov["models"] = filtered_models
             filtered_providers[prov_key] = filtered_prov
     return {"providers": filtered_providers}

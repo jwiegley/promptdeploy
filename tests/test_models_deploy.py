@@ -246,6 +246,163 @@ class TestFilterModelsConfig:
         result = _filter_models_config({}, "t", config)
         assert result == {"providers": {}}
 
+    def test_overrides_applied_to_matching_target(self):
+        config_dict = {
+            "providers": {
+                "prov": {
+                    "display_name": "P",
+                    "base_url": "https://default.example/v1/",
+                    "overrides": {
+                        "target-a": {"base_url": "http://localhost:4000/v1/"},
+                    },
+                    "models": {"m1": {}},
+                },
+            }
+        }
+        config = Config(
+            source_root=Path("/tmp"),
+            targets={
+                "target-a": TargetConfig(
+                    id="target-a", type="claude", path=Path("/tmp/a")
+                ),
+                "target-b": TargetConfig(
+                    id="target-b", type="claude", path=Path("/tmp/b")
+                ),
+            },
+            groups={},
+        )
+        # Matching target gets the override
+        result_a = _filter_models_config(config_dict, "target-a", config)
+        assert result_a["providers"]["prov"]["base_url"] == "http://localhost:4000/v1/"
+        # Non-matching target keeps the default
+        result_b = _filter_models_config(config_dict, "target-b", config)
+        assert (
+            result_b["providers"]["prov"]["base_url"] == "https://default.example/v1/"
+        )
+        # The 'overrides' key itself is stripped from the output
+        assert "overrides" not in result_a["providers"]["prov"]
+        assert "overrides" not in result_b["providers"]["prov"]
+
+    def test_overrides_match_via_group_expansion(self):
+        config_dict = {
+            "providers": {
+                "prov": {
+                    "display_name": "P",
+                    "base_url": "https://default.example/v1/",
+                    "overrides": {
+                        "vulcan-group": {"base_url": "http://localhost:4000/v1/"},
+                    },
+                    "models": {"m1": {}},
+                },
+            }
+        }
+        config = Config(
+            source_root=Path("/tmp"),
+            targets={
+                "target-a": TargetConfig(
+                    id="target-a", type="claude", path=Path("/tmp/a")
+                ),
+                "target-b": TargetConfig(
+                    id="target-b", type="claude", path=Path("/tmp/b")
+                ),
+            },
+            groups={"vulcan-group": ["target-a"]},
+        )
+        result_a = _filter_models_config(config_dict, "target-a", config)
+        assert result_a["providers"]["prov"]["base_url"] == "http://localhost:4000/v1/"
+        result_b = _filter_models_config(config_dict, "target-b", config)
+        assert (
+            result_b["providers"]["prov"]["base_url"] == "https://default.example/v1/"
+        )
+
+    def test_overrides_models_and_overrides_keys_ignored(self):
+        # An override entry may not redefine models or nested overrides.
+        config_dict = {
+            "providers": {
+                "prov": {
+                    "display_name": "P",
+                    "base_url": "https://default.example/v1/",
+                    "overrides": {
+                        "target-a": {
+                            "base_url": "http://localhost:4000/v1/",
+                            "models": {"injected": {}},
+                            "overrides": {"target-b": {}},
+                        },
+                    },
+                    "models": {"m1": {}},
+                },
+            }
+        }
+        config = Config(
+            source_root=Path("/tmp"),
+            targets={
+                "target-a": TargetConfig(
+                    id="target-a", type="claude", path=Path("/tmp/a")
+                ),
+            },
+            groups={},
+        )
+        result = _filter_models_config(config_dict, "target-a", config)
+        prov = result["providers"]["prov"]
+        assert prov["base_url"] == "http://localhost:4000/v1/"
+        # Original models survive; override's "models" was ignored
+        assert set(prov["models"].keys()) == {"m1"}
+        # No nested overrides leak through
+        assert "overrides" not in prov
+
+    def test_overrides_non_dict_entry_skipped(self):
+        config_dict = {
+            "providers": {
+                "prov": {
+                    "display_name": "P",
+                    "base_url": "https://default.example/v1/",
+                    "overrides": {
+                        "target-a": "not-a-dict",
+                    },
+                    "models": {"m1": {}},
+                },
+            }
+        }
+        config = Config(
+            source_root=Path("/tmp"),
+            targets={
+                "target-a": TargetConfig(
+                    id="target-a", type="claude", path=Path("/tmp/a")
+                ),
+            },
+            groups={},
+        )
+        result = _filter_models_config(config_dict, "target-a", config)
+        # Non-dict override entry is silently skipped; defaults remain
+        assert result["providers"]["prov"]["base_url"] == "https://default.example/v1/"
+
+    def test_overrides_non_dict_value_returns_provider_unchanged(self):
+        # When the entire ``overrides`` field is malformed, no merging
+        # happens but the field is still stripped.
+        config_dict = {
+            "providers": {
+                "prov": {
+                    "display_name": "P",
+                    "base_url": "https://default.example/v1/",
+                    "overrides": "not-a-dict",
+                    "models": {"m1": {}},
+                },
+            }
+        }
+        config = Config(
+            source_root=Path("/tmp"),
+            targets={
+                "target-a": TargetConfig(
+                    id="target-a", type="claude", path=Path("/tmp/a")
+                ),
+            },
+            groups={},
+        )
+        result = _filter_models_config(config_dict, "target-a", config)
+        prov = result["providers"]["prov"]
+        assert prov["base_url"] == "https://default.example/v1/"
+        assert "overrides" not in prov
+
 
 # ------------------------------------------------------------------
 # Deploy integration for models
