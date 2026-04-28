@@ -2,7 +2,15 @@
 
 from pathlib import Path
 
-from promptdeploy.envsubst import expand_env_in_dict, expand_env_vars, load_dotenv
+import pytest
+
+from promptdeploy.envsubst import (
+    EnvVarError,
+    expand_env_in_dict,
+    expand_env_vars,
+    expand_env_vars_strict,
+    load_dotenv,
+)
 
 
 class TestExpandEnvVars:
@@ -143,3 +151,39 @@ class TestLoadDotenv:
     def test_empty_key_skipped(self, tmp_path: Path):
         (tmp_path / ".env").write_text("=value\n")
         load_dotenv(tmp_path / ".env")  # should not raise or set empty key
+
+
+class TestExpandEnvVarsStrict:
+    def test_basic_expansion(self, monkeypatch):
+        monkeypatch.setenv("STRICT_VAR", "ok")
+        assert expand_env_vars_strict("${STRICT_VAR}") == "ok"
+
+    def test_no_vars_passthrough(self):
+        assert expand_env_vars_strict("plain") == "plain"
+        assert expand_env_vars_strict("") == ""
+
+    def test_unset_var_raises(self, monkeypatch):
+        monkeypatch.delenv("STRICT_MISSING", raising=False)
+        with pytest.raises(EnvVarError, match="STRICT_MISSING"):
+            expand_env_vars_strict("${STRICT_MISSING}")
+
+    def test_error_includes_context(self, monkeypatch):
+        monkeypatch.delenv("STRICT_MISSING", raising=False)
+        with pytest.raises(EnvVarError, match="my.location") as info:
+            expand_env_vars_strict("${STRICT_MISSING}", context="my.location")
+        assert "STRICT_MISSING" in str(info.value)
+
+    def test_error_lists_all_missing_vars(self, monkeypatch):
+        monkeypatch.delenv("STRICT_MISS_A", raising=False)
+        monkeypatch.delenv("STRICT_MISS_B", raising=False)
+        with pytest.raises(EnvVarError) as info:
+            expand_env_vars_strict("${STRICT_MISS_A}-${STRICT_MISS_B}")
+        msg = str(info.value)
+        assert "STRICT_MISS_A" in msg
+        assert "STRICT_MISS_B" in msg
+
+    def test_mixed_set_and_unset_raises(self, monkeypatch):
+        monkeypatch.setenv("STRICT_HAS", "yes")
+        monkeypatch.delenv("STRICT_LACKS", raising=False)
+        with pytest.raises(EnvVarError, match="STRICT_LACKS"):
+            expand_env_vars_strict("${STRICT_HAS}/${STRICT_LACKS}")

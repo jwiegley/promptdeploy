@@ -324,6 +324,35 @@ class TestRunDeploy:
         captured = capsys.readouterr()
         assert "Cannot specify both" in captured.err
 
+    def test_deploy_envvar_error_exits(self, tmp_path, monkeypatch, capsys):
+        """EnvVarError from deploy is reported and causes sys.exit(1)."""
+        from promptdeploy.envsubst import EnvVarError
+
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        def boom(*_args, **_kwargs):
+            raise EnvVarError("MISSING_THING not set")
+
+        monkeypatch.setattr("promptdeploy.deploy.deploy", boom)
+
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=None,
+            force=False,
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            _run_deploy(args)
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "MISSING_THING" in captured.err
+
     def test_deploy_skip_hidden_in_normal(self, tmp_path, monkeypatch, capsys):
         """Skipped items are not shown in normal verbosity."""
         src = _make_source(tmp_path)

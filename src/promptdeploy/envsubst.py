@@ -48,6 +48,43 @@ def expand_env_vars(value: str) -> str:
     return _ENV_PATTERN.sub(_replace, value)
 
 
+class EnvVarError(Exception):
+    """Raised when a referenced ``${VAR}`` cannot be resolved."""
+
+
+def expand_env_vars_strict(value: str, *, context: str = "") -> str:
+    """Expand ``${VAR}`` references; raise ``EnvVarError`` if any are unset.
+
+    Unlike :func:`expand_env_vars`, this never silently leaves a literal
+    ``${VAR}`` in the output.  Use this for deploy targets that bake
+    secrets into config files at deploy time -- the runtime tool will
+    not expand variables itself, so a missing value would produce a
+    broken config.
+
+    ``context`` (e.g. ``"models.litellm.api_key"``) is included in the
+    error message to help locate the offending reference.
+    """
+    missing: list[str] = []
+
+    def _replace(match: re.Match) -> str:
+        var_name = match.group(1)
+        resolved = os.environ.get(var_name)
+        if resolved is None:
+            missing.append(var_name)
+            return match.group(0)
+        return resolved
+
+    result = _ENV_PATTERN.sub(_replace, value)
+    if missing:
+        names = ", ".join(sorted(set(missing)))
+        where = f" (in {context})" if context else ""
+        raise EnvVarError(
+            f"Environment variable(s) not set: {names}{where}. "
+            f"Export them in your shell or add to .env before deploying."
+        )
+    return result
+
+
 def expand_env_in_dict(data: dict) -> dict:
     """Recursively expand ${VAR} references in all string values of a dict."""
     result: dict[str, Any] = {}

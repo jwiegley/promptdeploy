@@ -108,6 +108,8 @@ def _run_deploy(args):
         config = remap_targets_to_root(config, args.target_root.resolve())
     target_ids = expand_target_arg(args.target, config)
 
+    from .envsubst import EnvVarError
+
     try:
         actions = deploy(
             config,
@@ -119,6 +121,9 @@ def _run_deploy(args):
             force=args.force,
         )
     except FilterError as exc:
+        out.error(str(exc))
+        sys.exit(1)
+    except EnvVarError as exc:
         out.error(str(exc))
         sys.exit(1)
 

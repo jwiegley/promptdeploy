@@ -185,7 +185,7 @@ class OpenCodeTarget(Target):
         pass
 
     def deploy_models(self, config: dict) -> None:
-        from ..envsubst import expand_env_vars
+        from ..envsubst import expand_env_vars_strict
 
         oc_path = self._opencode_path()
         data = self._load_json(oc_path)
@@ -197,7 +197,10 @@ class OpenCodeTarget(Target):
             if not oc_cfg:
                 continue
 
-            api_key = expand_env_vars(prov.get("api_key", ""))
+            api_key = expand_env_vars_strict(
+                prov.get("api_key", ""),
+                context=f"models.providers.{prov_key}.api_key",
+            )
             base_url = prov.get("base_url", "")
 
             provider_entry: dict = {
@@ -240,6 +243,8 @@ class OpenCodeTarget(Target):
         self._save_json(oc_path, data)
 
     def deploy_mcp_server(self, name: str, config: dict) -> None:
+        from ..envsubst import expand_env_vars_strict
+
         oc_path = self._opencode_path()
         data = self._load_json(oc_path)
 
@@ -258,10 +263,19 @@ class OpenCodeTarget(Target):
             # command is an array: command + args combined.
             if cmd is not None:
                 oc_config["command"] = [cmd] + list(args)
-            # "environment" key, not "env".
+            # "environment" key, not "env".  Expand ${VAR} at deploy time
+            # since OpenCode runs from a directory that won't have these
+            # vars set; an unresolved reference raises EnvVarError.
             env = config.get("env")
             if env:
-                oc_config["environment"] = dict(env)
+                oc_config["environment"] = {
+                    k: (
+                        expand_env_vars_strict(v, context=f"mcp.{name}.env.{k}")
+                        if isinstance(v, str)
+                        else v
+                    )
+                    for k, v in env.items()
+                }
             # Copy any remaining non-metadata, non-handled keys.
             for k, v in config.items():
                 if k not in _MCP_STRIP_KEYS and k not in (

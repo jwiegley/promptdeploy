@@ -261,6 +261,35 @@ class TestDeployMcpServer:
         srv = result["mcp"]["srv"]
         assert "environment" not in srv
 
+    def test_env_var_expanded_in_environment_field(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("MCP_TOKEN", "real-token")
+        target = _make_target(tmp_path)
+        target.deploy_mcp_server(
+            "srv",
+            {
+                "command": "echo",
+                "env": {"API_KEY": "${MCP_TOKEN}", "STATIC": "literal"},
+            },
+        )
+
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
+        env = result["mcp"]["srv"]["environment"]
+        assert env["API_KEY"] == "real-token"
+        assert env["STATIC"] == "literal"
+
+    def test_missing_env_var_in_environment_field_raises(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from promptdeploy.envsubst import EnvVarError
+
+        monkeypatch.delenv("MCP_MISSING", raising=False)
+        target = _make_target(tmp_path)
+        with pytest.raises(EnvVarError, match="MCP_MISSING"):
+            target.deploy_mcp_server(
+                "srv",
+                {"command": "echo", "env": {"API_KEY": "${MCP_MISSING}"}},
+            )
+
     def test_remote_server_type(self, tmp_path: Path):
         target = _make_target(tmp_path)
         config = {
@@ -494,6 +523,28 @@ class TestDeployModels:
 
         result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
         assert result["provider"]["prov"]["options"]["apiKey"] == "real-key"
+
+    def test_missing_env_var_in_api_key_raises(self, tmp_path: Path, monkeypatch):
+        # OpenCode runs from a directory without these env vars, so leaving
+        # a literal ${VAR} in the deployed file produces a broken config.
+        # Surface it as a clean error at deploy time instead.
+        from promptdeploy.envsubst import EnvVarError
+
+        monkeypatch.delenv("OC_MISSING_KEY", raising=False)
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "prov": {
+                    "display_name": "Prov",
+                    "base_url": "https://prov.com",
+                    "api_key": "${OC_MISSING_KEY}",
+                    "opencode": {"npm": "@ai-sdk/openai-compatible"},
+                    "models": {"m": {}},
+                },
+            },
+        }
+        with pytest.raises(EnvVarError, match="OC_MISSING_KEY"):
+            target.deploy_models(config)
 
     def test_empty_providers_dict(self, tmp_path: Path):
         target = _make_target(tmp_path)
