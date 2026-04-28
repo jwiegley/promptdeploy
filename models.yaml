@@ -129,7 +129,7 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
-        only: [hera]
+        only: [hera, vulcan]
       openrouter/deepseek/deepseek-r1-0528:free:
         display_name: "Deepseek R 1 0528:FREE"
         max_output_tokens: 65536
@@ -305,13 +305,13 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
-        only: [hera]
+        only: [hera, vulcan]
       hera/omlx/Qwen3.6-27B-MLX-8bit:
         display_name: "Qwen 3.6 27B (MLX)"
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
-        only: [hera]
+        only: [hera, vulcan]
       hera/Qwen3.6-27B:
         display_name: "Qwen 3.6 27B"
         max_output_tokens: 65536
@@ -327,7 +327,7 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
-        only: [hera]
+        only: [hera, vulcan]
       hera/Qwen3.6-35B-A3B:
         display_name: "Qwen 3.6 35B"
         max_output_tokens: 65536
@@ -473,25 +473,25 @@ providers:
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
-        only: [hera]
+        only: [hera, vulcan]
       Qwen3.5-397B-A17B-unsloth-mlx-4bit:
         display_name: "Qwen 3.5 397B (MLX)"
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
-        only: [hera]
+        only: [hera, vulcan]
       Qwen3.6-27B-MLX-8bit:
         display_name: "Qwen 3.6 27B (MLX)"
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
-        only: [hera]
+        only: [hera, vulcan]
       Qwen3.6-35B-A3B-MLX-8bit:
         display_name: "Qwen 3.6 35B (MLX)"
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
-        only: [hera]
+        only: [hera, vulcan]
 
   llama-cpp-local:
     display_name: "Llama.cpp"
