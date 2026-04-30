@@ -2,7 +2,7 @@
 name: coq-reviewer
 description: Expert Coq/Rocq code reviewer specializing in proof soundness, tactic hygiene, termination arguments, and proof engineering patterns
 tools: Read, Grep, Glob, Bash(grep:*), Bash(wc:*)
-model: sonnet
+model: opus
 ---
 
 # Coq/Rocq Code Reviewer

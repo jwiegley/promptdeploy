@@ -110,18 +110,18 @@ Display the final plan clearly and wait for explicit user approval before procee
 
 ### Phase 3: Execution
 
-Spawn a Sonnet agent to execute the approved plan.
+Spawn a Opus agent to execute the approved plan.
 
 **Step 3.1 -- Capture pre-execution state:**
 Run `git stash list && git status && git log --oneline -5` to record the
 baseline state before execution begins.
 
-**Step 3.2 -- Spawn the Sonnet executor:**
+**Step 3.2 -- Spawn the Opus executor:**
 Use the Task tool:
 
 ```
 subagent_type: "general-purpose"
-model: "sonnet"
+model: "opus"
 mode: "bypassPermissions"
 ```
 
@@ -136,7 +136,7 @@ The Task prompt must include:
    - Any issues, warnings, or concerns encountered during execution
 
 **Step 3.3 -- Collect results:**
-When the Sonnet agent completes, capture its full report. Run `git diff` to independently verify what changed. Hold both the agent report and the diff in context for Phase 4.
+When the Opus agent completes, capture its full report. Run `git diff` to independently verify what changed. Hold both the agent report and the diff in context for Phase 4.
 
 ---
 
@@ -166,7 +166,7 @@ models: [
 
 The consensus step 1 prompt must include:
 - The full diff of changes
-- The Sonnet executor's report (deviations, test results)
+- The Opus executor's report (deviations, test results)
 - The Phase 2 plan for comparison
 - Ask each model to evaluate:
   - Correctness of the implementation
@@ -253,7 +253,7 @@ Present a concise report covering:
 If Phase 5 produced critical findings:
 - Present them clearly with specific remediation recommendations
 - Ask the user whether to fix now or defer
-- If the user requests fixes: create a targeted remediation plan, loop back to Phase 3 (Sonnet execution) with only the fixes, then repeat Phases 4-5 on the remediation changes only
+- If the user requests fixes: create a targeted remediation plan, loop back to Phase 3 (Opus execution) with only the fixes, then repeat Phases 4-5 on the remediation changes only
 
 **Step 6.3 -- Completion:**
 If no critical issues remain, confirm the implementation is ready and note any medium/low concerns for the user's awareness.
@@ -265,13 +265,13 @@ If no critical issues remain, confirm the implementation is ready and note any m
 | Orchestrator | (native Opus) | All phases |
 | Partner 1 | `gpt-5.4-pro` | Consensus in Phases 1, 2, 4, 5 |
 | Partner 2 | `gemini-3.1-pro-preview` | Consensus + codereview in Phases 1, 2, 4, 5 |
-| Executor | `sonnet` (Task tool model param) | Phase 3 only |
+| Executor | `opus` (Task tool model param) | Phase 3 only |
 
 ## Constraints
 
 - Never skip phases. The pipeline's value comes from the full sequence.
 - Never proceed from Phase 2 to Phase 3 without explicit user plan approval.
-- Phase 3 must use only Sonnet (cost efficiency for mechanical execution).
+- Phase 3 must use only Opus.
 - Phases 1, 2, 4, and 5 must use Opus with PAL consensus (analytical rigor).
 - Keep intermediate artifacts in context; do not write temporary files unless context size demands it.
 - Present only the Phase 6 summary to the user; do not expose raw consensus outputs or intermediate phase artifacts unless the user asks for them.

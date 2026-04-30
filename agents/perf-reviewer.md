@@ -2,7 +2,7 @@
 name: perf-reviewer
 description: Cross-language performance reviewer specializing in algorithmic complexity, resource leaks, allocation patterns, and system-level bottlenecks
 tools: Read, Grep, Glob, Bash(grep:*), Bash(wc:*)
-model: sonnet
+model: opus
 ---
 
 # Performance Code Reviewer

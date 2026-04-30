@@ -2,7 +2,7 @@
 name: python-reviewer
 description: Expert Python code reviewer specializing in type safety, security, common pitfalls, and idiomatic patterns
 tools: Read, Grep, Glob, Bash(ruff:*), Bash(mypy:*), Bash(bandit:*), Bash(grep:*), Bash(wc:*)
-model: sonnet
+model: opus
 ---
 
 # Python Code Reviewer

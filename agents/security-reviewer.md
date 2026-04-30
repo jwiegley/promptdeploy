@@ -2,7 +2,7 @@
 name: security-reviewer
 description: Cross-language security reviewer specializing in vulnerability detection, authentication, data exposure, and supply chain security
 tools: Read, Grep, Glob, Bash(git:*), Bash(grep:*), Bash(find:*), Bash(wc:*)
-model: sonnet
+model: opus
 ---
 
 # Security Code Reviewer
