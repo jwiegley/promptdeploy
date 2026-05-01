@@ -60,9 +60,7 @@ providers:
       npm: "@ai-sdk/openai-compatible"
       name: "LiteLLM"
       timeout: false
-    overrides:
-      opencode-vulcan:
-        base_url: "http://localhost:4000/v1/"
+    except: [opencode-vulcan]
     models:
       hera/Bonsai-8B:
         display_name: "Bonsai 8B"
@@ -129,7 +127,12 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
-        only: [hera, vulcan]
+        only: [hera]
+      hera/cohere-transcribe-03-2026:
+        display_name: "Cohere Transcribe 03"
+        max_output_tokens: 65536
+        context_limit: 262144
+        output_limit: 65536
       openrouter/deepseek/deepseek-r1-0528:free:
         display_name: "Deepseek R 1 0528:FREE"
         max_output_tokens: 65536
@@ -195,6 +198,11 @@ providers:
         max_output_tokens: 65536
         context_limit: 131072
         output_limit: 65536
+      hera/granite-speech-4.1-2b:
+        display_name: "Granite Speech 4.1 2B"
+        max_output_tokens: 65536
+        context_limit: 262144
+        output_limit: 65536
       hera/Kimi-K2.6:
         display_name: "Kimi K 2.6"
         max_output_tokens: 65536
@@ -255,6 +263,16 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
+      hera/Qwen3.5-27B:
+        display_name: "Qwen 3.5 27B"
+        max_output_tokens: 65536
+        context_limit: 262144
+        output_limit: 65536
+      hera/Qwen3.5-27B-Instruct:
+        display_name: "Qwen 3.5 27B Instruct"
+        max_output_tokens: 65536
+        context_limit: 262144
+        output_limit: 65536
       hera/Qwen3.5-2B:
         display_name: "Qwen 3.5 2B"
         max_output_tokens: 65536
@@ -265,6 +283,17 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
+      hera/Qwen3.5-35B-A3B:
+        display_name: "Qwen 3.5 35B"
+        max_output_tokens: 65536
+        context_limit: 262144
+        output_limit: 65536
+      hera/omlx/Qwen3.5-397B-A17B-unsloth-mlx-4bit:
+        display_name: "Qwen 3.5 397B (MLX)"
+        max_output_tokens: 65536
+        context_limit: 262144
+        output_limit: 65536
+        only: [hera]
       hera/Qwen3.5-4B:
         display_name: "Qwen 3.5 4B"
         max_output_tokens: 65536
@@ -285,33 +314,12 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
-      hera/Qwen3.5-27B:
-        display_name: "Qwen 3.5 27B"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/Qwen3.5-27B-Instruct:
-        display_name: "Qwen 3.5 27B Instruct"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/Qwen3.5-35B-A3B:
-        display_name: "Qwen 3.5 35B"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/omlx/Qwen3.5-397B-A17B-unsloth-mlx-4bit:
-        display_name: "Qwen 3.5 397B (MLX)"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-        only: [hera, vulcan]
       hera/omlx/Qwen3.6-27B-MLX-8bit:
         display_name: "Qwen 3.6 27B (MLX)"
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
-        only: [hera, vulcan]
+        only: [hera]
       hera/Qwen3.6-27B:
         display_name: "Qwen 3.6 27B"
         max_output_tokens: 65536
@@ -327,7 +335,7 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
-        only: [hera, vulcan]
+        only: [hera]
       hera/Qwen3.6-35B-A3B:
         display_name: "Qwen 3.6 35B"
         max_output_tokens: 65536
@@ -356,6 +364,9 @@ providers:
       Bonsai-8B:
         display_name: "Bonsai 8B"
         max_output_tokens: 128000
+      cohere-transcribe-03-2026:
+        display_name: "Cohere Transcribe 03"
+        max_output_tokens: 128000
       DeepSeek-V3.2:
         display_name: "Deepseek V 3.2"
         max_output_tokens: 128000
@@ -382,6 +393,9 @@ providers:
         max_output_tokens: 128000
       gpt-oss-safeguard-20b:
         display_name: "GPT-OSS Safeguard 20B"
+        max_output_tokens: 128000
+      granite-speech-4.1-2b:
+        display_name: "Granite Speech 4.1 2B"
         max_output_tokens: 128000
       Kimi-K2.6:
         display_name: "Kimi K 2.6"
@@ -413,11 +427,20 @@ providers:
       Qwen3.5-0.8B:
         display_name: "Qwen 3.5 0.8B"
         max_output_tokens: 128000
+      Qwen3.5-27B:
+        display_name: "Qwen 3.5 27B"
+        max_output_tokens: 128000
+      Qwen3.5-27B-Instruct:
+        display_name: "Qwen 3.5 27B Instruct"
+        max_output_tokens: 128000
       Qwen3.5-2B:
         display_name: "Qwen 3.5 2B"
         max_output_tokens: 128000
       Qwen3.5-2B-Instruct:
         display_name: "Qwen 3.5 2B Instruct"
+        max_output_tokens: 128000
+      Qwen3.5-35B-A3B:
+        display_name: "Qwen 3.5 35B"
         max_output_tokens: 128000
       Qwen3.5-4B:
         display_name: "Qwen 3.5 4B"
@@ -430,15 +453,6 @@ providers:
         max_output_tokens: 128000
       Qwen3.5-9B-Instruct:
         display_name: "Qwen 3.5 9B Instruct"
-        max_output_tokens: 128000
-      Qwen3.5-27B:
-        display_name: "Qwen 3.5 27B"
-        max_output_tokens: 128000
-      Qwen3.5-27B-Instruct:
-        display_name: "Qwen 3.5 27B Instruct"
-        max_output_tokens: 128000
-      Qwen3.5-35B-A3B:
-        display_name: "Qwen 3.5 35B"
         max_output_tokens: 128000
       Qwen3.6-27B:
         display_name: "Qwen 3.6 27B"
@@ -473,25 +487,25 @@ providers:
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
-        only: [hera, vulcan]
+        only: [hera]
       Qwen3.5-397B-A17B-unsloth-mlx-4bit:
         display_name: "Qwen 3.5 397B (MLX)"
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
-        only: [hera, vulcan]
+        only: [hera]
       Qwen3.6-27B-MLX-8bit:
         display_name: "Qwen 3.6 27B (MLX)"
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
-        only: [hera, vulcan]
+        only: [hera]
       Qwen3.6-35B-A3B-MLX-8bit:
         display_name: "Qwen 3.6 35B (MLX)"
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
-        only: [hera, vulcan]
+        only: [hera]
 
   llama-cpp-local:
     display_name: "Llama.cpp"
@@ -509,6 +523,11 @@ providers:
         display_name: "Bonsai 8B"
         max_output_tokens: 128000
         context_limit: 131072
+        output_limit: 65536
+      cohere-transcribe-03-2026:
+        display_name: "Cohere Transcribe 03"
+        max_output_tokens: 128000
+        context_limit: 262144
         output_limit: 65536
       DeepSeek-V3.2:
         display_name: "Deepseek V 3.2"
@@ -554,6 +573,11 @@ providers:
         display_name: "GPT-OSS Safeguard 20B"
         max_output_tokens: 128000
         context_limit: 131072
+        output_limit: 65536
+      granite-speech-4.1-2b:
+        display_name: "Granite Speech 4.1 2B"
+        max_output_tokens: 128000
+        context_limit: 262144
         output_limit: 65536
       Kimi-K2.6:
         display_name: "Kimi K 2.6"
@@ -605,6 +629,16 @@ providers:
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
+      Qwen3.5-27B:
+        display_name: "Qwen 3.5 27B"
+        max_output_tokens: 128000
+        context_limit: 262144
+        output_limit: 65536
+      Qwen3.5-27B-Instruct:
+        display_name: "Qwen 3.5 27B Instruct"
+        max_output_tokens: 128000
+        context_limit: 262144
+        output_limit: 65536
       Qwen3.5-2B:
         display_name: "Qwen 3.5 2B"
         max_output_tokens: 128000
@@ -612,6 +646,11 @@ providers:
         output_limit: 65536
       Qwen3.5-2B-Instruct:
         display_name: "Qwen 3.5 2B Instruct"
+        max_output_tokens: 128000
+        context_limit: 262144
+        output_limit: 65536
+      Qwen3.5-35B-A3B:
+        display_name: "Qwen 3.5 35B"
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
@@ -632,21 +671,6 @@ providers:
         output_limit: 65536
       Qwen3.5-9B-Instruct:
         display_name: "Qwen 3.5 9B Instruct"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-27B:
-        display_name: "Qwen 3.5 27B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-27B-Instruct:
-        display_name: "Qwen 3.5 27B Instruct"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-35B-A3B:
-        display_name: "Qwen 3.5 35B"
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
