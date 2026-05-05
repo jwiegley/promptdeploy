@@ -39,8 +39,8 @@ providers:
     droid:
       provider_type: openai
     models:
-      gpt-5.3-codex:
-        display_name: "ChatGPT 5.3 Codex"
+      gpt-5.5:
+        display_name: "ChatGPT 5.5"
         max_output_tokens: 32000
 
   litellm:
@@ -178,8 +178,8 @@ providers:
         max_output_tokens: 65536
         context_limit: 200000
         output_limit: 65536
-      positron_openai/gpt-5.3-codex:
-        display_name: "ChatGPT 5.3 Codex"
+      positron_openai/gpt-5.5:
+        display_name: "ChatGPT 5.5"
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
