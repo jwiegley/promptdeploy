@@ -27,7 +27,7 @@ Each analytical phase (1, 2, 4, 5) uses Opus as orchestrator and builds multi-mo
 ## Prerequisites
 
 - The current session must be running on Opus (`claude-opus-4-6`)
-- PAL MCP server must be running with access to `gpt-5.4-pro` and `gemini-3.1-pro-preview`
+- PAL MCP server must be running with access to `gpt-5.5-pro` and `gemini-3.1-pro-preview`
 - To verify model availability, call `mcp__pal__listmodels` before starting
 
 If PAL MCP is unavailable or a partner model is missing, inform the user and halt. Do not fall back to single-model operation -- the value of Forge comes from multi-model collaboration.
@@ -52,7 +52,7 @@ Use `mcp__pal__consensus` to gather perspectives from both partner models:
 
 ```
 models: [
-  {"model": "gpt-5.4-pro", "stance": "neutral"},
+  {"model": "gpt-5.5-pro", "stance": "neutral"},
   {"model": "gemini-3.1-pro-preview", "stance": "neutral"}
 ]
 ```
@@ -90,7 +90,7 @@ Use `mcp__pal__consensus`:
 
 ```
 models: [
-  {"model": "gpt-5.4-pro", "stance": "neutral"},
+  {"model": "gpt-5.5-pro", "stance": "neutral"},
   {"model": "gemini-3.1-pro-preview", "stance": "neutral"}
 ]
 ```
@@ -159,7 +159,7 @@ Use `mcp__pal__consensus`:
 
 ```
 models: [
-  {"model": "gpt-5.4-pro", "stance": "neutral"},
+  {"model": "gpt-5.5-pro", "stance": "neutral"},
   {"model": "gemini-3.1-pro-preview", "stance": "neutral"}
 ]
 ```
@@ -204,7 +204,7 @@ Use `mcp__pal__consensus` with adversarial stances:
 ```
 models: [
   {
-    "model": "gpt-5.4-pro",
+    "model": "gpt-5.5-pro",
     "stance": "against",
     "stance_prompt": "You are a hostile code reviewer. Find every possible
       flaw, vulnerability, edge case, race condition, and design mistake in
@@ -263,7 +263,7 @@ If no critical issues remain, confirm the implementation is ready and note any m
 | Role | PAL Model Name | Used In |
 |------|---------------|---------|
 | Orchestrator | (native Opus) | All phases |
-| Partner 1 | `gpt-5.4-pro` | Consensus in Phases 1, 2, 4, 5 |
+| Partner 1 | `gpt-5.5-pro` | Consensus in Phases 1, 2, 4, 5 |
 | Partner 2 | `gemini-3.1-pro-preview` | Consensus + codereview in Phases 1, 2, 4, 5 |
 | Executor | `opus` (Task tool model param) | Phase 3 only |
 
