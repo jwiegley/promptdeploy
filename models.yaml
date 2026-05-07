@@ -43,6 +43,21 @@ providers:
         display_name: "ChatGPT 5.5"
         max_output_tokens: 32000
 
+  nvidia:
+    display_name: "NVIDIA"
+    base_url: "https://integrate.api.nvidia.com/v1"
+    api_key: "${NVIDIA_API_KEY}"
+    droid:
+      provider_type: openai
+    opencode:
+      npm: "@ai-sdk/openai-compatible"
+      name: "NVIDIA"
+      timeout: false
+    models:
+      qwen/qwen3-coder-480b-a35b-instruct:
+        display_name: "Qwen3 Coder 480B A35B Instruct"
+        max_output_tokens: 81920
+
   litellm:
     display_name: "LiteLLM"
     base_url: "https://litellm.vulcan.lan/v1/"
