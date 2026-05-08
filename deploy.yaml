@@ -64,3 +64,8 @@ targets:
     path: ~/.claude
     host: andoria-08
     labels: [claude, positron, remote]
+
+  gptel-emacs:
+    type: gptel
+    path: ~/.emacs.d/prompts
+    labels: [personal, gptel, local]
