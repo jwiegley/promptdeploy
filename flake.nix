@@ -16,6 +16,7 @@
         pythonWithDeps = python.withPackages (ps:
           with ps; [
             pyyaml
+            jinja2
             pytest
             pytest-cov
             mypy
@@ -37,6 +38,7 @@
 
           dependencies = with python.pkgs; [
             pyyaml
+            jinja2
           ];
 
           doCheck = false;
