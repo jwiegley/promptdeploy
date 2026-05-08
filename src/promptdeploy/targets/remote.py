@@ -100,6 +100,9 @@ class RemoteTarget(Target):
     def deploy_hook(self, name: str, config: dict) -> None:
         self._inner.deploy_hook(name, config)
 
+    def deploy_prompt(self, name: str, content: bytes, source_path: Path) -> None:
+        self._inner.deploy_prompt(name, content, source_path)
+
     def remove_agent(self, name: str) -> None:
         self._inner.remove_agent(name)
 
@@ -117,6 +120,18 @@ class RemoteTarget(Target):
 
     def remove_hook(self, name: str) -> None:
         self._inner.remove_hook(name)
+
+    def remove_prompt(self, name: str, target_path: Optional[Path] = None) -> None:
+        self._inner.remove_prompt(name, target_path)
+
+    def deployed_artifact_path(self, item_type: str, name: str) -> Optional[Path]:
+        return self._inner.deployed_artifact_path(item_type, name)
+
+    def consume_warnings(self) -> list[tuple[str, list[str]]]:
+        consume = getattr(self._inner, "consume_warnings", None)
+        if consume is None:
+            return []
+        return consume()
 
     def item_exists(self, item_type: str, name: str) -> bool:
         return self._inner.item_exists(item_type, name)

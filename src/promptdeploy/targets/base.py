@@ -74,6 +74,9 @@ class Target(ABC):
     def deploy_hook(self, name: str, config: dict) -> None: ...
 
     @abstractmethod
+    def deploy_prompt(self, name: str, content: bytes, source_path: Path) -> None: ...
+
+    @abstractmethod
     def remove_agent(self, name: str) -> None: ...
 
     @abstractmethod
@@ -90,6 +93,39 @@ class Target(ABC):
 
     @abstractmethod
     def remove_hook(self, name: str) -> None: ...
+
+    @abstractmethod
+    def remove_prompt(self, name: str, target_path: Optional[Path] = None) -> None:
+        """Remove a deployed prompt by ``name``.
+
+        ``target_path`` is the relative path that was recorded in the manifest
+        when the prompt was last deployed. When provided, targets should
+        prefer it as the authoritative location to unlink so that stale
+        prompts cannot collide with unrelated user-authored files. When
+        ``None`` (e.g. legacy manifests written before path tracking), the
+        target may fall back to its previous heuristic.
+        """
+        ...
+
+    def deployed_artifact_path(self, item_type: str, name: str) -> Optional[Path]:
+        """Return the relative path the most recent deploy wrote, if any.
+
+        The deploy loop calls this after a successful deploy and stores the
+        result in the manifest. The path is relative to the target's root.
+        Default: returns ``None`` so existing targets opt in incrementally.
+        """
+        return None
+
+    def consume_warnings(self) -> list[tuple[str, list[str]]]:
+        """Drain and return warnings collected during the last batch of deploys.
+
+        Returns a list of ``(item_name, [warning, ...])`` pairs. Targets that
+        render templated prompts (``.poet``/``.j2``/``.jinja``) collect any
+        warnings emitted by :func:`promptdeploy.poet.parse_poet` and surface
+        them here so the deploy loop can print them. Default: nothing to
+        report.
+        """
+        return []
 
     @abstractmethod
     def item_exists(self, item_type: str, name: str) -> bool:

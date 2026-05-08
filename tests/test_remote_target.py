@@ -209,6 +209,58 @@ class TestRemoteTargetDelegation:
         remote_target.remove_hook("hook1")
         mock_inner.remove_hook.assert_called_once_with("hook1")
 
+    def test_deploy_prompt(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        src = Path("/source/demo.poet")
+        remote_target.deploy_prompt("demo", b"body", src)
+        mock_inner.deploy_prompt.assert_called_once_with("demo", b"body", src)
+
+    def test_remove_prompt(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        remote_target.remove_prompt("demo")
+        mock_inner.remove_prompt.assert_called_once_with("demo", None)
+
+    def test_remove_prompt_with_target_path(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        target_path = Path("demo.json")
+        remote_target.remove_prompt("demo", target_path)
+        mock_inner.remove_prompt.assert_called_once_with("demo", target_path)
+
+    def test_deployed_artifact_path_delegates(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        mock_inner.deployed_artifact_path.return_value = Path("demo.json")
+        result = remote_target.deployed_artifact_path("prompt", "demo")
+        assert result == Path("demo.json")
+        mock_inner.deployed_artifact_path.assert_called_once_with("prompt", "demo")
+
+    def test_consume_warnings_delegates_to_inner(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        mock_inner.consume_warnings.return_value = [("demo", ["bad var"])]
+        assert remote_target.consume_warnings() == [("demo", ["bad var"])]
+        mock_inner.consume_warnings.assert_called_once_with()
+
+    def test_consume_warnings_when_inner_lacks_method(self, tmp_path: Path) -> None:
+        # An inner target that does not provide ``consume_warnings`` at all
+        # (e.g. a legacy implementation) should yield an empty list rather
+        # than crash.
+        class _Bare:
+            pass
+
+        staging = tmp_path / "staging-bare"
+        staging.mkdir()
+        target = RemoteTarget(
+            inner=_Bare(),  # type: ignore[arg-type]
+            host="h",
+            remote_path=Path("/remote"),
+            staging_path=staging,
+        )
+        assert target.consume_warnings() == []
+
     def test_should_skip(
         self, remote_target: RemoteTarget, mock_inner: MagicMock
     ) -> None:

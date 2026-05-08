@@ -33,6 +33,9 @@ class ClaudeTarget(Target):
         self._config_path = config_path.expanduser().resolve()
         self._model = model
         self._injected = {"model": model} if model else None
+        # Warnings collected during the most recent deploy_prompt calls;
+        # drained via consume_warnings() by the deploy loop.
+        self._warnings: list[tuple[str, list[str]]] = []
 
     @property
     def id(self) -> str:
@@ -69,6 +72,25 @@ class ClaudeTarget(Target):
         dest = self._config_path / "commands" / f"{name}.md"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(transform_for_target(content, self._id))
+
+    def deploy_prompt(self, name: str, content: bytes, source_path: Path) -> None:
+        from ..poet import POET_EXTENSIONS, parse_plain, parse_poet, render_for_command
+
+        if source_path.suffix in POET_EXTENSIONS:
+            doc = parse_poet(content, source_path=source_path)
+            if doc.warnings:
+                self._warnings.append((name, list(doc.warnings)))
+        else:
+            doc = parse_plain(content)
+        rendered = render_for_command(doc)
+        dest = self._config_path / "commands" / f"{name}.md"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(rendered)
+
+    def consume_warnings(self) -> list[tuple[str, list[str]]]:
+        warnings = self._warnings
+        self._warnings = []
+        return warnings
 
     def deploy_skill(self, name: str, source_dir: Path) -> None:
         dest = self._config_path / "skills" / name
@@ -170,6 +192,11 @@ class ClaudeTarget(Target):
     def remove_command(self, name: str) -> None:
         self._remove_file(self._config_path / "commands" / f"{name}.md")
 
+    def remove_prompt(self, name: str, target_path: Optional[Path] = None) -> None:
+        # Claude prompts always land at ``commands/{name}.md``; the manifest
+        # ``target_path`` is informational and ignored here.
+        self._remove_file(self._config_path / "commands" / f"{name}.md")
+
     def remove_skill(self, name: str) -> None:
         dest = self._config_path / "skills" / name
         if dest.is_symlink():
@@ -216,7 +243,7 @@ class ClaudeTarget(Target):
     def item_exists(self, item_type: str, name: str) -> bool:
         if item_type == "agent":
             return (self._config_path / "agents" / f"{name}.md").exists()
-        if item_type == "command":
+        if item_type in ("command", "prompt"):
             return (self._config_path / "commands" / f"{name}.md").exists()
         if item_type == "skill":
             dest = self._config_path / "skills" / name

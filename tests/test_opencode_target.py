@@ -88,6 +88,69 @@ class TestRemoveCommand:
         target.remove_command("nonexistent")
 
 
+class TestDeployPrompt:
+    def test_poet_renders_to_command_md(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "demo.poet"
+        body = (
+            b"- role: system\n  content: Be concise.\n"
+            b"- role: user\n  content: Hi\n"
+            b"- role: assistant\n  content: Hello\n"
+        )
+        src.write_bytes(body)
+        target.deploy_prompt("demo", body, src)
+        text = (tmp_path / ".opencode" / "commands" / "demo.md").read_text()
+        assert "<instructions>\nBe concise.\n</instructions>" in text
+        assert "<user>\nHi\n</user>" in text
+        assert "<assistant>\nHello\n</assistant>" in text
+
+    def test_plain_md_wraps_as_system(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "doc.md"
+        src.write_bytes(b"Plain.\n")
+        target.deploy_prompt("doc", b"Plain.\n", src)
+        text = (tmp_path / ".opencode" / "commands" / "doc.md").read_text()
+        assert "Plain." in text
+
+    def test_undefined_var_recorded_as_warning(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "demo.poet"
+        body = b"- role: system\n  content: 'hi {{ missing }}'\n"
+        src.write_bytes(body)
+        target.deploy_prompt("demo", body, src)
+        assert target.consume_warnings() == [
+            ("demo", ["Undefined Jinja variable: missing"])
+        ]
+        # Drained.
+        assert target.consume_warnings() == []
+
+
+class TestRemovePrompt:
+    def test_removes_existing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "demo.poet"
+        body = b"- role: system\n  content: x\n"
+        src.write_bytes(body)
+        target.deploy_prompt("demo", body, src)
+        target.remove_prompt("demo")
+        assert not (tmp_path / ".opencode" / "commands" / "demo.md").exists()
+
+    def test_no_error_if_missing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.remove_prompt("nonexistent")
+
+
+class TestItemExistsPrompt:
+    def test_prompt_treats_commands_dir(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("prompt", "demo")
+        src = tmp_path / "demo.poet"
+        body = b"- role: system\n  content: x\n"
+        src.write_bytes(body)
+        target.deploy_prompt("demo", body, src)
+        assert target.item_exists("prompt", "demo")
+
+
 # ------------------------------------------------------------------
 # Skills
 # ------------------------------------------------------------------

@@ -25,6 +25,9 @@ class DroidTarget(Target):
     def __init__(self, target_id: str, config_path: Path) -> None:
         self._id = target_id
         self._config_path = config_path.expanduser().resolve()
+        # Warnings collected during the most recent deploy_prompt calls;
+        # drained via consume_warnings() by the deploy loop.
+        self._warnings: list[tuple[str, list[str]]] = []
 
     @property
     def id(self) -> str:
@@ -84,6 +87,26 @@ class DroidTarget(Target):
             skill_md.write_bytes(transform_for_target(content, self._id))
             return
         # Otherwise: skip silently.
+
+    def deploy_prompt(self, name: str, content: bytes, source_path: Path) -> None:
+        from ..poet import POET_EXTENSIONS, parse_plain, parse_poet, render_for_command
+
+        if source_path.suffix in POET_EXTENSIONS:
+            doc = parse_poet(content, source_path=source_path)
+            if doc.warnings:
+                self._warnings.append((name, list(doc.warnings)))
+        else:
+            doc = parse_plain(content)
+        rendered = render_for_command(doc)
+        dest = self._config_path / "skills" / name
+        dest.mkdir(parents=True, exist_ok=True)
+        skill_md = dest / "SKILL.md"
+        skill_md.write_bytes(rendered)
+
+    def consume_warnings(self) -> list[tuple[str, list[str]]]:
+        warnings = self._warnings
+        self._warnings = []
+        return warnings
 
     def deploy_skill(self, name: str, source_dir: Path) -> None:
         dest = self._config_path / "skills" / name
@@ -202,6 +225,15 @@ class DroidTarget(Target):
         elif dest.exists():
             shutil.rmtree(dest)
 
+    def remove_prompt(self, name: str, target_path: Optional[Path] = None) -> None:
+        # Droid prompts deploy as a ``skills/{name}/`` directory; ``target_path``
+        # is informational and not needed here.
+        dest = self._config_path / "skills" / name
+        if dest.is_symlink():
+            dest.unlink()
+        elif dest.exists():
+            shutil.rmtree(dest)
+
     def remove_models(self) -> None:
         settings_path = self._config_path / "settings.json"
         if not settings_path.exists():
@@ -225,7 +257,7 @@ class DroidTarget(Target):
     def item_exists(self, item_type: str, name: str) -> bool:
         if item_type == "agent":
             return (self._config_path / "droids" / f"{name}.md").exists()
-        if item_type in ("command", "skill"):
+        if item_type in ("command", "skill", "prompt"):
             dest = self._config_path / "skills" / name
             return dest.exists() or dest.is_symlink()
         if item_type == "mcp":

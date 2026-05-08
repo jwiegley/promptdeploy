@@ -121,6 +121,80 @@ class TestRemoveCommand:
         target.remove_command("nonexistent")
 
 
+class TestDeployPrompt:
+    def test_poet_deploys_as_skill_dir(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "demo.poet"
+        body = b"- role: system\n  content: Hi.\n"
+        src.write_bytes(body)
+        target.deploy_prompt("demo", body, src)
+
+        dest = tmp_path / ".droid" / "skills" / "demo"
+        assert dest.is_dir()
+        skill_md = dest / "SKILL.md"
+        assert skill_md.exists()
+        text = skill_md.read_text()
+        assert "<instructions>\nHi.\n</instructions>" in text
+        assert "<task>" in text
+
+    def test_plain_text_deploys_as_skill(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "doc.md"
+        body = b"Some plain content.\n"
+        src.write_bytes(body)
+        target.deploy_prompt("doc", body, src)
+        skill_md = tmp_path / ".droid" / "skills" / "doc" / "SKILL.md"
+        assert skill_md.exists()
+        assert "Some plain content." in skill_md.read_text()
+
+    def test_undefined_var_recorded_as_warning(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "demo.poet"
+        body = b"- role: system\n  content: 'hi {{ missing }}'\n"
+        src.write_bytes(body)
+        target.deploy_prompt("demo", body, src)
+        assert target.consume_warnings() == [
+            ("demo", ["Undefined Jinja variable: missing"])
+        ]
+
+
+class TestRemovePrompt:
+    def test_removes_skill_dir(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "demo.poet"
+        body = b"- role: system\n  content: x\n"
+        src.write_bytes(body)
+        target.deploy_prompt("demo", body, src)
+        target.remove_prompt("demo")
+        assert not (tmp_path / ".droid" / "skills" / "demo").exists()
+
+    def test_removes_symlinked_prompt(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        real_dir = tmp_path / "real"
+        real_dir.mkdir()
+        dest = tmp_path / ".droid" / "skills" / "demo"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.symlink_to(real_dir)
+        target.remove_prompt("demo")
+        assert not dest.exists()
+        assert real_dir.is_dir()
+
+    def test_no_error_if_missing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.remove_prompt("nonexistent")
+
+
+class TestItemExistsPrompt:
+    def test_prompt_uses_skills_dir(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert not target.item_exists("prompt", "demo")
+        src = tmp_path / "demo.poet"
+        body = b"- role: system\n  content: x\n"
+        src.write_bytes(body)
+        target.deploy_prompt("demo", body, src)
+        assert target.item_exists("prompt", "demo")
+
+
 # ------------------------------------------------------------------
 # Skills
 # ------------------------------------------------------------------
