@@ -4,6 +4,7 @@ from pathlib import Path
 from .base import Target
 from .claude import ClaudeTarget
 from .droid import DroidTarget
+from .gptel import GptelTarget
 from .opencode import OpenCodeTarget
 from .remote import RemoteTarget
 
@@ -26,6 +27,7 @@ def create_target(target_config, *, global_model=None):
     from ..config import current_host
     from .claude import ClaudeTarget
     from .droid import DroidTarget
+    from .gptel import GptelTarget
     from .opencode import OpenCodeTarget
 
     is_remote = target_config.host is not None and target_config.host != current_host()
@@ -42,6 +44,7 @@ def create_target(target_config, *, global_model=None):
         "claude": lambda tc, p: ClaudeTarget(tc.id, p, model=effective_model),
         "droid": lambda tc, p: DroidTarget(tc.id, p),
         "opencode": lambda tc, p: OpenCodeTarget(tc.id, p),
+        "gptel": lambda tc, p: GptelTarget(tc.id, p),
     }
     factory = factories.get(target_config.type)
     if factory is None:
@@ -60,6 +63,7 @@ __all__ = [
     "Target",
     "ClaudeTarget",
     "DroidTarget",
+    "GptelTarget",
     "OpenCodeTarget",
     "RemoteTarget",
     "create_target",

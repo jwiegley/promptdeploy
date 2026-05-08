@@ -50,3 +50,11 @@ class TestCreateTarget:
         tc = TargetConfig(id="d", type="droid", path=tmp_path / "d")
         target = create_target(tc, global_model="claude-opus-4-7")
         assert isinstance(target, DroidTarget)
+
+    def test_gptel_target_recognized(self, tmp_path: Path) -> None:
+        from promptdeploy.targets.gptel import GptelTarget
+
+        tc = TargetConfig(id="g", type="gptel", path=tmp_path / "g")
+        target = create_target(tc)
+        assert isinstance(target, GptelTarget)
+        assert target.id == "g"

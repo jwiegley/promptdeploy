@@ -125,3 +125,17 @@ class TestCreateTarget:
         target = create_target(tc)
         # Call the base class default directly
         assert Target.should_skip(target, "agent", "x") is False
+
+    def test_base_target_consume_warnings_default_empty(self, tmp_path: Path) -> None:
+        tc = TargetConfig(id="t", type="claude", path=tmp_path)
+        target = create_target(tc)
+        # Call the base class default directly: no warnings reported.
+        assert Target.consume_warnings(target) == []
+
+    def test_base_target_deployed_artifact_path_default_none(
+        self, tmp_path: Path
+    ) -> None:
+        tc = TargetConfig(id="t", type="claude", path=tmp_path)
+        target = create_target(tc)
+        # Call the base class default directly: no recorded artifact path.
+        assert Target.deployed_artifact_path(target, "prompt", "x") is None
