@@ -293,6 +293,58 @@ class TestRunDeploy:
         captured = capsys.readouterr()
         assert "hook" in captured.out
 
+    def test_deploy_with_only_type_prompts(self, tmp_path, monkeypatch, capsys):
+        """--only-type prompts is a valid choice."""
+        src = tmp_path / "source"
+        src.mkdir()
+        prompts_dir = src / "prompts"
+        prompts_dir.mkdir()
+        (prompts_dir / "demo.poet").write_bytes(b"- role: system\n  content: x\n")
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=True,
+            target=None,
+            only_type=["prompts"],
+            target_root=None,
+            force=False,
+        )
+        _run_deploy(args)
+        captured = capsys.readouterr()
+        assert "prompt" in captured.out
+
+    def test_deploy_surfaces_poet_warnings(self, tmp_path, monkeypatch, capsys):
+        """A .poet prompt with an undefined Jinja variable should produce a
+        warning visible on stderr during deploy (not just validate)."""
+        src = tmp_path / "source"
+        src.mkdir()
+        prompts_dir = src / "prompts"
+        prompts_dir.mkdir()
+        (prompts_dir / "warny.poet").write_bytes(
+            b"- role: system\n  content: 'hi {{ missing }}'\n"
+        )
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=["prompts"],
+            target_root=None,
+            force=False,
+        )
+        _run_deploy(args)
+        captured = capsys.readouterr()
+        assert "Undefined Jinja variable: missing" in captured.err
+        assert "warny" in captured.err
+
     def test_deploy_filter_error_exits(self, tmp_path, monkeypatch, capsys):
         """FilterError from deploy causes sys.exit(1)."""
         # Create a source with both 'only' and 'except' which triggers FilterError

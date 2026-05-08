@@ -488,6 +488,186 @@ class TestRemoveCommands:
         assert any(a.name == "fix" and a.item_type == "command" for a in removes)
 
 
+class TestPromptDeploy:
+    """End-to-end deploy of a .poet prompt to claude/droid/gptel/opencode."""
+
+    def _build_source(self, tmp_path: Path) -> Path:
+        src = tmp_path / "source"
+        src.mkdir()
+        prompts = src / "prompts"
+        prompts.mkdir()
+        (prompts / "spanish.poet").write_bytes(
+            b"- role: system\n  content: Be helpful.\n"
+            b"- role: user\n  content: Translate this.\n"
+        )
+        return src
+
+    def test_claude_target_renders_command_md(self, tmp_path: Path):
+        src = self._build_source(tmp_path)
+        target_dir = tmp_path / "claude"
+        target_dir.mkdir()
+        tc = TargetConfig(id="c", type="claude", path=target_dir)
+        config = _make_config(src, {"c": tc})
+        deploy(config)
+
+        cmd = target_dir / "commands" / "spanish.md"
+        assert cmd.exists()
+        text = cmd.read_text()
+        assert "<instructions>\nBe helpful.\n</instructions>" in text
+        assert "<task>" in text
+
+    def test_droid_target_renders_skill(self, tmp_path: Path):
+        src = self._build_source(tmp_path)
+        target_dir = tmp_path / "droid"
+        target_dir.mkdir()
+        tc = TargetConfig(id="d", type="droid", path=target_dir)
+        config = _make_config(src, {"d": tc})
+        deploy(config)
+
+        skill = target_dir / "skills" / "spanish" / "SKILL.md"
+        assert skill.exists()
+        assert "<instructions>" in skill.read_text()
+
+    def test_gptel_target_renders_json(self, tmp_path: Path):
+        src = self._build_source(tmp_path)
+        target_dir = tmp_path / "gptel"
+        target_dir.mkdir()
+        tc = TargetConfig(id="g", type="gptel", path=target_dir)
+        config = _make_config(src, {"g": tc})
+        deploy(config)
+
+        out = target_dir / "spanish.json"
+        assert out.exists()
+        data = json.loads(out.read_text())
+        assert data == [
+            {"role": "system", "content": "Be helpful."},
+            {"role": "user", "content": "Translate this."},
+        ]
+
+    def test_prompt_removed_when_source_deleted(self, tmp_path: Path):
+        src = self._build_source(tmp_path)
+        target_dir = tmp_path / "claude"
+        target_dir.mkdir()
+        tc = TargetConfig(id="c", type="claude", path=target_dir)
+        config = _make_config(src, {"c": tc})
+        deploy(config)
+        assert (target_dir / "commands" / "spanish.md").exists()
+
+        (src / "prompts" / "spanish.poet").unlink()
+        actions = deploy(config)
+        removes = [a for a in actions if a.action == "remove"]
+        assert any(a.name == "spanish" for a in removes)
+        assert not (target_dir / "commands" / "spanish.md").exists()
+
+    def test_gptel_records_target_path_in_manifest(self, tmp_path: Path):
+        # Deploy a .md prompt to gptel; the manifest must remember that
+        # the deployed file is foo.md (not e.g. foo.json) so a later
+        # removal targets only that file.
+        src = tmp_path / "source"
+        src.mkdir()
+        prompts = src / "prompts"
+        prompts.mkdir()
+        (prompts / "foo.md").write_bytes(b"# heading\n")
+        target_dir = tmp_path / "gptel"
+        target_dir.mkdir()
+        tc = TargetConfig(id="g", type="gptel", path=target_dir)
+        config = _make_config(src, {"g": tc})
+        deploy(config)
+
+        manifest = load_manifest(target_dir / MANIFEST_FILENAME)
+        item = manifest.items["prompts"]["foo"]
+        assert item.target_path == "foo.md"
+
+    def test_gptel_safe_removal_via_target_path(self, tmp_path: Path):
+        # Deploy a foo.md prompt; the user later authors an unrelated
+        # foo.txt at the same dir. Removing foo (after its source is
+        # deleted) must touch ONLY foo.md, not the user's foo.txt.
+        src = tmp_path / "source"
+        src.mkdir()
+        prompts = src / "prompts"
+        prompts.mkdir()
+        (prompts / "foo.md").write_bytes(b"# h\n")
+        target_dir = tmp_path / "gptel"
+        target_dir.mkdir()
+        tc = TargetConfig(id="g", type="gptel", path=target_dir)
+        config = _make_config(src, {"g": tc})
+        deploy(config)
+        assert (target_dir / "foo.md").exists()
+
+        # User authors an unrelated file with the same stem.
+        unrelated = target_dir / "foo.txt"
+        unrelated.write_text("user authored")
+
+        # Source removed -> stale removal kicks in.
+        (prompts / "foo.md").unlink()
+        deploy(config)
+
+        assert not (target_dir / "foo.md").exists()
+        # The user's unrelated file MUST NOT have been deleted.
+        assert unrelated.exists()
+        assert unrelated.read_text() == "user authored"
+
+    def test_warnings_attached_to_deploy_action(self, tmp_path: Path):
+        # A .poet with an undefined Jinja variable should produce a
+        # DeployAction with non-empty warnings.
+        src = tmp_path / "source"
+        src.mkdir()
+        prompts = src / "prompts"
+        prompts.mkdir()
+        (prompts / "warny.poet").write_bytes(
+            b"- role: system\n  content: 'hi {{ missing }}'\n"
+        )
+        target_dir = tmp_path / "claude"
+        target_dir.mkdir()
+        tc = TargetConfig(id="c", type="claude", path=target_dir)
+        config = _make_config(src, {"c": tc})
+        actions = deploy(config)
+
+        warny_actions = [a for a in actions if a.name == "warny"]
+        assert warny_actions
+        act = warny_actions[0]
+        assert any("missing" in w for w in act.warnings)
+
+    def test_target_path_preserved_on_skip(self, tmp_path: Path):
+        # On the second deploy when nothing changed, the manifest must
+        # still preserve the previously-recorded target_path even
+        # though the target's deployed_artifact_path is None for skips.
+        src = tmp_path / "source"
+        src.mkdir()
+        prompts = src / "prompts"
+        prompts.mkdir()
+        (prompts / "foo.md").write_bytes(b"hello\n")
+        target_dir = tmp_path / "gptel"
+        target_dir.mkdir()
+        tc = TargetConfig(id="g", type="gptel", path=target_dir)
+        config = _make_config(src, {"g": tc})
+
+        deploy(config)
+        # Second deploy: skip path.
+        deploy(config)
+
+        manifest = load_manifest(target_dir / MANIFEST_FILENAME)
+        assert manifest.items["prompts"]["foo"].target_path == "foo.md"
+
+    def test_target_path_none_when_target_does_not_track(self, tmp_path: Path) -> None:
+        # claude target does not implement deployed_artifact_path, so
+        # prompts deployed there have no recorded target_path. The
+        # manifest entry just has source_hash.
+        src = tmp_path / "source"
+        src.mkdir()
+        prompts = src / "prompts"
+        prompts.mkdir()
+        (prompts / "foo.poet").write_bytes(b"- role: system\n  content: x\n")
+        target_dir = tmp_path / "claude"
+        target_dir.mkdir()
+        tc = TargetConfig(id="c", type="claude", path=target_dir)
+        config = _make_config(src, {"c": tc})
+        deploy(config)
+
+        manifest = load_manifest(target_dir / MANIFEST_FILENAME)
+        assert manifest.items["prompts"]["foo"].target_path is None
+
+
 class TestRemoveSkills:
     """Removal of skills from target."""
 

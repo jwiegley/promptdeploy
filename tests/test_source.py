@@ -192,20 +192,36 @@ class TestDiscoverAll:
     def test_yields_all_types(self, discovery):
         items = list(discovery.discover_all())
         types = {item.item_type for item in items}
-        assert types == {"agent", "command", "skill", "mcp", "models", "hook"}
+        assert types == {
+            "agent",
+            "command",
+            "skill",
+            "mcp",
+            "models",
+            "hook",
+            "prompt",
+        }
 
     def test_total_count(self, discovery):
         items = list(discovery.discover_all())
         assert len(items) >= 60
 
     def test_order(self, discovery):
-        """Items appear in order: agents, commands, skills, mcp, models, hooks."""
+        """Items appear in order: agents, commands, skills, mcp, models, hooks, prompts."""
         items = list(discovery.discover_all())
         types_seen = []
         for item in items:
             if not types_seen or types_seen[-1] != item.item_type:
                 types_seen.append(item.item_type)
-        assert types_seen == ["agent", "command", "skill", "mcp", "models", "hook"]
+        assert types_seen == [
+            "agent",
+            "command",
+            "skill",
+            "mcp",
+            "models",
+            "hook",
+            "prompt",
+        ]
 
 
 class TestFiletagParsing:
@@ -487,6 +503,104 @@ class TestNameFallback:
         assert len(mcps) == 1
         assert mcps[0].name == "scalar"
         assert mcps[0].metadata is None
+
+
+class TestDiscoverPrompts:
+    def test_discovers_real_poet_files(self, discovery):
+        prompts = list(discovery.discover_prompts())
+        names = {p.name for p in prompts}
+        assert "emacs" in names
+        assert "spanish" in names
+
+    def test_prompt_properties(self, discovery):
+        prompts = list(discovery.discover_prompts())
+        for p in prompts:
+            assert p.item_type == "prompt"
+            assert p.path.parent.name == "prompts"
+            assert len(p.content) > 0
+
+    def test_missing_prompts_dir(self, tmp_path):
+        d = SourceDiscovery(tmp_path)
+        assert list(d.discover_prompts()) == []
+
+    def test_skips_dotfiles(self, tmp_path):
+        prompts = tmp_path / "prompts"
+        prompts.mkdir()
+        (prompts / ".hidden.poet").write_bytes(b"- role: system\n  content: hi\n")
+        (prompts / "visible.poet").write_bytes(b"- role: system\n  content: hi\n")
+        d = SourceDiscovery(tmp_path)
+        names = [p.name for p in d.discover_prompts()]
+        assert "visible" in names
+        assert "hidden" not in names
+
+    def test_skips_unknown_extensions(self, tmp_path):
+        prompts = tmp_path / "prompts"
+        prompts.mkdir()
+        (prompts / "good.poet").write_bytes(b"- role: system\n  content: hi\n")
+        (prompts / "bad.exe").write_bytes(b"binary")
+        d = SourceDiscovery(tmp_path)
+        names = [p.name for p in d.discover_prompts()]
+        assert names == ["good"]
+
+    def test_skips_subdirectories(self, tmp_path):
+        prompts = tmp_path / "prompts"
+        prompts.mkdir()
+        (prompts / "subdir.poet").mkdir()  # directory with .poet suffix
+        (prompts / "real.poet").write_bytes(b"- role: system\n  content: x\n")
+        d = SourceDiscovery(tmp_path)
+        names = [p.name for p in d.discover_prompts()]
+        assert names == ["real"]
+
+    def test_filetags_parsed(self, tmp_path):
+        prompts = tmp_path / "prompts"
+        prompts.mkdir()
+        (prompts / "demo -- personal.poet").write_bytes(
+            b"- role: system\n  content: hi\n"
+        )
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_prompts())
+        assert len(items) == 1
+        assert items[0].name == "demo"
+        assert items[0].filetags == ["personal"]
+
+    def test_comment_frontmatter_parsed(self, tmp_path):
+        prompts = tmp_path / "prompts"
+        prompts.mkdir()
+        (prompts / "labeled.poet").write_bytes(
+            b"# only: [claude-personal]\n# description: A demo\n"
+            b"- role: system\n  content: hi\n"
+        )
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_prompts())
+        assert len(items) == 1
+        assert items[0].metadata is not None
+        assert items[0].metadata["only"] == ["claude-personal"]
+        assert items[0].metadata["description"] == "A demo"
+
+    def test_name_from_frontmatter_overrides_stem(self, tmp_path):
+        prompts = tmp_path / "prompts"
+        prompts.mkdir()
+        (prompts / "stemname.poet").write_bytes(
+            b"# name: chosen\n- role: system\n  content: hi\n"
+        )
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_prompts())
+        assert len(items) == 1
+        assert items[0].name == "chosen"
+
+    def test_plain_extensions_supported(self, tmp_path):
+        prompts = tmp_path / "prompts"
+        prompts.mkdir()
+        (prompts / "a.txt").write_bytes(b"plain")
+        (prompts / "b.md").write_bytes(b"plain")
+        (prompts / "c.org").write_bytes(b"plain")
+        (prompts / "d.json").write_bytes(b"[]")
+        (prompts / "e.j2").write_bytes(b"- role: system\n  content: x\n")
+        (prompts / "f.jinja").write_bytes(b"- role: system\n  content: x\n")
+        (prompts / "g.jinja2").write_bytes(b"- role: system\n  content: x\n")
+        d = SourceDiscovery(tmp_path)
+        names = sorted(p.name for p in d.discover_prompts())
+        assert names == ["a", "b", "c", "d", "e", "f", "g"]
 
 
 class TestDiscoverHooks:

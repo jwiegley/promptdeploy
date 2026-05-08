@@ -1023,6 +1023,64 @@ class TestValidateFiletags:
         assert issues == []
 
 
+class TestValidateItemPrompt:
+    def test_valid_poet(self, tmp_path: Path, config: Config) -> None:
+        path = tmp_path / "demo.poet"
+        body = b"- role: system\n  content: hi\n"
+        path.write_bytes(body)
+        item = SourceItem("prompt", "demo", path, None, body)
+        assert validate_item(item, config) == []
+
+    def test_poet_with_undefined_var_emits_warning(
+        self, tmp_path: Path, config: Config
+    ) -> None:
+        path = tmp_path / "demo.poet"
+        body = b"- role: system\n  content: 'hi {{ missing }}'\n"
+        path.write_bytes(body)
+        item = SourceItem("prompt", "demo", path, None, body)
+        issues = validate_item(item, config)
+        assert any(i.level == "warning" and "missing" in i.message for i in issues)
+
+    def test_poet_with_invalid_yaml_is_error(
+        self, tmp_path: Path, config: Config
+    ) -> None:
+        path = tmp_path / "demo.poet"
+        body = b"- role: bogus\n  content: x\n"
+        path.write_bytes(body)
+        item = SourceItem("prompt", "demo", path, None, body)
+        issues = validate_item(item, config)
+        assert any(i.level == "error" and "Poet parse" in i.message for i in issues)
+
+    def test_plain_prompt_skipped_by_poet_validation(
+        self, tmp_path: Path, config: Config
+    ) -> None:
+        path = tmp_path / "demo.txt"
+        body = b"plain content"
+        path.write_bytes(body)
+        item = SourceItem("prompt", "demo", path, None, body)
+        # No poet parsing for non-poet extensions; no errors expected.
+        assert validate_item(item, config) == []
+
+    def test_prompt_with_metadata_uses_existing_dict(
+        self, tmp_path: Path, config: Config
+    ) -> None:
+        # When item.metadata is set (from source discovery's comment-FM
+        # parser), validate_item uses it directly and applies only/except
+        # checks against it.
+        path = tmp_path / "demo.poet"
+        body = b"# only: [bogus-target]\n- role: system\n  content: x\n"
+        path.write_bytes(body)
+        item = SourceItem(
+            "prompt",
+            "demo",
+            path,
+            {"only": ["bogus-target"]},
+            body,
+        )
+        issues = validate_item(item, config)
+        assert any("bogus-target" in i.message for i in issues)
+
+
 class TestValidationIssue:
     def test_fields(self) -> None:
         issue = ValidationIssue(

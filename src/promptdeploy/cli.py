@@ -25,7 +25,7 @@ def main():
     deploy_parser.add_argument(
         "--only-type",
         action="append",
-        choices=["agents", "commands", "skills", "mcp", "models", "hooks"],
+        choices=["agents", "commands", "skills", "mcp", "models", "hooks", "prompts"],
         help="Only deploy specific item types",
     )
     deploy_parser.add_argument("--verbose", action="store_true", help="Verbose output")
@@ -141,6 +141,10 @@ def _run_deploy(args):
             continue
         symbol = symbols.get(act.action, "?")
         out.action(symbol, act.item_type, act.name, act.target_id, prefix=prefix)
+        # Surface deploy-time warnings (e.g. undefined Jinja variables) so
+        # users running `deploy` without a prior `validate` still see them.
+        for warning in act.warnings:
+            out.warning(f"{act.item_type} {act.name} -> {act.target_id}: {warning}")
 
     created = sum(1 for a in actions if a.action == "create")
     updated = sum(1 for a in actions if a.action == "update")
@@ -234,6 +238,7 @@ def _run_list(args):
                 "mcp_servers": "MCP Servers",
                 "models": "Models",
                 "hooks": "Hooks",
+                "prompts": "Prompts",
             }
             for category in (
                 "agents",
@@ -242,6 +247,7 @@ def _run_list(args):
                 "mcp_servers",
                 "models",
                 "hooks",
+                "prompts",
             ):
                 items = manifest.items.get(category, {})
                 if not items:

@@ -14,6 +14,7 @@ from .config import (
     load_anthropic_known_models,
 )
 from .frontmatter import FrontmatterError, parse_frontmatter
+from .poet import POET_EXTENSIONS, PoetError, parse_poet
 from .source import SourceDiscovery, SourceItem
 
 
@@ -42,6 +43,7 @@ def validate_all(config: Config) -> List[ValidationIssue]:
         (discovery.discover_mcp_servers, "mcp"),
         (discovery.discover_models, "models"),
         (discovery.discover_hooks, "hooks"),
+        (discovery.discover_prompts, "prompts"),
     ]:
         try:
             for item in discover_fn():
@@ -153,6 +155,8 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
             metadata = yaml.safe_load(item.content.decode("utf-8"))
             if not isinstance(metadata, dict):
                 metadata = None
+        elif item.item_type == "prompt":
+            metadata = item.metadata
         else:
             metadata, _ = parse_frontmatter(item.content)
     except (yaml.YAMLError, FrontmatterError) as e:
@@ -173,6 +177,31 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                     ValidationIssue(
                         level="error",
                         message=f"Invalid filetag label '{tag}'",
+                        file_path=item.path,
+                    )
+                )
+
+    # Prompt-specific validation: parse .poet/.j2/.jinja files to surface
+    # template/YAML errors at validate time, and surface any unrendered
+    # Jinja variables as warnings. Done before the metadata-None early return
+    # because prompts have no YAML frontmatter and routinely have metadata=None.
+    if item.item_type == "prompt" and item.path.suffix in POET_EXTENSIONS:
+        try:
+            doc = parse_poet(item.content, source_path=item.path)
+        except PoetError as e:
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message=f"Poet parse error: {e}",
+                    file_path=item.path,
+                )
+            )
+        else:
+            for warning in doc.warnings:
+                issues.append(
+                    ValidationIssue(
+                        level="warning",
+                        message=warning,
                         file_path=item.path,
                     )
                 )

@@ -10,13 +10,20 @@ import yaml
 
 from promptdeploy.filetags import parse_filetags
 from promptdeploy.frontmatter import parse_frontmatter
+from promptdeploy.poet import (
+    PLAIN_EXTENSIONS,
+    POET_EXTENSIONS,
+    extract_comment_frontmatter,
+)
+
+PROMPT_EXTENSIONS = POET_EXTENSIONS | PLAIN_EXTENSIONS | {".json"}
 
 
 @dataclass
 class SourceItem:
     """A discovered source item ready for deployment."""
 
-    item_type: str  # 'agent', 'command', 'skill', 'mcp', 'models', 'hook'
+    item_type: str  # 'agent', 'command', 'skill', 'mcp', 'models', 'hook', 'prompt'
     name: str
     path: Path
     metadata: Optional[dict]
@@ -38,6 +45,31 @@ class SourceDiscovery:
         yield from self.discover_mcp_servers()
         yield from self.discover_models()
         yield from self.discover_hooks()
+        yield from self.discover_prompts()
+
+    def discover_prompts(self) -> Iterator[SourceItem]:
+        """Discover prompts from prompts/*.{poet,j2,jinja,jinja2,txt,md,org,json}."""
+        prompts_dir = self.source_root / "prompts"
+        if not prompts_dir.is_dir():
+            return
+        for path in sorted(prompts_dir.iterdir()):
+            if path.name.startswith(".") or path.suffix not in PROMPT_EXTENSIONS:
+                continue
+            if not path.is_file():
+                continue
+            base_name, tags = parse_filetags(path.stem)
+            content = path.read_bytes()
+            metadata = extract_comment_frontmatter(content)
+            name_value = metadata.get("name")
+            name = name_value if isinstance(name_value, str) else base_name
+            yield SourceItem(
+                item_type="prompt",
+                name=name,
+                path=path,
+                metadata=metadata or None,
+                content=content,
+                filetags=tags,
+            )
 
     def discover_agents(self) -> Iterator[SourceItem]:
         """Discover agent definitions from agents/*.md."""

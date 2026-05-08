@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Optional, Set
 
 from .config import Config, load_anthropic_default_model
@@ -30,6 +31,7 @@ _TYPE_TO_CATEGORY = {
     "mcp": "mcp_servers",
     "models": "models",
     "hook": "hooks",
+    "prompt": "prompts",
 }
 
 # Maps CLI --only-type values (plural) -> SourceItem.item_type (singular)
@@ -40,6 +42,7 @@ _CLI_TYPE_TO_ITEM_TYPE = {
     "mcp": "mcp",
     "models": "models",
     "hooks": "hook",
+    "prompts": "prompt",
 }
 
 
@@ -52,6 +55,10 @@ class DeployAction:
     name: str
     target_id: str
     source_path: Optional[str] = None
+    # Warnings produced while computing this action's rendered output (e.g.
+    # undefined Jinja variables in a .poet prompt). Empty for items without
+    # template rendering.
+    warnings: list[str] = field(default_factory=list)
 
 
 def _apply_provider_overrides(prov: dict, target_id: str, config: Config) -> dict:
@@ -147,10 +154,30 @@ def _deploy_item(
         target.deploy_models(filtered_models_config or {})
     elif item.item_type == "hook":
         target.deploy_hook(item.name, item.metadata or {})
+    elif item.item_type == "prompt":
+        target.deploy_prompt(item.name, item.content, item.path)
 
 
-def _remove_item(target: Target, category: str, name: str) -> None:
-    """Remove a single item from a target by manifest category."""
+def _drain_warnings(target: Target) -> dict[str, list[str]]:
+    """Collect target-side warnings into a name -> warnings mapping."""
+    drained: dict[str, list[str]] = {}
+    for name, warnings in target.consume_warnings():
+        drained.setdefault(name, []).extend(warnings)
+    return drained
+
+
+def _remove_item(
+    target: Target,
+    category: str,
+    name: str,
+    target_path: Optional[Path] = None,
+) -> None:
+    """Remove a single item from a target by manifest category.
+
+    For ``prompts``, ``target_path`` (when present in the manifest) names the
+    exact file the previous deploy wrote so the target can unlink only that
+    artifact instead of probing extension variants.
+    """
     if category == "agents":
         target.remove_agent(name)
     elif category == "commands":
@@ -163,6 +190,8 @@ def _remove_item(target: Target, category: str, name: str) -> None:
         target.remove_models()
     elif category == "hooks":
         target.remove_hook(name)
+    elif category == "prompts":
+        target.remove_prompt(name, target_path=target_path)
 
 
 def deploy(
@@ -277,6 +306,13 @@ def deploy(
                         else:
                             _deploy_item(target, item)
 
+                    # Drain any warnings the target collected during this
+                    # deploy so we can attach them to the matching
+                    # DeployAction. We drain immediately after each deploy
+                    # so each item's warnings are isolated.
+                    drained = _drain_warnings(target)
+                    item_warnings = drained.get(item.name, [])
+
                     actions.append(
                         DeployAction(
                             action=action_type,
@@ -284,6 +320,7 @@ def deploy(
                             name=item.name,
                             target_id=target_id,
                             source_path=str(item.path),
+                            warnings=item_warnings,
                         )
                     )
                 else:
@@ -297,9 +334,24 @@ def deploy(
                         )
                     )
 
-                # Record in new manifest regardless of action
+                # Record in new manifest regardless of action. Capture the
+                # target-side artifact path (when known) so future stale
+                # removals can unlink the exact file we wrote.
+                tp = target.deployed_artifact_path(item.item_type, item.name)
+                # Preserve the previous manifest's target_path if we don't
+                # have a fresh one (e.g. on dry-run/skip the target didn't
+                # actually deploy this run).
+                if tp is None:
+                    prev = manifest.items.get(category, {}).get(item.name)
+                    if prev is not None and prev.target_path is not None:
+                        target_path_str = prev.target_path
+                    else:
+                        target_path_str = None
+                else:
+                    target_path_str = tp.as_posix()
                 new_manifest.items.setdefault(category, {})[item.name] = ManifestItem(
-                    source_hash=current_hash
+                    source_hash=current_hash,
+                    target_path=target_path_str,
                 )
 
             # Detect stale items: in old manifest but not in new source
@@ -319,8 +371,16 @@ def deploy(
                             )
                             continue
 
+                    # Look up the deployed artifact path (if any) so the
+                    # removal can target the exact file the previous deploy
+                    # wrote.
+                    prev_item = items_dict.get(name)
+                    target_path: Optional[Path] = None
+                    if prev_item is not None and prev_item.target_path is not None:
+                        target_path = Path(prev_item.target_path)
+
                     if not dry_run:
-                        _remove_item(target, category, name)
+                        _remove_item(target, category, name, target_path=target_path)
 
                     actions.append(
                         DeployAction(
