@@ -16,3 +16,6 @@ pre-commit:
     pytest:
       glob: "*.{py,yaml,toml}"
       run: PYTHONPATH=src python -m pytest tests/ -x -q --cov --cov-report=term-missing
+    agnix:
+      glob: "*.{md,yaml,yml,json,toml}"
+      run: agnix .
