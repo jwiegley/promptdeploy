@@ -11,28 +11,28 @@ version: v1
 Context: User wants to start a new project and needs a comprehensive PRD.
 user: "I want to build a REST API for a task management system with user authentication"
 assistant: "I'm going to use the Task tool to launch the prd-architect agent to help create a comprehensive PRD for your task management API."
-<Task tool call to prd-architect agent>
+`[Task tool call to prd-architect agent]`
 </example>
 
 <example>
 Context: User has an existing PRD that needs enhancement or updates.
 user: "Can you review my PRD at .taskmaster/docs/prd.txt and suggest improvements?"
 assistant: "Let me use the prd-architect agent to analyze your existing PRD and provide expert feedback."
-<Task tool call to prd-architect agent>
+`[Task tool call to prd-architect agent]`
 </example>
 
 <example>
 Context: User mentions design goals or requirements that should be documented.
 user: "I'm thinking of adding real-time notifications using WebSockets to the project"
 assistant: "That's an important feature addition. Let me use the prd-architect agent to help integrate this into your PRD with proper technical specifications."
-<Task tool call to prd-architect agent>
+`[Task tool call to prd-architect agent]`
 </example>
 
 <example>
 Context: User is starting implementation and realizes the PRD is incomplete.
 user: "I'm about to start coding but I'm not sure about the database schema"
 assistant: "Before you start implementation, let's use the prd-architect agent to ensure your PRD has comprehensive database schema specifications."
-<Task tool call to prd-architect agent>
+`[Task tool call to prd-architect agent]`
 </example>
 
 Proactively suggest using this agent when:
