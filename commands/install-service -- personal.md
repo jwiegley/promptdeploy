@@ -1,6 +1,6 @@
 ---
 description: Install and configure a service with nginx, monitoring, and secrets
-argument-hint: <service-name>
+argument-hint: "[service-name]"
 ---
 
 I want you to setup the $ARGUMENTS service on this NixOS host, either as a native NixOS service or as a rootless quadlet container under a user account managed by home-manager, whichever is best for my configuration.

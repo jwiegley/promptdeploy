@@ -1,6 +1,6 @@
 ---
 description: Remove a service from system, including nginx virtual hosts, monitoring, alerting, systemd services and timers, containers, Nagios, Alertmanager, Prometheus exporters, etc.
-argument-hint: <service-name>
+argument-hint: "[service-name]"
 ---
 
 I want you to remove the $ARGUMENTS service from this NixOS host, including nginx virtual hosts, monitoring, alerting, systemd services and timers, containers, Nagios, Alertmanager, Prometheus exporters, etc.
