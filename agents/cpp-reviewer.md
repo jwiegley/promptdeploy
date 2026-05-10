@@ -1,7 +1,14 @@
 ---
 name: cpp-reviewer
 description: Expert C++ code reviewer specializing in memory safety, undefined behavior, modern C++ idioms, and concurrency
-tools: Read, Grep, Glob, Bash(clang-tidy:*), Bash(cppcheck:*), Bash(grep:*), Bash(wc:*)
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash(clang-tidy:*)
+  - Bash(cppcheck:*)
+  - Bash(grep:*)
+  - Bash(wc:*)
 model: opus
 ---
 

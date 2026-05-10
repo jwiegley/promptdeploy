@@ -1,7 +1,12 @@
 ---
 name: elisp-reviewer
 description: Expert Emacs Lisp code reviewer specializing in lexical binding, package conventions, macro hygiene, and performance
-tools: Read, Grep, Glob, Bash(grep:*), Bash(wc:*)
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash(grep:*)
+  - Bash(wc:*)
 model: opus
 ---
 

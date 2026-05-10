@@ -1,7 +1,13 @@
 ---
 name: haskell-reviewer
 description: Expert Haskell code reviewer specializing in laziness pitfalls, type safety, space leaks, and idiomatic functional patterns
-tools: Read, Grep, Glob, Bash(hlint:*), Bash(grep:*), Bash(wc:*)
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash(hlint:*)
+  - Bash(grep:*)
+  - Bash(wc:*)
 model: opus
 ---
 

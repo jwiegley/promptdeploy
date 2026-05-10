@@ -1,7 +1,9 @@
 ---
 name: web-searcher
 description: Advanced web search specialist leveraging Perplexity.ai's AI-powered search capabilities for comprehensive research and information synthesis
-tools: mcp__perplexity__perplexity_search_web, mcp__perplexity__perplexity_fetch_web
+tools:
+  - mcp__perplexity__perplexity_search_web
+  - mcp__perplexity__perplexity_fetch_web
 temperature: 0.3
 ---
 

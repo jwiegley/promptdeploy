@@ -1,7 +1,15 @@
 ---
 name: nix-reviewer
 description: Expert Nix code reviewer specializing in reproducibility, flake hygiene, NixOS module design, and security
-tools: Read, Grep, Glob, Bash(statix:*), Bash(deadnix:*), Bash(nix:*), Bash(grep:*), Bash(wc:*)
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash(statix:*)
+  - Bash(deadnix:*)
+  - Bash(nix:*)
+  - Bash(grep:*)
+  - Bash(wc:*)
 model: opus
 ---
 
