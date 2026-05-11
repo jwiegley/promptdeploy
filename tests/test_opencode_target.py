@@ -9,7 +9,7 @@ from promptdeploy.frontmatter import parse_frontmatter
 from promptdeploy.manifest import MANIFEST_FILENAME
 from promptdeploy.targets.opencode import (
     OpenCodeTarget,
-    _convert_claude_tools_string,
+    _convert_claude_tools,
     _transform_for_opencode,
 )
 
@@ -930,37 +930,67 @@ class TestShouldSkip:
 # ------------------------------------------------------------------
 
 
-class TestConvertClaudeToolsString:
+class TestConvertClaudeTools:
     def test_basic_tool_names(self):
-        result = _convert_claude_tools_string("Read, Grep, Glob")
+        result = _convert_claude_tools("Read, Grep, Glob")
         assert result == {"read": True, "grep": True, "glob": True}
 
-    def test_bash_with_qualifiers(self):
-        result = _convert_claude_tools_string(
-            "Read, Grep, Glob, Bash(grep:*), Bash(wc:*)"
+    def test_list_input_basic(self):
+        result = _convert_claude_tools(["Read", "Grep", "Glob"])
+        assert result == {"read": True, "grep": True, "glob": True}
+
+    def test_list_input_with_bash_qualifiers(self):
+        result = _convert_claude_tools(["Read", "Bash(grep:*)", "Bash(wc:*)"])
+        assert result == {"read": True, "bash": True}
+
+    def test_list_input_all_mcp_dropped(self):
+        result = _convert_claude_tools(
+            [
+                "mcp__perplexity__perplexity_search_web",
+                "mcp__perplexity__perplexity_fetch_web",
+            ]
         )
+        assert result == {}
+
+    def test_list_input_empty(self):
+        assert _convert_claude_tools([]) == {}
+
+    def test_list_input_with_whitespace(self):
+        result = _convert_claude_tools(["  Read  ", " Grep "])
+        assert result == {"read": True, "grep": True}
+
+    def test_dict_input_returns_empty(self):
+        # dict-valued tools should pass through untouched at the caller; the
+        # converter itself only handles str/list inputs.
+        assert _convert_claude_tools({"read": True}) == {}
+
+    def test_none_input_returns_empty(self):
+        assert _convert_claude_tools(None) == {}
+
+    def test_bash_with_qualifiers(self):
+        result = _convert_claude_tools("Read, Grep, Glob, Bash(grep:*), Bash(wc:*)")
         assert result == {"read": True, "grep": True, "glob": True, "bash": True}
 
     def test_unknown_tools_dropped(self):
-        result = _convert_claude_tools_string(
+        result = _convert_claude_tools(
             "mcp__perplexity__perplexity_search_web, mcp__perplexity__perplexity_fetch_web"
         )
         assert result == {}
 
     def test_mixed_known_and_unknown(self):
-        result = _convert_claude_tools_string("Read, mcp__foo__bar, Bash(git:*)")
+        result = _convert_claude_tools("Read, mcp__foo__bar, Bash(git:*)")
         assert result == {"read": True, "bash": True}
 
     def test_empty_string(self):
-        result = _convert_claude_tools_string("")
+        result = _convert_claude_tools("")
         assert result == {}
 
     def test_whitespace_handling(self):
-        result = _convert_claude_tools_string("  Read ,  Grep  ,  Glob  ")
+        result = _convert_claude_tools("  Read ,  Grep  ,  Glob  ")
         assert result == {"read": True, "grep": True, "glob": True}
 
     def test_all_known_tools(self):
-        result = _convert_claude_tools_string(
+        result = _convert_claude_tools(
             "bash, edit, glob, grep, list, lsp, patch, read, skill, "
             "todoread, todowrite, webfetch, websearch, write, task, question"
         )
@@ -1029,6 +1059,33 @@ class TestTransformForOpencode:
         meta, body = parse_frontmatter(result)
         assert meta is not None
         assert "tools" not in meta
+
+    def test_tools_list_all_mcp_removed(self):
+        # Regression: YAML list of MCP-only tools must be removed so OpenCode
+        # does not see ``tools: [..]`` and reject it as the wrong shape.
+        content = (
+            b"---\nname: web-searcher\ntools:\n"
+            b"  - mcp__perplexity__perplexity_search_web\n"
+            b"  - mcp__perplexity__perplexity_fetch_web\n"
+            b"---\nBody.\n"
+        )
+        result = _transform_for_opencode(content, "opencode")
+        meta, body = parse_frontmatter(result)
+        assert meta is not None
+        assert "tools" not in meta
+
+    def test_tools_list_mixed_converted(self):
+        content = (
+            b"---\nname: agent\ntools:\n"
+            b"  - Read\n"
+            b"  - Bash(git:*)\n"
+            b"  - mcp__foo__bar\n"
+            b"---\nBody.\n"
+        )
+        result = _transform_for_opencode(content, "opencode")
+        meta, body = parse_frontmatter(result)
+        assert meta is not None
+        assert meta["tools"] == {"read": True, "bash": True}
 
     def test_no_frontmatter_unchanged(self):
         content = b"No frontmatter here.\n"

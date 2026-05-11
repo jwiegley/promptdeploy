@@ -51,13 +51,14 @@ _OPENCODE_TOOL_NAMES = frozenset(
 )
 
 
-def _convert_claude_tools_string(tools_value: str) -> dict[str, bool]:
-    """Convert a Claude Code ``tools`` string to an OpenCode tools object.
+def _convert_claude_tools(tools_value: object) -> dict[str, bool]:
+    """Convert a Claude Code ``tools`` value to an OpenCode tools object.
 
+    Accepts either a comma-separated string or a YAML list of strings.
     Claude Code format examples::
 
         "Read, Grep, Glob, Bash(grep:*), Bash(wc:*)"
-        "mcp__perplexity__perplexity_search_web, mcp__perplexity__perplexity_fetch_web"
+        ["mcp__perplexity__perplexity_search_web", "mcp__perplexity__perplexity_fetch_web"]
 
     OpenCode expects a mapping of tool names to booleans::
 
@@ -66,11 +67,17 @@ def _convert_claude_tools_string(tools_value: str) -> dict[str, bool]:
     Tool names are lowercased and de-duplicated.  ``Bash(...)`` variants
     collapse to a single ``bash: true`` entry.  Unknown/MCP tool names are
     silently dropped since they cannot be represented as OpenCode built-in
-    tool booleans.
+    tool booleans.  Returns an empty dict for non-string/non-list inputs.
     """
+    if isinstance(tools_value, str):
+        tokens: list[str] = re.split(r"\s*,\s*", tools_value.strip())
+    elif isinstance(tools_value, list):
+        tokens = [str(t).strip() for t in tools_value]
+    else:
+        return {}
+
     result: dict[str, bool] = {}
-    # Split on commas, strip whitespace.
-    for token in re.split(r"\s*,\s*", tools_value.strip()):
+    for token in tokens:
         if not token:
             continue
         # Strip Bash(...) qualifiers -> "bash"
@@ -85,8 +92,10 @@ def _transform_for_opencode(content: bytes, target_id: str) -> bytes:
 
     In addition to stripping deployment fields (``only``/``except``), this:
 
-    * Converts a string-valued ``tools`` field (Claude Code format) to an
-      OpenCode-compatible object with boolean values.
+    * Converts a string- or list-valued ``tools`` field (Claude Code format)
+      to an OpenCode-compatible object with boolean values.  When the
+      converted mapping is empty (e.g. only MCP tools were listed), the
+      field is removed so OpenCode's schema validator does not reject it.
     * Removes ``model`` (Claude Code uses short aliases like ``sonnet``
       which are not valid OpenCode model identifiers).
     """
@@ -96,10 +105,10 @@ def _transform_for_opencode(content: bytes, target_id: str) -> bytes:
 
     cleaned = strip_deployment_fields(metadata)
 
-    # Convert tools: string -> tools: {name: true, ...}
+    # Convert tools: string|list -> tools: {name: true, ...}
     tools_val = cleaned.get("tools")
-    if isinstance(tools_val, str):
-        converted = _convert_claude_tools_string(tools_val)
+    if isinstance(tools_val, (str, list)):
+        converted = _convert_claude_tools(tools_val)
         if converted:
             cleaned["tools"] = converted
         else:
