@@ -295,6 +295,24 @@ def deploy(
                 changed = has_changed(manifest, category, item.name, current_hash)
                 exists_on_target = target.item_exists(item.item_type, item.name)
 
+                # Drift detection: even when the source hash still matches the
+                # manifest, the deployed bytes may no longer match what we
+                # would write -- e.g. the transformation logic changed in a
+                # newer promptdeploy release, or the artifact was hand-edited
+                # at the target.  When both sides can be materialised, compare
+                # them and redeploy on mismatch so the target always reflects
+                # the current source+transform.
+                if not force and not changed and exists_on_target:
+                    would = target.would_deploy_bytes(
+                        item.item_type,
+                        item.name,
+                        item.content,
+                        source_path=item.path,
+                    )
+                    on_disk = target.read_deployed_bytes(item.item_type, item.name)
+                    if would is not None and on_disk is not None and would != on_disk:
+                        changed = True
+
                 if force or changed or not exists_on_target:
                     # Determine if create or update
                     is_update = (

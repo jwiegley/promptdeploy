@@ -850,6 +850,68 @@ class TestDiskMatchesSource:
         assert _disk_matches_source(target, item) is False
 
 
+class TestDriftDetection:
+    """When the deployed artifact no longer matches what we would write,
+    redeploy even if the source hash still matches the manifest."""
+
+    def test_externally_edited_file_is_redeployed(self, tmp_path: Path):
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        # First deploy creates the agent and records it in the manifest.
+        deploy(config)
+
+        # Hand-edit the deployed file so it no longer matches source.
+        agent = tc.path / "agents" / "helper.md"
+        agent.write_bytes(b"manually edited content")
+
+        actions = deploy(config)
+
+        updates = [a for a in actions if a.action == "update"]
+        assert any(a.name == "helper" for a in updates)
+        # The deployed file is restored to the source bytes.
+        assert agent.read_bytes() == b"---\nname: helper\n---\nAgent body.\n"
+
+    def test_transform_change_redeploys_without_source_change(
+        self, tmp_path: Path
+    ) -> None:
+        """If the target's transformation pipeline changes between deploys,
+        the on-disk artifact drifts from what we would now write.  Simulate
+        this by stubbing would_deploy_bytes to return different bytes than
+        what was originally written, and verify that deploy redeploys."""
+        from unittest.mock import patch
+
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        deploy(config)
+        agent = tc.path / "agents" / "helper.md"
+        original = agent.read_bytes()
+
+        # Stub the target so would_deploy_bytes diverges from on-disk.  The
+        # source hash is unchanged, so manifest-based change detection alone
+        # would miss this drift -- drift detection catches it.
+        new_bytes = original + b"# extra transform output\n"
+        with patch.object(
+            type(_make_target_from_config(tc)),
+            "would_deploy_bytes",
+            autospec=True,
+            return_value=new_bytes,
+        ):
+            actions = deploy(config)
+
+        updates = [a for a in actions if a.action == "update"]
+        assert any(a.name == "helper" for a in updates)
+
+
+def _make_target_from_config(tc: TargetConfig):
+    from promptdeploy.targets import create_target
+
+    return create_target(tc)
+
+
 class TestHookDeploy:
     """Deploy hook items through the deploy orchestration."""
 
