@@ -766,6 +766,89 @@ class TestPreExisting:
         # helper was pre-existing, should not be in manifest
         assert "helper" not in manifest.items.get("agents", {})
 
+    def test_matching_disk_content_is_silently_adopted(self, tmp_path: Path):
+        """A pre-existing file with content identical to deploy output is
+        adopted into the manifest instead of being flagged on every run."""
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        # Pre-populate the target with the exact bytes deploy would write
+        # for the ``helper`` agent.
+        agents_dir = tc.path / "agents"
+        agents_dir.mkdir(parents=True)
+        (agents_dir / "helper.md").write_bytes(b"---\nname: helper\n---\nAgent body.\n")
+
+        actions = deploy(config)
+
+        # No pre-existing action for helper; it was silently adopted.
+        assert not any(
+            a.action == "pre-existing" and a.name == "helper" for a in actions
+        )
+        # Adoption is reported as a skip (no write needed).
+        adopted = [a for a in actions if a.action == "skip" and a.name == "helper"]
+        assert len(adopted) == 1
+
+        # The manifest now tracks helper, so subsequent deploys treat it
+        # as managed and skip it without warning.
+        manifest = load_manifest(tc.path / MANIFEST_FILENAME)
+        assert "helper" in manifest.items.get("agents", {})
+
+        # Second deploy: still no pre-existing, content untouched.
+        actions2 = deploy(config)
+        assert not any(a.action == "pre-existing" for a in actions2)
+        assert (agents_dir / "helper.md").read_bytes() == (
+            b"---\nname: helper\n---\nAgent body.\n"
+        )
+
+    def test_differing_disk_content_remains_pre_existing(self, tmp_path: Path):
+        """A pre-existing file with different content stays pre-existing
+        (and is not overwritten without ``--force``)."""
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        agents_dir = tc.path / "agents"
+        agents_dir.mkdir(parents=True)
+        # Different bytes from what the source would deploy.
+        (agents_dir / "helper.md").write_bytes(b"old content; do not touch")
+
+        actions = deploy(config)
+
+        pre = [a for a in actions if a.action == "pre-existing" and a.name == "helper"]
+        assert len(pre) == 1
+        # Original on-disk content is preserved.
+        assert (agents_dir / "helper.md").read_bytes() == (b"old content; do not touch")
+        # Helper is *not* recorded -- pre-existing items stay protected.
+        manifest = load_manifest(tc.path / MANIFEST_FILENAME)
+        assert "helper" not in manifest.items.get("agents", {})
+
+
+class TestDiskMatchesSource:
+    """Unit-level tests for the _disk_matches_source helper."""
+
+    def test_disk_missing_returns_false(self, tmp_path: Path):
+        """If item_exists says yes but read_deployed_bytes can't recover
+        the file (race / inconsistency), the helper must return False so
+        the caller falls back to the protective pre-existing path."""
+        from unittest.mock import MagicMock
+
+        from promptdeploy.deploy import _disk_matches_source
+        from promptdeploy.source import SourceItem
+
+        target = MagicMock()
+        target.would_deploy_bytes.return_value = b"hello"
+        target.read_deployed_bytes.return_value = None
+
+        item = SourceItem(
+            item_type="agent",
+            name="x",
+            path=tmp_path / "x.md",
+            metadata=None,
+            content=b"hello",
+        )
+        assert _disk_matches_source(target, item) is False
+
 
 class TestHookDeploy:
     """Deploy hook items through the deploy orchestration."""

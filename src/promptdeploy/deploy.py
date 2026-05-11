@@ -166,6 +166,26 @@ def _drain_warnings(target: Target) -> dict[str, list[str]]:
     return drained
 
 
+def _disk_matches_source(target: Target, item: SourceItem) -> bool:
+    """Return True when the on-disk artifact already equals deploy bytes.
+
+    Only meaningful for single-file artifacts (agents, commands, prompts).
+    Returns False whenever either side cannot be materialised -- e.g. for
+    skill directories or items that merge into a shared JSON file. The
+    caller treats False as "cannot prove identical, keep pre-existing
+    behaviour".
+    """
+    would = target.would_deploy_bytes(
+        item.item_type, item.name, item.content, source_path=item.path
+    )
+    if would is None:
+        return False
+    on_disk = target.read_deployed_bytes(item.item_type, item.name)
+    if on_disk is None:
+        return False
+    return would == on_disk
+
+
 def _remove_item(
     target: Target,
     category: str,
@@ -284,45 +304,68 @@ def deploy(
 
                     # Detect pre-existing: new item but target already has something
                     if not force and not is_update and exists_on_target:
+                        # If the on-disk artifact is byte-identical to what
+                        # we would deploy, silently adopt it into the
+                        # manifest instead of reporting it as pre-existing.
+                        # This makes deploys idempotent for files that
+                        # arrived at the target outside the manifest (e.g.
+                        # via an older promptdeploy run or sideloading) but
+                        # are already in the correct state.
+                        if _disk_matches_source(target, item):
+                            actions.append(
+                                DeployAction(
+                                    action="skip",
+                                    item_type=item.item_type,
+                                    name=item.name,
+                                    target_id=target_id,
+                                    source_path=str(item.path),
+                                )
+                            )
+                            # Fall through to the manifest-recording block
+                            # below so the next deploy treats this item as
+                            # managed and unchanged.
+                        else:
+                            actions.append(
+                                DeployAction(
+                                    action="pre-existing",
+                                    item_type=item.item_type,
+                                    name=item.name,
+                                    target_id=target_id,
+                                    source_path=str(item.path),
+                                )
+                            )
+                            continue
+                    else:
+                        action_type = "update" if is_update else "create"
+
+                        if not dry_run:
+                            if item.item_type == "models":
+                                filtered = _filter_models_config(
+                                    item.metadata or {}, target_id, config
+                                )
+                                _deploy_item(
+                                    target, item, filtered_models_config=filtered
+                                )
+                            else:
+                                _deploy_item(target, item)
+
+                        # Drain any warnings the target collected during this
+                        # deploy so we can attach them to the matching
+                        # DeployAction. We drain immediately after each deploy
+                        # so each item's warnings are isolated.
+                        drained = _drain_warnings(target)
+                        item_warnings = drained.get(item.name, [])
+
                         actions.append(
                             DeployAction(
-                                action="pre-existing",
+                                action=action_type,
                                 item_type=item.item_type,
                                 name=item.name,
                                 target_id=target_id,
                                 source_path=str(item.path),
+                                warnings=item_warnings,
                             )
                         )
-                        continue
-
-                    action_type = "update" if is_update else "create"
-
-                    if not dry_run:
-                        if item.item_type == "models":
-                            filtered = _filter_models_config(
-                                item.metadata or {}, target_id, config
-                            )
-                            _deploy_item(target, item, filtered_models_config=filtered)
-                        else:
-                            _deploy_item(target, item)
-
-                    # Drain any warnings the target collected during this
-                    # deploy so we can attach them to the matching
-                    # DeployAction. We drain immediately after each deploy
-                    # so each item's warnings are isolated.
-                    drained = _drain_warnings(target)
-                    item_warnings = drained.get(item.name, [])
-
-                    actions.append(
-                        DeployAction(
-                            action=action_type,
-                            item_type=item.item_type,
-                            name=item.name,
-                            target_id=target_id,
-                            source_path=str(item.path),
-                            warnings=item_warnings,
-                        )
-                    )
                 else:
                     actions.append(
                         DeployAction(
