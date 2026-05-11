@@ -268,6 +268,30 @@ class DroidTarget(Target):
             return bool(data.get("customModels"))
         return False
 
+    def would_deploy_bytes(
+        self,
+        item_type: str,
+        name: str,
+        content: bytes,
+        source_path: Optional[Path] = None,
+    ) -> Optional[bytes]:
+        # Droid writes a single ``.md`` file only for agents -- commands are
+        # either skipped entirely or wrapped as a ``skills/{name}/SKILL.md``
+        # directory artifact, and prompts also become skill directories.
+        # Both directory artifacts fall outside the single-file adoption path.
+        if item_type == "agent":
+            return transform_for_target(content, self._id)
+        return None
+
+    def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
+        if item_type != "agent":
+            return None
+        path = self._config_path / "droids" / f"{name}.md"
+        try:
+            return path.read_bytes()
+        except FileNotFoundError:
+            return None
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------

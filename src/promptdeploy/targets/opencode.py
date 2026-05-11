@@ -377,6 +377,42 @@ class OpenCodeTarget(Target):
             return bool(data.get("provider"))
         return False
 
+    def would_deploy_bytes(
+        self,
+        item_type: str,
+        name: str,
+        content: bytes,
+        source_path: Optional[Path] = None,
+    ) -> Optional[bytes]:
+        if item_type in ("agent", "command"):
+            return _transform_for_opencode(content, self._id)
+        if item_type == "prompt":
+            from ..poet import (
+                POET_EXTENSIONS,
+                parse_plain,
+                parse_poet,
+                render_for_command,
+            )
+
+            if source_path is not None and source_path.suffix in POET_EXTENSIONS:
+                doc = parse_poet(content, source_path=source_path)
+            else:
+                doc = parse_plain(content)
+            return render_for_command(doc)
+        return None
+
+    def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
+        if item_type == "agent":
+            path = self._config_path / "agents" / f"{name}.md"
+        elif item_type in ("command", "prompt"):
+            path = self._config_path / "commands" / f"{name}.md"
+        else:
+            return None
+        try:
+            return path.read_bytes()
+        except FileNotFoundError:
+            return None
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------

@@ -285,3 +285,58 @@ class TestNoOpMethods:
         target.remove_hook("h")
         # None of those should have produced any files in the prompts dir.
         assert list((tmp_path / "prompts").iterdir()) == []
+
+
+class TestWouldDeployBytes:
+    def test_plain_prompt_returns_raw_content(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "doc.md"
+        src.write_bytes(b"Plain.\n")
+        assert target.would_deploy_bytes("prompt", "doc", b"Plain.\n", src) == (
+            b"Plain.\n"
+        )
+
+    def test_poet_prompt_matches_deploy_output(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "demo.poet"
+        body = b"- role: system\n  content: hi\n"
+        src.write_bytes(body)
+        target.deploy_prompt("demo", body, src)
+        on_disk = (tmp_path / "prompts" / "demo.json").read_bytes()
+        assert target.would_deploy_bytes("prompt", "demo", body, src) == on_disk
+
+    def test_returns_none_without_source_path(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.would_deploy_bytes("prompt", "demo", b"x") is None
+
+    def test_returns_none_for_non_prompt(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "x.md"
+        src.write_bytes(b"")
+        assert target.would_deploy_bytes("agent", "x", b"", src) is None
+        assert target.would_deploy_bytes("command", "x", b"", src) is None
+        assert target.would_deploy_bytes("skill", "x", b"", src) is None
+
+
+class TestReadDeployedBytes:
+    def test_returns_on_disk_for_each_extension(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        # Write a plain prompt at each supported extension and confirm the
+        # reader finds it in priority order.
+        for ext in (".json", ".txt", ".md", ".org"):
+            path = tmp_path / "prompts" / f"doc{ext}"
+            path.write_bytes(f"content{ext}".encode())
+            assert target.read_deployed_bytes("prompt", "doc") == (
+                f"content{ext}".encode()
+            )
+            path.unlink()
+
+    def test_returns_none_when_missing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.read_deployed_bytes("prompt", "missing") is None
+
+    def test_returns_none_for_non_prompt(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.read_deployed_bytes("agent", "x") is None
+        assert target.read_deployed_bytes("command", "x") is None
+        assert target.read_deployed_bytes("skill", "x") is None

@@ -905,3 +905,52 @@ class TestShouldSkip:
     def test_does_not_skip_models(self, tmp_path: Path):
         target = _make_target(tmp_path)
         assert target.should_skip("models", "models") is False
+
+
+# ------------------------------------------------------------------
+# would_deploy_bytes / read_deployed_bytes
+# ------------------------------------------------------------------
+
+
+class TestWouldDeployBytes:
+    def test_agent_matches_deploy_output(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        content = b"---\nname: helper\n---\nAgent body.\n"
+        target.deploy_agent("helper", content)
+        on_disk = (tmp_path / ".droid" / "droids" / "helper.md").read_bytes()
+        assert target.would_deploy_bytes("agent", "helper", content) == on_disk
+
+    def test_returns_none_for_command(self, tmp_path: Path):
+        # Plain commands are silently skipped on Droid, and command-as-skill
+        # uses a directory artifact -- neither is a single-file deploy.
+        target = _make_target(tmp_path)
+        assert target.would_deploy_bytes("command", "fix", b"") is None
+
+    def test_returns_none_for_skill(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.would_deploy_bytes("skill", "sk", b"") is None
+
+    def test_returns_none_for_other_types(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.would_deploy_bytes("prompt", "p", b"") is None
+        assert target.would_deploy_bytes("mcp", "m", b"") is None
+        assert target.would_deploy_bytes("models", "x", b"") is None
+
+
+class TestReadDeployedBytes:
+    def test_agent_returns_on_disk_bytes(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_agent("helper", b"---\nname: helper\n---\nBody.\n")
+        assert target.read_deployed_bytes("agent", "helper") is not None
+
+    def test_returns_none_when_missing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.read_deployed_bytes("agent", "missing") is None
+
+    def test_returns_none_for_non_agent_types(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.read_deployed_bytes("command", "x") is None
+        assert target.read_deployed_bytes("skill", "x") is None
+        assert target.read_deployed_bytes("prompt", "x") is None
+        assert target.read_deployed_bytes("mcp", "x") is None
+        assert target.read_deployed_bytes("models", "x") is None

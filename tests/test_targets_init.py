@@ -139,3 +139,15 @@ class TestCreateTarget:
         target = create_target(tc)
         # Call the base class default directly: no recorded artifact path.
         assert Target.deployed_artifact_path(target, "prompt", "x") is None
+
+    def test_base_target_would_deploy_bytes_default_none(self, tmp_path: Path) -> None:
+        tc = TargetConfig(id="t", type="claude", path=tmp_path)
+        target = create_target(tc)
+        # Call the base class default directly: no single-file artifact.
+        assert Target.would_deploy_bytes(target, "agent", "x", b"") is None
+
+    def test_base_target_read_deployed_bytes_default_none(self, tmp_path: Path) -> None:
+        tc = TargetConfig(id="t", type="claude", path=tmp_path)
+        target = create_target(tc)
+        # Call the base class default directly: no on-disk bytes reported.
+        assert Target.read_deployed_bytes(target, "agent", "x") is None

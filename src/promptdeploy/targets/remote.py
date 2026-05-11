@@ -136,5 +136,17 @@ class RemoteTarget(Target):
     def item_exists(self, item_type: str, name: str) -> bool:
         return self._inner.item_exists(item_type, name)
 
+    def would_deploy_bytes(
+        self,
+        item_type: str,
+        name: str,
+        content: bytes,
+        source_path: Optional[Path] = None,
+    ) -> Optional[bytes]:
+        return self._inner.would_deploy_bytes(item_type, name, content, source_path)
+
+    def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
+        return self._inner.read_deployed_bytes(item_type, name)
+
     def manifest_path(self) -> Path:
         return self._inner.manifest_path()

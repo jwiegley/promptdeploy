@@ -1149,3 +1149,80 @@ class TestDeployAgentTransformation:
         assert isinstance(meta["tools"], dict)
         assert meta["tools"] == {"read": True, "grep": True}
         assert "model" not in meta
+
+
+# ------------------------------------------------------------------
+# would_deploy_bytes / read_deployed_bytes
+# ------------------------------------------------------------------
+
+
+class TestWouldDeployBytes:
+    def test_agent_matches_deploy_output(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        content = b"---\nname: helper\n---\nAgent body.\n"
+        target.deploy_agent("helper", content)
+        on_disk = (tmp_path / ".opencode" / "agents" / "helper.md").read_bytes()
+        assert target.would_deploy_bytes("agent", "helper", content) == on_disk
+
+    def test_command_matches_deploy_output(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        content = b"---\nname: fix\n---\nFix.\n"
+        target.deploy_command("fix", content)
+        on_disk = (tmp_path / ".opencode" / "commands" / "fix.md").read_bytes()
+        assert target.would_deploy_bytes("command", "fix", content) == on_disk
+
+    def test_prompt_poet_matches_deploy_output(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "demo.poet"
+        body = b"- role: system\n  content: Be concise.\n"
+        src.write_bytes(body)
+        target.deploy_prompt("demo", body, src)
+        on_disk = (tmp_path / ".opencode" / "commands" / "demo.md").read_bytes()
+        assert target.would_deploy_bytes("prompt", "demo", body, src) == on_disk
+
+    def test_prompt_plain_matches_deploy_output(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "doc.md"
+        body = b"Plain.\n"
+        src.write_bytes(body)
+        target.deploy_prompt("doc", body, src)
+        on_disk = (tmp_path / ".opencode" / "commands" / "doc.md").read_bytes()
+        assert target.would_deploy_bytes("prompt", "doc", body, src) == on_disk
+
+    def test_returns_none_for_directory_artifacts(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.would_deploy_bytes("skill", "x", b"") is None
+        assert target.would_deploy_bytes("mcp", "x", b"") is None
+        assert target.would_deploy_bytes("hook", "x", b"") is None
+        assert target.would_deploy_bytes("models", "x", b"") is None
+
+
+class TestReadDeployedBytes:
+    def test_agent_returns_on_disk_bytes(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_agent("helper", b"---\nname: helper\n---\nBody.\n")
+        assert target.read_deployed_bytes("agent", "helper") is not None
+
+    def test_command_returns_on_disk_bytes(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_command("fix", b"---\nname: fix\n---\nFix.\n")
+        assert target.read_deployed_bytes("command", "fix") is not None
+
+    def test_prompt_returns_on_disk_bytes(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "doc.md"
+        src.write_bytes(b"Plain.\n")
+        target.deploy_prompt("doc", b"Plain.\n", src)
+        assert target.read_deployed_bytes("prompt", "doc") is not None
+
+    def test_returns_none_when_missing(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.read_deployed_bytes("agent", "missing") is None
+        assert target.read_deployed_bytes("command", "missing") is None
+
+    def test_returns_none_for_directory_artifacts(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.read_deployed_bytes("skill", "x") is None
+        assert target.read_deployed_bytes("mcp", "x") is None
+        assert target.read_deployed_bytes("hook", "x") is None
+        assert target.read_deployed_bytes("models", "x") is None

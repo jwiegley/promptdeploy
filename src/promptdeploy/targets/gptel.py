@@ -175,3 +175,30 @@ class GptelTarget(Target):
             if (self._config_path / f"{name}{ext}").exists():
                 return True
         return False
+
+    def would_deploy_bytes(
+        self,
+        item_type: str,
+        name: str,
+        content: bytes,
+        source_path: Optional[Path] = None,
+    ) -> Optional[bytes]:
+        if item_type != "prompt" or source_path is None:
+            return None
+        if source_path.suffix in POET_EXTENSIONS:
+            doc = parse_poet(content, source_path=source_path)
+            return render_for_gptel(doc)
+        return content
+
+    def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
+        if item_type != "prompt":
+            return None
+        # Find whichever extension is actually present; mirror the search
+        # order used by ``item_exists`` and ``remove_prompt``.
+        for ext in (".json", ".txt", ".md", ".org"):
+            path = self._config_path / f"{name}{ext}"
+            try:
+                return path.read_bytes()
+            except FileNotFoundError:
+                continue
+        return None

@@ -136,5 +136,33 @@ class Target(ABC):
         """
         ...
 
+    def would_deploy_bytes(
+        self,
+        item_type: str,
+        name: str,
+        content: bytes,
+        source_path: Optional[Path] = None,
+    ) -> Optional[bytes]:
+        """Return the bytes this target would write for a single-file artifact.
+
+        Used by the deploy loop to decide whether a pre-existing on-disk
+        file is byte-identical to what we would write -- if so, the item
+        is silently adopted into the manifest rather than reported as
+        pre-existing on every deploy.
+
+        Returns ``None`` for items that are not single-file artifacts
+        (e.g. skill directories, MCP/hook entries merged into JSON).
+        """
+        return None
+
+    def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
+        """Read the bytes currently on disk for a single-file artifact.
+
+        Mirrors :meth:`would_deploy_bytes` so the deploy loop can compare
+        on-disk content to what it would write. Returns ``None`` when the
+        item is not a single-file artifact or no file is present.
+        """
+        return None
+
     @abstractmethod
     def manifest_path(self) -> Path: ...

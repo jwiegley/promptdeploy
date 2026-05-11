@@ -292,3 +292,23 @@ class TestRemoteTargetDelegation:
         result = remote_target.manifest_path()
         assert result == Path("/staging/.manifest.json")
         mock_inner.manifest_path.assert_called_once()
+
+    def test_would_deploy_bytes_delegates_to_inner(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        mock_inner.would_deploy_bytes.return_value = b"x"
+        result = remote_target.would_deploy_bytes(
+            "agent", "a", b"content", source_path=Path("/src/a.md")
+        )
+        assert result == b"x"
+        mock_inner.would_deploy_bytes.assert_called_once_with(
+            "agent", "a", b"content", Path("/src/a.md")
+        )
+
+    def test_read_deployed_bytes_delegates_to_inner(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        mock_inner.read_deployed_bytes.return_value = b"y"
+        result = remote_target.read_deployed_bytes("agent", "a")
+        assert result == b"y"
+        mock_inner.read_deployed_bytes.assert_called_once_with("agent", "a")
