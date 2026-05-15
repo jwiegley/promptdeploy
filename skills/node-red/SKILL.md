@@ -1,8 +1,14 @@
 ---
 name: node-red
-description: Build, edit, and debug Node-RED flows on John's NixOS host (vulcan). Tuned to his actual plugin set, wiring conventions, naming style, and to the nodered_events PostgreSQL log + Grafana dashboard for chain tracing. Use whenever the user mentions Node-RED, flows.json, a flow tab name (Office, Schedule, Schedules, Pool Time, Away, Bedroom, TV Room, Institute Night, Debug), a Node-RED plugin or node type (chronos, api-call-service, api-current-state, server-state-changed, join-wait, actionflows, etc.), the Node-RED Events Grafana dashboard, or asks why a flow fired or didn't fire.
+description: Build, edit, and debug Node-RED flows on John's NixOS host (vulcan).
+  Tuned to his actual plugin set, wiring conventions, naming style, and to the nodered_events
+  PostgreSQL log + Grafana dashboard for chain tracing. Use whenever the user mentions
+  Node-RED, flows.json, a flow tab name (Office, Schedule, Schedules, Pool Time, Away,
+  Bedroom, TV Room, Institute Night, Debug), a Node-RED plugin or node type (chronos,
+  api-call-service, api-current-state, server-state-changed, join-wait, actionflows,
+  etc.), the Node-RED Events Grafana dashboard, or asks why a flow fired or didn't
+  fire.
 ---
-
 # Node-RED on vulcan
 
 ## Where things live
@@ -88,6 +94,7 @@ The runtime `TZ` is local, so no offset to hardcode. Pattern in production: subf
 7. **node-red postgres role is INSERT-only** on `msg_events`/`audit_events`. Reads require `sudo -u postgres psql -d nodered_events`. Grafana queries fine.
 8. **`msg.payload` truncation in event log** — 4096 UTF-8 bytes max. Large payloads stored as `{"_truncated": true, "preview": "..."}` with `payload_size` recording the original byte count.
 9. **CronosJS cron is 6-field, not 5-field.** First field is seconds. `0 0 23 * * 2,4,6` not `0 23 * * 2,4,6`.
+10. **`server-state-changed` v6 uses `entities: {entity: [...], substring: [...], regex: [...]}`**, NOT the flat `entityId`/`entityIdType` from older versions. Wrong schema → `TypeError: Cannot read properties of undefined (reading 'entity')` on startup, six errors for six nodes, etc. Always use the nested form when emitting JSON for v6.
 
 ## Debugging workflow
 
