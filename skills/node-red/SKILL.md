@@ -95,6 +95,8 @@ The runtime `TZ` is local, so no offset to hardcode. Pattern in production: subf
 8. **`msg.payload` truncation in event log** — 4096 UTF-8 bytes max. Large payloads stored as `{"_truncated": true, "preview": "..."}` with `payload_size` recording the original byte count.
 9. **CronosJS cron is 6-field, not 5-field.** First field is seconds. `0 0 23 * * 2,4,6` not `0 23 * * 2,4,6`.
 10. **`server-state-changed` v6 uses `entities: {entity: [...], substring: [...], regex: [...]}`**, NOT the flat `entityId`/`entityIdType` from older versions. Wrong schema → `TypeError: Cannot read properties of undefined (reading 'entity')` on startup, six errors for six nodes, etc. Always use the nested form when emitting JSON for v6.
+11. **`api-call-service` v7 needs `action: "<domain>.<service>"`** in addition to the legacy `domain`/`service` fields, plus `floorId: []`, `labelId: []`, and `blockInputOverrides`. Omitting any of these makes the editor flag the node as invalid (red triangle) even though the runtime might still execute it. Reference example: the user's working `09238a6ff00540ec` node.
+12. **`api-current-state` `outputProperties` valueTypes** that are actually valid: `entityState`, `entityId`, `jsonata`, `str`, `num`, `bool`, `flow`, `global`, `msg`, `env`, `date`, `bin`, `eventData`. The string `entity` is NOT a valid valueType — use `jsonata` with `$entity().attributes.<key>` to get attributes. Also include `override_topic: false` (working nodes always have it).
 
 ## Debugging workflow
 
