@@ -1,222 +1,157 @@
 ---
 name: node-red
-description: Edit, analyze, and create Node-RED flows by working with flows.json files, understanding node types, and applying Node-RED best practices. Use when the user mentions Node-RED, flows.json, flow development, or needs to modify Node-RED configurations.
+description: Build, edit, and debug Node-RED flows on John's NixOS host (vulcan). Tuned to his actual plugin set, wiring conventions, naming style, and to the nodered_events PostgreSQL log + Grafana dashboard for chain tracing. Use whenever the user mentions Node-RED, flows.json, a flow tab name (Office, Schedule, Schedules, Pool Time, Away, Bedroom, TV Room, Institute Night, Debug), a Node-RED plugin or node type (chronos, api-call-service, api-current-state, server-state-changed, join-wait, actionflows, etc.), the Node-RED Events Grafana dashboard, or asks why a flow fired or didn't fire.
 ---
 
-# Node-RED Flow Development
+# Node-RED on vulcan
 
-This skill provides comprehensive support for Node-RED development, including flow creation, modification, validation, and deployment through the Admin API.
+## Where things live
 
-## When to Use This Skill
+| Thing | Path / value |
+|---|---|
+| Flows | `/var/lib/node-red/flows.json` (Read/Edit as root via `sudo`) |
+| Credentials | `/var/lib/node-red/flows_cred.json` (encrypted; back up with flows) |
+| Settings.js source | `/etc/nixos/config/node-red-settings.js` |
+| Settings.js runtime | `/nix/store/.../node-red-settings.js` (read-only — never edit in store) |
+| Plugins via npm | `/var/lib/node-red/node_modules/` (Palette manager) |
+| Plugins via Nix | NixOS overlay (template: `modules/services/node-red-event-logger.nix`) |
+| Backup module | `/etc/nixos/modules/services/node-red-backup.nix` (30-day retention) |
+| Service | `node-red.service`, user `node-red`, port `1880` |
+| Restart | `sudo systemctl restart node-red` |
+| Editor | `https://node-red.vulcan.lan/` |
+| Running version | 4.1.10 (overlay-pinned: `/etc/nixos/overlays/node-red.nix`) |
+| Event-log DB | Postgres `nodered_events` (peer auth via unix socket) |
+| Event-log Grafana | `https://grafana.vulcan.lan/d/node-red-events` |
+| Config-node IDs | HA server `86b277e82b069e9b`; chronos-config `f1c80506d19d3de2` |
 
-Use this skill when:
-- Creating or modifying Node-RED flows (flows.json files)
-- Building MQTT, HTTP API, or data pipeline integrations
-- Debugging or validating flow configurations
-- Working with function nodes and context storage
-- Deploying flows via the Node-RED Admin API
-- Converting requirements into Node-RED flow implementations
+## Two ways to edit flows
 
-## Available Resources
+1. **Editor UI** — best for tweaks. Deploy publishes to `flows.json`.
+2. **Direct flows.json edit** — required for bulk changes or generated flows. Procedure: `sudo cat` to read, edit, validate JSON, write back, optionally `sudo systemctl restart node-red`. Validate with `scripts/validate_flow.py`.
 
-### Scripts (scripts/)
+When delivering a new tab/subflow, output it as a JSON code block (or write to `/home/johnw/*.json`) and tell the user to use **Menu → Import → Select a file → Deploy**. Don't write to `/var/lib/node-red/flows.json` directly without explicit user OK — they lose the chance to review.
 
-Execute these Python scripts for common Node-RED operations:
+## House style — match this
 
-- **generate_uuid.py** - Generate valid Node-RED node IDs
-  ```bash
-  python scripts/generate_uuid.py [count]
-  ```
+Read every "House style" point below before producing a flow. Most of John's prior corrections trace to one of these.
 
-- **validate_flow.py** - Validate flow JSON structure and wire connections
-  ```bash
-  python scripts/validate_flow.py <flow.json>
-  ```
+### Time triggers
+- Use `chronos-scheduler` (not stock `inject` with cron).
+- Crontab values are **6-field CronosJS**: `0 0 23 * * 2,4,6` = sec min hour dom mon dow. Day-of-week list goes in the last field.
+- Sun-relative: `type:"sun"`, `value:"sunsetStart"|"goldenHour"|"night"|...`, plus a `random` offset (15–240 min) to spread fires.
+- Configs share `f1c80506d19d3de2` (location node).
 
-- **wire_nodes.py** - Connect nodes programmatically
-  ```bash
-  python scripts/wire_nodes.py <flow.json> <source_id> <target_id> [output_port]
-  ```
+### HA service calls (`api-call-service`)
+- `entityId` is ALWAYS the array field. Single: `["switch.x"]`. Multi: `["climate.a","climate.b"]`. Script/scene: `[]`.
+- `dataType` is ALWAYS `"jsonata"`. Never `"json"`.
+- `data` is either `""` (no extra payload) or compact JSONata: `{"preset_mode": "eco"}`, `{"temperature": $env("Temperature")}`, TTS like `{"cache": true, "media_player_entity_id": "media_player.vlc_telnet", "message": '...' & $string(...) & '...'}`.
 
-- **create_flow_template.py** - Generate boilerplate flows
-  ```bash
-  python scripts/create_flow_template.py <mqtt|http-api|data-pipeline|error-handler> [output.json]
-  ```
+### State gates (`api-current-state` with `halt_if`)
+- Default has **2 outputs**. Output 0 fires when state **matches** `halt_if`; output 1 fires when it does **NOT** match.
+- John writes gates as questions: `anyone home?`, `office door closed?`, `john home?`. The question's "yes" answer routes to output 0; "no" to output 1.
+- Wire ONE output to the continuation; leave the other empty. Pick which output based on plain-English intent.
+- For comparisons, JSONata halt is supported: `halt_if_type:"jsonata", halt_if:"3*24*60*60", halt_if_compare:"gt"`.
+- **DO NOT GUESS the direction.** Always read the existing wires for context. The same `halt_if` string is used both ways in this codebase.
 
-### References (references/)
+### Naming
+- Triggers carry their `for:` duration in the name: `mac inactive 15min`, `TV on 2min`, `Nasim leaves 15min`, `out of office 15min`.
+- Gates are lowercase questions ending in `?`: `anyone home?`, `office door closed?`, `rain delay?`, `vacuum cleaning?`.
+- Actions are imperatives or device-verb-param: `Turn off HVAC`, `purifier on`, `upstairs heat_cool 78-82`, `bedroom heat off`, `tv_room set 78 heat`.
+- Inject buttons: time-shaped (`06:00 daily`, `Shut-off 23:15`) or state-shaped (`Lockdown`, `Turn on`).
+- Schedulers: descriptive — `12:00-15:00`, `~Golden Hour till ~11 PM`, `Program A 23:00`, `Pool ON 09:00`.
 
-Consult these detailed references as needed:
+### Layout
+- Vertical bands per logical section, stacked top-to-bottom with ~100–220 px gaps.
+- Comment-as-header anchors each band at `x ≈ 150–200`, `y` = first row of the band.
+- Flow goes left-to-right within each band; comment uses sentence-headline style with em-dashes/ellipses: `When I leave the computer…`, `Pre-cool upstairs for Institute Nights`, `B-Hyve Program A — Sac County Odd Addr (Tu/Th/Sa)`.
 
-- **node_schemas.md** - Complete schemas for all Node-RED node types
-- **api_reference.md** - Node-RED Admin API documentation with examples
-- **function_snippets.md** - Reusable function node code patterns
-
-### Assets (assets/)
-
-Use these templates and boilerplate files:
-
-- **templates/mqtt_flow.json** - Complete MQTT pub/sub flow with error handling
-- **templates/http_api_flow.json** - REST API with CRUD operations and authentication
-- **boilerplate/function_async.js** - Async function node patterns
-- **boilerplate/function_context.js** - Context storage examples
-
-## Core Workflow
-
-### Creating a New Flow
-
-1. Determine the flow type needed (MQTT, HTTP API, data processing, etc.)
-2. Generate a template using `scripts/create_flow_template.py`
-3. Modify the template to match requirements
-4. Validate the flow using `scripts/validate_flow.py`
-5. Deploy via Admin API or save as flows.json
-
-### Modifying Existing Flows
-
-1. Read and parse the flows.json file
-2. Identify nodes by type and ID
-3. Make modifications while preserving:
-   - Wire connections (arrays of node IDs)
-   - Tab references (`z` property)
-   - Node coordinates (`x`, `y`)
-4. Validate changes before saving
-5. Use `scripts/wire_nodes.py` to connect nodes if needed
-
-### Working with Function Nodes
-
-For function nodes, reference:
-- `assets/boilerplate/function_async.js` for async operations
-- `assets/boilerplate/function_context.js` for context storage
-- `references/function_snippets.md` for specific patterns
-
-Available objects in function nodes:
-- `msg` - Message object
-- `node` - Node API (send, done, error, warn, log, status)
-- `context` - Node-scoped storage
-- `flow` - Flow-scoped storage
-- `global` - Global storage
-- `RED` - Runtime API
-- `env` - Environment variables
-
-### Deploying Flows
-
-To deploy flows via the Admin API:
-
-1. Retrieve current configuration:
-   ```bash
-   GET /flows
-   ```
-
-2. Modify the configuration as needed
-
-3. Deploy with appropriate deployment type:
-   ```bash
-   POST /flows
-   Headers: Node-RED-Deployment-Type: full|nodes|flows|reload
-   ```
-
-4. Verify deployment success
-
-## Common Patterns
-
-### Message Flow Structure
-
-Every Node-RED message follows this pattern:
-- Primary data in `msg.payload`
-- Topic/category in `msg.topic`
-- Unique ID in `msg._msgid`
-- Additional properties as needed
-
-### Error Handling
-
-Implement error handling using:
-1. Try-catch blocks in function nodes
-2. Catch nodes to intercept errors
-3. Status nodes to monitor node states
-4. Dedicated error output wires
-
-### Environment Variables
-
-Use environment variables for configuration:
-- In node properties: `$(ENV_VAR_NAME)`
-- In function nodes: `env.get("ENV_VAR_NAME")`
-- Via Docker: `-e KEY=value`
-
-### Context Storage Levels
-
-Choose appropriate context level:
-- **Node context**: Local to single node
-- **Flow context**: Shared within flow/tab
-- **Global context**: System-wide sharing
-- **Persistent**: Survives restarts (configure in settings.js)
-
-## Validation Checklist
-
-Before deploying flows, verify:
-- [ ] JSON syntax is valid
-- [ ] All wire connections reference existing node IDs
-- [ ] Tab references (`z` property) are correct
-- [ ] Function node JavaScript is syntactically valid
-- [ ] Required configuration nodes exist (MQTT brokers, etc.)
-- [ ] Environment variables are properly referenced
-- [ ] Error handling is implemented
-
-## Quick Commands
-
-Generate five Node-RED UUIDs:
-```bash
-python scripts/generate_uuid.py 5
+### Subflow status output
+Wire your "success" branch through a small function that emits `msg.payload = {fill, shape, text}` to the subflow's status port:
+```js
+const stamp = new Date().toLocaleString('en-US', {
+  month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true
+});
+msg.payload = { fill: 'green', shape: 'dot',
+                text: `${env.get('Action')} called : ${stamp}` };
+return msg;
 ```
+The runtime `TZ` is local, so no offset to hardcode. Pattern in production: subflow `Act until observed`.
 
-Create an MQTT flow template:
-```bash
-python scripts/create_flow_template.py mqtt my-mqtt-flow.json
+## Top pitfalls (each has bitten us)
+
+1. **`api-current-state` output direction.** Output 0 = match, output 1 = no-match. Same `halt_if` is wired both ways in different parts of the codebase. **Always check existing wiring**, never assume from the name alone. (See Office HVAC misfire — `office door closed? halt_if="off"` wired to output 0 means "fire when door IS closed".)
+2. **`chronos-repeat` JSONata = milliseconds**, not seconds. Returning `5` is 5 ms. Use `$number($env("Repeat")) * 1000` for seconds.
+3. **`chronos-repeat` "env" type doesn't read subflow env vars.** In a subflow context, switch the interval type to `jsonata` and use `$env("VarName")`.
+4. **`server-state-changed` `for: N`** is HA-side: entity must STAY in matching state. Flickery sensors reset the dwell timer continuously. `binary_sensor.johns_mac_studio_active` is unreliable for presence — use `sensor.johns_mac_studio_active_camera` or `_audio_output` ≠ `Inactive` instead.
+5. **`join-wait` reset semantics.** `msg.reset = true` silently drains the queue; `msg.complete` drains to the **expired** output. Don't conflate.
+6. **Manage Palette can delete Nix-overlay plugins** during a Node-RED package version bump. If `node-red-event-logger` disappears, `sudo systemctl restart node-red-event-logger-install` re-installs it.
+7. **node-red postgres role is INSERT-only** on `msg_events`/`audit_events`. Reads require `sudo -u postgres psql -d nodered_events`. Grafana queries fine.
+8. **`msg.payload` truncation in event log** — 4096 UTF-8 bytes max. Large payloads stored as `{"_truncated": true, "preview": "..."}` with `payload_size` recording the original byte count.
+9. **CronosJS cron is 6-field, not 5-field.** First field is seconds. `0 0 23 * * 2,4,6` not `0 23 * * 2,4,6`.
+
+## Debugging workflow
+
+Event log captures `onSend` and `onComplete` for every node into Postgres. Primary UI: Grafana → `Node-RED Events` dashboard. SQL backup if Grafana is offline.
+
+**"X didn't fire":**
+```sql
+SELECT ts, msgid, topic, payload FROM msg_events
+WHERE node_id = '<trigger-uuid>' AND hook = 'onSend'
+  AND ts > now() - INTERVAL '24 hours'
+ORDER BY ts;
 ```
+Zero rows → upstream issue. Rows present → drill in via msgid.
 
-Validate a flow file:
-```bash
-python scripts/validate_flow.py flows.json
-```
+**"X fired when it shouldn't":**
+1. Find the actuator's `onSend` in Grafana panel "All events" (filter `node_name`, hook=`onSend`).
+2. Copy the msgid → dashboard variable `$msgid`.
+3. Read the trace panel top-to-bottom — first row is the trigger, each subsequent `onSend` is a hop. Find where a predicate wrongly evaluated true and inspect `payload` at that hop.
 
-Wire two nodes together:
-```bash
-python scripts/wire_nodes.py flows.json inject-node-id debug-node-id
-```
+Full schema, retention rules, and more queries: `references/event_logging.md`.
 
-## Node-RED Configuration
+## Plugin field guide
 
-### Default File Locations
-- Flows: `~/.node-red/flows_<hostname>.json`
-- Settings: `~/.node-red/settings.js`
-- Custom nodes: `~/.node-red/node_modules/`
+20+ contrib plugins installed. Used heavily:
+- `node-red-contrib-home-assistant-websocket` — main driver.
+- `node-red-contrib-chronos` — every timer / sun trigger / "act until observed" loop.
+- `node-red-contrib-join-wait` — multi-input debounce (canonical: Office `confirmed absent`).
+- `node-red-contrib-postgresql` — used internally by the event logger.
+- `node-red-contrib-actionflows` — only in the `Act until observed` subflow.
+- `node-red-debugger` — plugin (sidebar), not nodes; off by default.
 
-### Running Node-RED
-- Normal mode: `node-red`
-- Safe mode (no flow execution): `node-red --safe`
-- Custom flow file: `node-red myflows.json`
+Lesser-used: collector, bool-gate, boolean-logic-ultimate, pid-controller-isa, prometheus-exporter, simple-gate, threshold-control, openai-api, email, ping, prowl, introspection.
 
-## Best Practices
+Per-plugin pitfalls + idiomatic usage: `references/plugins.md`.
 
-1. **Use appropriate node types**: Prefer change nodes over function nodes for simple transformations
-2. **Implement error handling**: Always include catch nodes for critical paths
-3. **Document flows**: Use comment nodes and node descriptions
-4. **Organize with tabs**: Separate flows by logical function or system
-5. **Version control**: Store flows.json in git with meaningful commit messages
-6. **Test incrementally**: Deploy and test small changes frequently
-7. **Monitor performance**: Use status nodes and debug output wisely
+## Domain entities (HA)
 
-## Troubleshooting
+Quick recall list — full catalog and tab UUIDs are in `references/patterns.md`.
 
-For common issues:
-- **Invalid JSON**: Use `scripts/validate_flow.py` to find syntax errors
-- **Broken wires**: Check that all wired node IDs exist
-- **Missing configurations**: Ensure broker/server configs are included
-- **Function errors**: Test JavaScript in isolation first
-- **API deployment fails**: Verify authentication and check revision conflicts
+- Climates (Nest): `climate.{upstairs,guest_bedroom,home_office,living_room,tv_room,master_bedroom}`
+- Pool (IntelliCenter): `switch.{pool,spa_waterfall,spa,jets}`, `water_heater.{pool,spa}`, `sensor.{water_sensor_1,solar_sensor_1,vsf_rpm,vsf_gpm}`, `binary_sensor.{pool_schedule,spa_waterfall_schedule}`
+- Sprinklers (B-Hyve): zones via `switch.sprinkler_control_<zone>_smart_watering` (call `bhyve.start_watering` with `minutes`), rain delay `switch.sprinkler_control_rain_delay`
+- Presence: `person.john_wiegley` (`home`/`not_home`), `binary_sensor.office_door_sensor_p2_office_door` (Matter: `on`=open, `off`=closed)
+- Mac activity: prefer `sensor.johns_mac_studio_active_camera`/`_audio_output` over `binary_sensor.johns_mac_studio_active`.
 
-## Additional Resources
+## When to load references
 
-For detailed specifications and examples:
-- Consult `references/node_schemas.md` for node property details
-- Review `references/api_reference.md` for API operations
-- Use `references/function_snippets.md` for tested code patterns
-- Copy templates from `assets/templates/` as starting points
+- Plugin gotcha or unsure of node config → `references/plugins.md`
+- Event-log query or Grafana panel → `references/event_logging.md`
+- Reproducing John's wiring style on a new tab → `references/patterns.md`
+- Function node code patterns → `references/function_snippets.md`
+- Admin API or generic node schema lookup → `references/api_reference.md`, `references/node_schemas.md`
+
+## Available scripts
+
+- `scripts/generate_uuid.py [count]` — Node-RED 16-char hex UUIDs
+- `scripts/validate_flow.py <file>` — JSON + wire integrity
+- `scripts/wire_nodes.py <file> <src> <tgt> [output]` — programmatic wiring
+- `scripts/create_flow_template.py <type> [out]` — generic boilerplate (mqtt/http-api/data-pipeline/error-handler). **These are not in John's style** — use as scaffolding only.
+
+## Things to avoid offering
+
+- Don't use Manage Palette to install a new plugin permanently — Nix overlay is the right vehicle.
+- Don't suggest `~/.node-red/` paths; those don't exist on this host.
+- Don't write to `flows.json` directly without giving the user a chance to import via the editor first.
+- Don't propose mocking the event-logger DB in tests — use real Postgres (CLAUDE.md rule).
+- Don't fabricate entity IDs — verify against `/var/lib/hass/.storage/core.entity_registry` (jq filtered by platform).

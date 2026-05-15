@@ -540,7 +540,6 @@ providers:
         max_output_tokens: 128000
         context_limit: 131072
         output_limit: 65536
-        only: [hera]
       cohere-transcribe-03-2026:
         display_name: "Cohere Transcribe 03"
         max_output_tokens: 128000
@@ -647,7 +646,6 @@ providers:
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
-        only: [hera]
       Qwen3.5-0.8B:
         display_name: "Qwen 3.5 0.8B"
         max_output_tokens: 128000
@@ -678,7 +676,6 @@ providers:
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
-        only: [hera]
       Qwen3.5-4B:
         display_name: "Qwen 3.5 4B"
         max_output_tokens: 128000
