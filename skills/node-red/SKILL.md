@@ -30,6 +30,7 @@ description: Build, edit, and debug Node-RED flows on John's NixOS host (vulcan)
 | Event-log Grafana | `https://grafana.vulcan.lan/d/node-red-events` |
 | Config-node IDs | HA server `86b277e82b069e9b`; chronos-config `f1c80506d19d3de2` |
 | Admin API token | `/run/secrets/node-red-admin-token` (mode 0400 johnw:users; declared in `modules/services/node-red.nix` as `sops.secrets."node-red-admin-token"`) |
+| Context persistence | **Enabled by default** via `contextStorage.default = {module:"localfilesystem"}` in settings.js. All `flow.set/get`, `global.set/get`, `context.set/get` calls persist to `/var/lib/node-red/context/`. No `'file'` arg needed. Cache + 30s flush. |
 
 ## How to edit flows — Admin API first, always
 
