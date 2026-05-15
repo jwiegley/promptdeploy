@@ -29,13 +29,55 @@ description: Build, edit, and debug Node-RED flows on John's NixOS host (vulcan)
 | Event-log DB | Postgres `nodered_events` (peer auth via unix socket) |
 | Event-log Grafana | `https://grafana.vulcan.lan/d/node-red-events` |
 | Config-node IDs | HA server `86b277e82b069e9b`; chronos-config `f1c80506d19d3de2` |
+| Admin API token | `/run/secrets/node-red-admin-token` (mode 0400 johnw:users; declared in `modules/services/node-red.nix` as `sops.secrets."node-red-admin-token"`) |
 
-## Two ways to edit flows
+## How to edit flows — Admin API first, always
 
-1. **Editor UI** — best for tweaks. Deploy publishes to `flows.json`.
-2. **Direct flows.json edit** — required for bulk changes or generated flows. Procedure: `sudo cat` to read, edit, validate JSON, write back, optionally `sudo systemctl restart node-red`. Validate with `scripts/validate_flow.py`.
+**Preferred: Admin API (`PUT /flow/<tab-id>`).** Live reload, no restart, no editor disconnect, surgical (only the named tab changes). This is the default path for any edit John asks for.
 
-When delivering a new tab/subflow, output it as a JSON code block (or write to `/home/johnw/*.json`) and tell the user to use **Menu → Import → Select a file → Deploy**. Don't write to `/var/lib/node-red/flows.json` directly without explicit user OK — they lose the chance to review.
+```bash
+# Always read the token via shell substitution; never echo it.
+TOKEN=$(cat /run/secrets/node-red-admin-token)
+NR=http://localhost:1880
+
+# Read all flows (returns array of nodes including tab/subflow definitions)
+curl -sS -H "Authorization: Bearer $TOKEN" $NR/flows
+
+# Read one tab (returns {id, label, nodes:[...], configs:[...], info, env})
+curl -sS -H "Authorization: Bearer $TOKEN" $NR/flow/<tab-id>
+
+# Replace one tab — surgical, leaves all other tabs untouched
+curl -sS -X PUT -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d @updated-tab.json $NR/flow/<tab-id>
+
+# Create a new tab (returns the new id)
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d @new-tab.json $NR/flow
+
+# Delete a tab
+curl -sS -X DELETE -H "Authorization: Bearer $TOKEN" $NR/flow/<tab-id>
+
+# Replace the entire flows array (DESTRUCTIVE — use only when unavoidable)
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -H "Node-RED-Deployment-Type: full" \
+     -d @flows.json $NR/flows
+```
+
+**Layout-preserving edits:** `GET /flow/<id>` → modify only the field that's wrong on the specific node(s) by `id` → `PUT /flow/<id>` with the same node array. Node coordinates, wires, and IDs are preserved because you sent them back unchanged.
+
+**Token rules:**
+- Always read via `$(cat /run/secrets/node-red-admin-token)` or assign to a shell variable. **Never** echo, log, or pass the token to a tool that surfaces output in this conversation. If a curl command would dump headers, redirect them to a tempfile.
+- The token is owned by `johnw:users` mode `0400` — no `sudo` needed.
+
+**Fallback paths (in order, only when the API can't help):**
+
+1. **Editor UI** — for one-off edits John wants to make himself, or when a generated flow benefits from human review before publish. Output the JSON to `/home/johnw/*.json`, suggest **Menu → Import → Select a file → Deploy**.
+2. **Direct `flows.json` edit + restart** — only if Node-RED is down or auth is broken. Procedure: backup → `sudo` read/edit → `validate_flow.py` → `sudo chown node-red:node-red` → `sudo systemctl restart node-red`. ~6 s editor disconnect.
+
+Don't write to `/var/lib/node-red/flows.json` directly when the API is reachable. Don't ask the user to re-import a tab when a `PUT /flow/<id>` would do the same job without losing the layout.
 
 ## House style — match this
 
@@ -97,6 +139,7 @@ The runtime `TZ` is local, so no offset to hardcode. Pattern in production: subf
 10. **`server-state-changed` v6 uses `entities: {entity: [...], substring: [...], regex: [...]}`**, NOT the flat `entityId`/`entityIdType` from older versions. Wrong schema → `TypeError: Cannot read properties of undefined (reading 'entity')` on startup, six errors for six nodes, etc. Always use the nested form when emitting JSON for v6.
 11. **`api-call-service` v7 needs `action: "<domain>.<service>"`** in addition to the legacy `domain`/`service` fields, plus `floorId: []`, `labelId: []`, and `blockInputOverrides`. Omitting any of these makes the editor flag the node as invalid (red triangle) even though the runtime might still execute it. Reference example: the user's working `09238a6ff00540ec` node.
 12. **`api-current-state` `outputProperties` valueTypes** that are actually valid: `entityState`, `entityId`, `jsonata`, `str`, `num`, `bool`, `flow`, `global`, `msg`, `env`, `date`, `bin`, `eventData`. The string `entity` is NOT a valid valueType — use `jsonata` with `$entity().attributes.<key>` to get attributes. Also include `override_topic: false` (working nodes always have it).
+13. **Never echo or log the Admin API token.** When using `/run/secrets/node-red-admin-token`, wrap it in `$(cat …)` or assign to a shell variable that's only consumed by curl. If you need to see whether the token works, check the curl HTTP code (`-w "%{http_code}"`) and response length — never the request headers.
 
 ## Debugging workflow
 
@@ -161,6 +204,7 @@ Quick recall list — full catalog and tab UUIDs are in `references/patterns.md`
 
 - Don't use Manage Palette to install a new plugin permanently — Nix overlay is the right vehicle.
 - Don't suggest `~/.node-red/` paths; those don't exist on this host.
-- Don't write to `flows.json` directly without giving the user a chance to import via the editor first.
+- Don't write to `flows.json` directly when the API is reachable — use `PUT /flow/<id>` for surgical, layout-preserving updates.
+- Don't ask the user to re-import a tab to apply a small fix — fetch with `GET /flow/<id>`, patch, `PUT /flow/<id>`. Same end state, no manual work.
 - Don't propose mocking the event-logger DB in tests — use real Postgres (CLAUDE.md rule).
 - Don't fabricate entity IDs — verify against `/var/lib/hass/.storage/core.entity_registry` (jq filtered by platform).
