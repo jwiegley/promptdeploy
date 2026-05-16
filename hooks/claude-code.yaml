@@ -1,0 +1,9 @@
+name: claude-code
+description: Show activity icon in iTerm 2 tab bar (see https://github.com/anthropics/claude-code/issues/30199)
+only:
+  - claude
+hooks:
+  Stop:
+    - hooks:
+        - type: command
+          command: "printf '\\a' > /dev/tty 2>/dev/null || true"
