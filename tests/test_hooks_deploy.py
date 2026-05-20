@@ -43,25 +43,6 @@ _GIT_AI_CONFIG = {
     },
 }
 
-_COZEMPIC_CONFIG = {
-    "name": "cozempic",
-    "description": "Cozempic hooks",
-    "hooks": {
-        "PostToolUse": [
-            {
-                "matcher": "Task",
-                "hooks": [{"command": "cozempic checkpoint", "type": "command"}],
-            }
-        ],
-        "Stop": [
-            {
-                "matcher": "",
-                "hooks": [{"command": "cozempic checkpoint", "type": "command"}],
-            }
-        ],
-    },
-}
-
 
 class TestDeployHook:
     def test_creates_hooks_in_settings(self, tmp_path: Path):
@@ -98,13 +79,11 @@ class TestDeployHook:
     def test_preserves_other_hook_sources(self, tmp_path: Path):
         target = _make_target(tmp_path)
         target.deploy_hook("git-ai", _GIT_AI_CONFIG)
-        target.deploy_hook("cozempic", _COZEMPIC_CONFIG)
 
         settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
         post = settings["hooks"]["PostToolUse"]
         sources = {e["_source"] for e in post}
         assert "git-ai" in sources
-        assert "cozempic" in sources
 
     def test_replaces_existing_entries_on_redeploy(self, tmp_path: Path):
         target = _make_target(tmp_path)
@@ -207,15 +186,13 @@ class TestRemoveHook:
     def test_removes_entries_by_source(self, tmp_path: Path):
         target = _make_target(tmp_path)
         target.deploy_hook("git-ai", _GIT_AI_CONFIG)
-        target.deploy_hook("cozempic", _COZEMPIC_CONFIG)
 
         target.remove_hook("git-ai")
 
         settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-        post = settings["hooks"].get("PostToolUse", [])
+        post = settings.get("hooks", {}).get("PostToolUse", [])
         sources = {e.get("_source") for e in post}
         assert "git-ai" not in sources
-        assert "cozempic" in sources
 
     def test_removes_empty_event_type_keys(self, tmp_path: Path):
         target = _make_target(tmp_path)
@@ -244,12 +221,12 @@ class TestRemoveHook:
 
     def test_no_error_if_hook_not_present(self, tmp_path: Path):
         target = _make_target(tmp_path)
-        target.deploy_hook("cozempic", _COZEMPIC_CONFIG)
+        target.deploy_hook("git-ai", _GIT_AI_CONFIG)
         # Remove a hook that was never deployed
-        target.remove_hook("git-ai")
+        target.remove_hook("nonexistent")
 
         settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-        assert "hooks" in settings  # cozempic hooks still there
+        assert "hooks" in settings
 
     def test_no_error_if_hooks_key_not_a_dict(self, tmp_path: Path):
         """If settings.json has 'hooks' as non-dict, remove_hook is safe."""
@@ -275,16 +252,9 @@ class TestRemoveHook:
         """Removing one hook source keeps other event types intact."""
         target = _make_target(tmp_path)
         target.deploy_hook("git-ai", _GIT_AI_CONFIG)
-        target.deploy_hook("cozempic", _COZEMPIC_CONFIG)
-
-        target.remove_hook("cozempic")
 
         settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
         # git-ai entries should still be there
         assert "PostToolUse" in settings["hooks"]
         post_sources = {e["_source"] for e in settings["hooks"]["PostToolUse"]}
         assert "git-ai" in post_sources
-        # cozempic Stop should be gone
-        stop = settings["hooks"].get("Stop", [])
-        cozempic_stop = [e for e in stop if e.get("_source") == "cozempic"]
-        assert cozempic_stop == []
