@@ -273,62 +273,12 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
-      hera/Qwen3.5-0.8B:
-        display_name: "Qwen 3.5 0.8B"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/Qwen3.5-27B:
-        display_name: "Qwen 3.5 27B"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/Qwen3.5-27B-Instruct:
-        display_name: "Qwen 3.5 27B Instruct"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/Qwen3.5-2B:
-        display_name: "Qwen 3.5 2B"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/Qwen3.5-2B-Instruct:
-        display_name: "Qwen 3.5 2B Instruct"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/Qwen3.5-35B-A3B:
-        display_name: "Qwen 3.5 35B"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
       hera/omlx/Qwen3.5-397B-A17B-unsloth-mlx-4bit:
         display_name: "Qwen 3.5 397B (MLX)"
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
         only: [hera]
-      hera/Qwen3.5-4B:
-        display_name: "Qwen 3.5 4B"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/Qwen3.5-4B-Instruct:
-        display_name: "Qwen 3.5 4B Instruct"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/Qwen3.5-9B:
-        display_name: "Qwen 3.5 9B"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
-      hera/Qwen3.5-9B-Instruct:
-        display_name: "Qwen 3.5 9B Instruct"
-        max_output_tokens: 65536
-        context_limit: 262144
-        output_limit: 65536
       hera/omlx/Qwen3.6-27B-MLX-8bit:
         display_name: "Qwen 3.6 27B (MLX)"
         max_output_tokens: 65536
@@ -353,6 +303,17 @@ providers:
         only: [hera]
       hera/Qwen3.6-35B-A3B:
         display_name: "Qwen 3.6 35B"
+        max_output_tokens: 65536
+        context_limit: 262144
+        output_limit: 65536
+      hera/omlx/Qwen3.6-35B-A3B-UD-MLX-4bit:
+        display_name: "Qwen 3.6 35B A 3B Ud (MLX)"
+        max_output_tokens: 65536
+        context_limit: 262144
+        output_limit: 65536
+        only: [hera]
+      hera/Qwen3.6-35B-A3B-MTP:
+        display_name: "Qwen 3.6 35B A 3B Mtp"
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
@@ -440,36 +401,6 @@ providers:
       Qwen3-Coder-Next:
         display_name: "Qwen 3 Coder Next"
         max_output_tokens: 128000
-      Qwen3.5-0.8B:
-        display_name: "Qwen 3.5 0.8B"
-        max_output_tokens: 128000
-      Qwen3.5-27B:
-        display_name: "Qwen 3.5 27B"
-        max_output_tokens: 128000
-      Qwen3.5-27B-Instruct:
-        display_name: "Qwen 3.5 27B Instruct"
-        max_output_tokens: 128000
-      Qwen3.5-2B:
-        display_name: "Qwen 3.5 2B"
-        max_output_tokens: 128000
-      Qwen3.5-2B-Instruct:
-        display_name: "Qwen 3.5 2B Instruct"
-        max_output_tokens: 128000
-      Qwen3.5-35B-A3B:
-        display_name: "Qwen 3.5 35B"
-        max_output_tokens: 128000
-      Qwen3.5-4B:
-        display_name: "Qwen 3.5 4B"
-        max_output_tokens: 128000
-      Qwen3.5-4B-Instruct:
-        display_name: "Qwen 3.5 4B Instruct"
-        max_output_tokens: 128000
-      Qwen3.5-9B:
-        display_name: "Qwen 3.5 9B"
-        max_output_tokens: 128000
-      Qwen3.5-9B-Instruct:
-        display_name: "Qwen 3.5 9B Instruct"
-        max_output_tokens: 128000
       Qwen3.6-27B:
         display_name: "Qwen 3.6 27B"
         max_output_tokens: 128000
@@ -478,6 +409,9 @@ providers:
         max_output_tokens: 128000
       Qwen3.6-35B-A3B:
         display_name: "Qwen 3.6 35B"
+        max_output_tokens: 128000
+      Qwen3.6-35B-A3B-MTP:
+        display_name: "Qwen 3.6 35B A 3B Mtp"
         max_output_tokens: 128000
       Qwopus3.5-27B-v3:
         display_name: "Qwopus 3.5 27B V 3"
@@ -518,6 +452,12 @@ providers:
         only: [hera]
       Qwen3.6-35B-A3B-MLX-8bit:
         display_name: "Qwen 3.6 35B (MLX)"
+        max_output_tokens: 128000
+        context_limit: 262144
+        output_limit: 65536
+        only: [hera]
+      Qwen3.6-35B-A3B-UD-MLX-4bit:
+        display_name: "Qwen 3.6 35B A 3B Ud (MLX)"
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
@@ -646,56 +586,6 @@ providers:
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
-      Qwen3.5-0.8B:
-        display_name: "Qwen 3.5 0.8B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-27B:
-        display_name: "Qwen 3.5 27B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-27B-Instruct:
-        display_name: "Qwen 3.5 27B Instruct"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-2B:
-        display_name: "Qwen 3.5 2B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-2B-Instruct:
-        display_name: "Qwen 3.5 2B Instruct"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-35B-A3B:
-        display_name: "Qwen 3.5 35B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-4B:
-        display_name: "Qwen 3.5 4B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-4B-Instruct:
-        display_name: "Qwen 3.5 4B Instruct"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-9B:
-        display_name: "Qwen 3.5 9B"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
-      Qwen3.5-9B-Instruct:
-        display_name: "Qwen 3.5 9B Instruct"
-        max_output_tokens: 128000
-        context_limit: 262144
-        output_limit: 65536
       Qwen3.6-27B:
         display_name: "Qwen 3.6 27B"
         max_output_tokens: 128000
@@ -711,6 +601,12 @@ providers:
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
+      Qwen3.6-35B-A3B-MTP:
+        display_name: "Qwen 3.6 35B A 3B Mtp"
+        max_output_tokens: 128000
+        context_limit: 262144
+        output_limit: 65536
+        only: [hera]
       Qwopus3.5-27B-v3:
         display_name: "Qwopus 3.5 27B V 3"
         max_output_tokens: 128000
