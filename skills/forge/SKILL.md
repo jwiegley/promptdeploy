@@ -3,8 +3,8 @@ name: forge
 description: >
   Multi-phase, multi-model deep analysis workflow for complex problems. This
   skill should be used when the user wants rigorous, multi-model collaborative
-  analysis: deep research with Opus and PAL MCP consensus (GPT-5.4-Pro + Gemini 3
-  Pro), strategic planning, Sonnet execution with tests, comprehensive review,
+  analysis: deep research with Opus and PAL MCP consensus (GPT-5.5-Pro + Gemini 3
+  Pro), strategic planning, Opus execution with tests, comprehensive review,
   and adversarial devil's advocate critique. Invoke explicitly with /forge.
 ---
 
@@ -16,13 +16,13 @@ Forge applies maximum analytical rigor to complex problems by orchestrating mult
 
 | Phase | Model(s) | Purpose |
 |-------|----------|---------|
-| 1. Research | Opus + GPT-5.4-Pro + Gemini 3 Pro | Deep analysis and consensus |
-| 2. Planning | Opus + GPT-5.4-Pro + Gemini 3 Pro | Strategic plan with validation |
-| 3. Execution | Sonnet | Code changes + test execution |
-| 4. Review | Opus + GPT-5.4-Pro + Gemini 3 Pro | Comprehensive change review |
-| 5. Critique | Opus + GPT-5.4-Pro + Gemini 3 Pro | Devil's advocate analysis |
+| 1. Research | Opus + GPT-5.5-Pro + Gemini 3 Pro | Deep analysis and consensus |
+| 2. Planning | Opus + GPT-5.5-Pro + Gemini 3 Pro | Strategic plan with validation |
+| 3. Execution | Opus | Code changes + test execution |
+| 4. Review | Opus + GPT-5.5-Pro + Gemini 3 Pro | Comprehensive change review |
+| 5. Critique | Opus + GPT-5.5-Pro + Gemini 3 Pro | Devil's advocate analysis |
 
-Each analytical phase (1, 2, 4, 5) uses Opus as orchestrator and builds multi-model consensus via PAL MCP with GPT-5.4-Pro and Gemini 3 Pro. Phase 3 uses only Sonnet for cost-efficient execution.
+Each analytical phase (1, 2, 4, 5) uses Opus as orchestrator and builds multi-model consensus via PAL MCP with GPT-5.5-Pro and Gemini 3 Pro. Phase 3 uses Opus for execution.
 
 ## Prerequisites
 
