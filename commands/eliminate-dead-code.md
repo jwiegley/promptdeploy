@@ -1,6 +1,6 @@
 ---
 allowed-tools: Read, Grep, Glob, Bash(git:*), Bash(gh:*), Bash(rg:*), Bash(grep:*), Bash(find:*), Bash(wc:*), Bash(ls:*), Bash(cat:*), Bash(test:*), Bash(make:*), Bash(just:*), Bash(bazel:*), Bash(pre-commit:*), Bash(lefthook:*), Bash(npm:*), Bash(pnpm:*), Bash(yarn:*), Bash(bun:*), Bash(npx:*), Bash(node:*), Bash(tsc:*), Bash(eslint:*), Bash(knip:*), Bash(ts-prune:*), Bash(depcheck:*), Bash(python:*), Bash(python3:*), Bash(uv:*), Bash(pip:*), Bash(pixi:*), Bash(poetry:*), Bash(pdm:*), Bash(pytest:*), Bash(ruff:*), Bash(mypy:*), Bash(pyright:*), Bash(vulture:*), Bash(go:*), Bash(staticcheck:*), Bash(deadcode:*), Bash(cargo:*), Bash(rustc:*), Bash(periphery:*), Bash(swift:*), Bash(xcodebuild:*), Bash(dotnet:*), Bash(composer:*), Bash(php:*), Bash(psalm:*), Bash(phpstan:*), Bash(bundle:*), Bash(rake:*), Bash(rails:*), Bash(rubocop:*), Bash(debride:*), Bash(stack:*), Bash(cabal:*), Bash(ghc:*), Bash(hlint:*), Bash(weeder:*), Bash(clang:*), Bash(clang-tidy:*), Bash(cppcheck:*), Bash(cmake:*), Bash(gcc:*), Bash(g++:*), Bash(mvn:*), Bash(gradle:*), Bash(gradlew:*), Bash(mix:*), Bash(emacs:*), Bash(nix:*), Bash(deadnix:*), Bash(shellcheck:*), Edit, Write, Task
-description: Find and remove dead code and stale documentation with evidence-based safety
+description: Find and remove dead code and stale documentation with evidence-based safety, using a mark / debate / act / verify workflow
 argument-hint: [optional scope: path, "docs", "imports", "feature-flags", or empty for full repo]
 ---
 
@@ -21,13 +21,32 @@ builds and its tests still pass.
 When in doubt, leave it. Flagging a candidate for human review is always
 better than a silently-broken production deploy.
 
+## The four-phase workflow
+
+This command runs in four phases. Do not interleave them.
+
+1. **MARK** — Discover, analyze, and bracket every dead-code region with
+   in-source markers (plus a sidecar manifest for things that can't be
+   bracketed). No code is changed or removed in this phase; markers are left
+   as **uncommitted working-tree changes** for review.
+2. **DEBATE** — For each marked region, decide its fate. Ambiguous or
+   high-blast-radius regions get a three-advocate debate (keep-as-is / modify /
+   remove); trivially-dead regions take a lighter safety-biased checklist.
+   Every region ends with exactly one verdict: `keep`, `modify`, or `remove`.
+3. **ACT** — Walk the regions in dependency order and apply each verdict as an
+   atomic commit, stripping the region's markers as you go.
+4. **VERIFY** — Run the full build/test/lint suite, confirm **zero markers
+   remain** in the tree, and print a structured report.
+
+---
+
 ## Scope
 
 Interpret `$ARGUMENTS`:
 
 - **Empty or `.`** → full repository.
-- **A path** (`src/foo`, `docs/`) → restrict discovery, analysis, and removals
-  to that subtree (cross-reference checks still scan the entire repo).
+- **A path** (`src/foo`, `docs/`) → restrict discovery, analysis, marking, and
+  removals to that subtree (cross-reference checks still scan the entire repo).
 - **`docs`** → only stale documentation; do not remove code.
 - **`imports`** → only unused imports / unused dependencies.
 - **`feature-flags`** → only permanently-on/off flags and their dead branches.
@@ -46,19 +65,23 @@ If `$ARGUMENTS` is ambiguous, ask the user before proceeding.
 
 ## Operating principles (read first, every time)
 
-1. **Conservative by default.** When uncertain, classify as `needs-approval`,
-   not `safe-remove`.
-2. **Pure deletions only.** Do not refactor, rename, reformat, or "improve"
-   adjacent code while removing dead code. Don't fix unrelated bugs along the
-   way — record them in the final report instead.
-3. **Atomic commits.** One logical removal per commit, with a clear message.
+1. **Conservative by default.** When uncertain, the verdict is `keep`, never
+   `remove`. Uncertainty never resolves to removal — not by majority vote, not
+   by "the evidence mostly points that way."
+2. **Pure deletions and surgical modifications only.** Do not refactor, rename,
+   reformat, or "improve" adjacent code. A `modify` verdict applies only the
+   concrete diff the debate produced — nothing more. Don't fix unrelated bugs
+   along the way — record them in the final report instead.
+3. **Atomic commits.** One logical region per commit, with a clear message.
    Each commit must leave the build and tests passing.
 4. **Two-evidence rule for dynamic languages.** In Python, Ruby, JavaScript,
    TypeScript (and any language that supports reflection or string-based
    dispatch), a passing test suite is **not sufficient evidence** of safety.
-   Require **at least two independent forms of evidence** before removal:
-   static-analysis evidence *and* entry-point/config evidence. See "Cross-
-   reference verification".
+   Require **at least two independent forms of evidence** before a region is
+   even marked as a removal candidate, and again before a `remove` verdict is
+   finalized. The two sources must be *independent modalities* (e.g. static
+   "no references" *and* an entry-point/registration check), not two variants
+   of the same grep. See "Cross-reference verification".
 5. **Native tooling first.** Prefer compiler flags and lints already
    configured in the repo (`tsc --noUnusedLocals`, `go vet`, `cargo check`,
    `-Wunused`, `mypy --warn-unreachable`, `ruff` if configured) over
@@ -67,15 +90,28 @@ If `$ARGUMENTS` is ambiguous, ask the user before proceeding.
 6. **Avoid the yak-shaving trap.** If the project's build/test commands fail
    in your environment due to missing toolchains, abort and report — do not
    spend the run trying to install things.
-7. **Blast-radius cap.** Make at most **20 removal commits per invocation** by
-   default. If more candidates exist, list them in the report and stop.
-   The user can re-invoke for further passes.
+7. **Blast-radius cap.** Make at most **20 removal/modification commits per
+   invocation** by default. If more candidates carry a non-`keep` verdict,
+   list them in the report and stop. The user can re-invoke for further passes.
 8. **Never bypass safety.** No `--no-verify`, no `--force`, no skipping tests,
    no amending commits to hide failures.
+9. **Markers never escape.** The `DCE-BEGIN`/`DCE-END` markers introduced in
+   Phase 1 are working-tree-only scaffolding. They are never committed, never
+   pushed, and must be fully gone before Phase 4 reports success. If the run is
+   interrupted, the markers can be discarded with `git restore --worktree -- .`
+   because the working tree was clean at the start of the run.
 
 ---
 
-## Phase 0 — Discover the project
+# Phase 1 — MARK
+
+The goal of this phase is to produce a complete, evidence-backed inventory of
+dead-code regions, each bracketed by in-source markers (or recorded in the
+sidecar manifest when bracketing is impossible). **No code is removed or
+modified in Phase 1.** At the end you will have a working tree containing only
+added marker comments and a new sidecar file, ready for review.
+
+## 1.0 — Discover the project
 
 **Hard prerequisite**: the project must be a git repository (`git rev-parse
 --is-inside-work-tree` returns `true`). If not, abort and tell the user —
@@ -109,11 +145,9 @@ Without making changes, learn:
 
 Print a concise **Discovery Report** before continuing.
 
----
+## 1.1 — Inventory dynamic mechanisms (Exclusion Allowlist)
 
-## Phase 1 — Inventory dynamic mechanisms
-
-This phase is the most important defense against breaking the project. Catalog
+This step is the most important defense against breaking the project. Catalog
 every place where code is wired up at runtime via convention, reflection, or
 string lookup, before doing any analysis. Treat everything in this inventory
 as **must-not-remove without explicit approval**.
@@ -174,15 +208,17 @@ user approval. Hold this list in context for the rest of the run; if it
 grows beyond a few hundred entries, stash it in a scratch file (e.g.
 `/tmp/dead-code-allowlist-<branch>.json`) and reload it as needed.
 
-Phase 5 (Classify) **must** check every candidate against this allowlist
-before assigning a `safe-remove` label. Allowlist hits cap at `needs-approval`.
+The allowlist is consulted twice: in step 1.7 (an allowlist hit may only be
+*marked* with `class=needs-approval`, never `class=safe`) and again in Phase 2
+(an allowlist hit caps the verdict at `needs-approval` and must be escalated
+to the user before any `remove`/`modify` verdict is finalized).
 
----
-
-## Phase 2 — Establish baseline
+## 1.2 — Establish baseline
 
 1. **Working tree must be clean.** Run `git status`. If there are
-   uncommitted changes, **abort** and ask the user to commit/stash first.
+   uncommitted changes, **abort** and ask the user to commit/stash first. A
+   clean starting tree is what lets you discard markers safely later
+   (`git restore --worktree -- .`).
 2. **Capture starting commit.** `git rev-parse HEAD` — record it.
 3. **Create a working branch.** Run `git branch --list 'chore/dead-code-pass-*'`
    to find the next free integer suffix `<n>` (start at 1), then
@@ -199,11 +235,9 @@ before assigning a `safe-remove` label. Allowlist hits cap at `needs-approval`.
    ask the user. Do not assume.
 
 Record the baseline command set and pass status — you will rerun these
-exact commands after each removal.
+exact commands in Phase 3 and Phase 4.
 
----
-
-## Phase 3 — Static analysis
+## 1.3 — Static analysis
 
 Run only the analyzers that are **already available** in the repo
 (installed in `node_modules`, declared in `pyproject.toml`/`requirements*.txt`,
@@ -258,13 +292,11 @@ candidate — it understands scope and renamed-import edge cases.
 Aggregate the union of analyzer findings into a **candidate set**:
 `{ kind, location, name, evidence }`.
 
----
+## 1.4 — Cross-reference verification
 
-## Phase 4 — Cross-reference verification
-
-For every candidate, you must collect independent evidence before classifying
-it. Do not skip checks — silent breakage usually comes from a symbol
-referenced from a place you didn't search.
+For every candidate, you must collect independent evidence before marking it.
+Do not skip checks — silent breakage usually comes from a symbol referenced
+from a place you didn't search.
 
 For each candidate symbol or file, run the following checks (record results):
 
@@ -302,14 +334,13 @@ For each candidate symbol or file, run the following checks (record results):
    fixtures, or snapshot files? Removing a test for a real feature is a
    silent loss of coverage.
 9. **Dynamic-mechanism check**. Does the candidate's name match anything in
-   the Phase 1 Exclusion Allowlist (decorator-registered, autoloaded,
-   ORM-mapped, route-handler, FFI-exported)? If yes → `needs-approval` or
-   `keep`.
+   the 1.1 Exclusion Allowlist (decorator-registered, autoloaded, ORM-mapped,
+   route-handler, FFI-exported)? If yes → at most `needs-approval`.
 
 ### Two-evidence rule (mandatory for dynamic languages)
 
-Before classifying any symbol in Python, Ruby, JavaScript, TypeScript,
-Elixir, PHP, or Lua as `safe-remove`, you must have **at least two of**:
+Before *marking* any symbol in Python, Ruby, JavaScript, TypeScript, Elixir,
+PHP, or Lua as a removal candidate, you must have **at least two of**:
 
 - A static analyzer that does whole-program reachability (knip, ts-prune,
   cargo-udeps-style closure analysis) confirming no callers.
@@ -318,48 +349,48 @@ Elixir, PHP, or Lua as `safe-remove`, you must have **at least two of**:
   hits outside the definition itself.
 - An entry-point/manifest scan confirming the symbol is not declared anywhere.
 
-A single passing test suite is **not** enough.
+The two sources must be independent modalities, not two variants of the same
+grep. A single passing test suite is **not** enough. If the two-evidence bar
+is **not** met, do not bracket the region — record it in the sidecar manifest
+with `class=needs-review` instead, so Phase 2 can examine it without it
+counting as a removal candidate.
 
----
+## 1.5 — Initial classification
 
-## Phase 5 — Classify
-
-For each candidate, assign exactly one label.
+For each candidate, assign a *provisional* class. This class only controls how
+the region is marked and routed in Phase 2 — it is **not** the final decision.
 
 **Mandatory pre-classification check**: cross-check the candidate against the
-Phase 1 Exclusion Allowlist (file path, directory, symbol name, string
-pattern). If it matches *any* allowlist entry, the maximum allowed label is
-`needs-approval` — never `safe-remove`, regardless of static-analysis
-strength.
+1.1 Exclusion Allowlist (file path, directory, symbol name, string pattern).
+If it matches *any* allowlist entry, the maximum class is `needs-approval` —
+never `safe`.
 
-- **`safe-remove`** — All evidence says no callers, no dynamic wiring, not
-  on the allowlist, not recently-touched, not on a public surface.
+- **`safe`** — All evidence says no callers, no dynamic wiring, not on the
+  allowlist, not recently-touched, not on a public surface, two-evidence rule
+  met. Routed to the **lighter checklist** in Phase 2.
 - **`needs-approval`** — Probably removable, but touches public API,
-  reflection sites, recent code, deploy/ops configs, or any allowlist
-  entry. Requires a yes from the user.
-- **`keep`** — Found a real reference; not dead.
+  reflection sites, recent code, deploy/ops configs, or any allowlist entry.
+  Routed to the **full three-advocate debate** in Phase 2 and gated on user
+  approval.
+- **`ambiguous`** — Evidence is mixed, the region is high-blast-radius (many
+  importers, exported boundary, monorepo cross-package), or you simply are not
+  sure. Routed to the **full three-advocate debate** in Phase 2.
 
-Default uncertain cases to `needs-approval`. Never default to `safe-remove`.
+Default uncertain cases to `ambiguous` or `needs-approval`. Never default to
+`safe`.
 
----
-
-## Phase 6 — Documentation sweep (identify only; do not edit yet)
+## 1.6 — Stale-documentation sweep
 
 Stale documentation has no compiler to validate it. Be especially careful;
-when uncertain, leave it.
-
-This phase only **identifies** stale-doc candidates. Actual edits happen in
-Phase 7: doc changes anchored to a removed symbol are bundled into the same
-commit as that symbol's removal; pure-doc cleanups (no associated code) get
-their own atomic commits at the end of Phase 7, each with a targeted check
-(rebuild the docs site / run doctest / try the example) before commit.
+when uncertain, leave it. This step only **identifies** stale-doc candidates
+and records them; edits happen in Phase 3.
 
 Look for:
 
-1. **Symbol-anchored docs**. For each `safe-remove` symbol from Phase 5,
-   search docs/, README*, comments, `*.md`, `*.rst`, `*.adoc`, `*.org` for
-   the symbol's name. Record the locations alongside the symbol so Phase 7
-   can update both in one commit.
+1. **Symbol-anchored docs**. For each code candidate, search docs/, README*,
+   comments, `*.md`, `*.rst`, `*.adoc`, `*.org` for the symbol's name. Record
+   the locations on the candidate so a later `remove`/`modify` verdict updates
+   both in one commit.
 2. **Outdated examples**. README/docs code examples that reference removed
    APIs or no-longer-valid commands. If you can run the example (compile,
    `--help`, doctest), do so; flag failures as candidates.
@@ -368,28 +399,214 @@ Look for:
    `Cargo.toml`, `pyproject.toml`, etc.).
 4. **TODO/FIXME comments referencing completed work**. If a TODO refers to
    an issue tracker ID, check it (`gh issue view`); if closed, the TODO can
-   be removed. Without an ID, leave it — TODOs are often load-bearing
+   be a candidate. Without an ID, leave it — TODOs are often load-bearing
    reminders.
-5. **README sections for removed dependencies**. After removing a
-   dependency, scrub the README's install/usage/troubleshooting sections.
+5. **README sections for removed dependencies**. Record so a dependency
+   removal can scrub the README's install/usage/troubleshooting sections.
 6. **Stale ADRs / runbooks / changelogs / API specs**. Treat as
    `needs-approval` — these are often historical record and should be kept
-   even when superseded. Do not remove without explicit user approval.
+   even when superseded.
 7. **Commented-out code blocks** older than ~6 months (per `git blame`).
-   These are noise; safe to remove. Smaller/younger blocks → leave.
+   These are noise; class `safe`. Smaller/younger blocks → leave.
 8. **Dead docstrings / API specs**. If an OpenAPI/GraphQL spec describes a
-   removed endpoint, regenerate the spec from source if the project has a
-   generator; otherwise flag for approval.
+   removed endpoint, regenerate from source if a generator exists; otherwise
+   flag for approval.
+
+Doc candidates are recorded the same way as code candidates: bracketable doc
+blocks get markers; anything anchored to a code symbol is attached to that
+symbol's region; standalone doc files go in the sidecar manifest.
+
+## 1.7 — Insert markers and write the sidecar manifest
+
+Now bracket every candidate region. **This is the only mutation Phase 1 makes,
+and it is never committed.**
+
+### Marker format
+
+For any region that can be safely bracketed by comments, wrap it with a
+matched `DCE-BEGIN` / `DCE-END` pair using the file's native comment syntax:
+
+```
+<comment> DCE-BEGIN id=<NNN> kind=<symbol|block|comment-block|doc> class=<safe|needs-approval|ambiguous> name=<symbol-or-desc> evidence="<one-line summary>"
+...the candidate region, unchanged...
+<comment> DCE-END id=<NNN>
+```
+
+- `id` is a stable zero-padded integer, unique within the run.
+- Comment leader matches the language: `//` (C/Java/Go/Rust/TS), `#`
+  (Python/Ruby/Shell/YAML), `;;` (Elisp/Lisp), `--` (Haskell/SQL/Lua),
+  `<!-- ... -->` (HTML/Markdown — close the comment on each line), `%`
+  (LaTeX/Erlang), etc.
+- **Syntax safety is mandatory.** Never insert a marker where a comment is not
+  legal (inside a string literal, inside a JSON file, mid-expression, between a
+  decorator and its function, inside a multi-line literal). If a region cannot
+  be bracketed without risking a syntax/parse error, do **not** bracket it —
+  record it in the sidecar manifest instead.
+- Insert markers only; do not touch the bracketed lines.
+
+### Sidecar manifest
+
+Write `.dce-pass-<n>/candidates.json` — the **authoritative** record of every
+candidate, including those that could not be bracketed. Schema:
+
+```json
+{
+  "pass": <n>,
+  "branch": "chore/dead-code-pass-<n>",
+  "baseline_commands": ["<build>", "<test>", "<lint>"],
+  "starting_commit": "<sha>",
+  "candidates": [
+    {
+      "id": "001",
+      "kind": "symbol|block|file|import|dependency|doc|feature-flag|comment-block",
+      "location": "path/to/file.py:120-138 | path/to/file | package.json:devDependencies.foo",
+      "name": "<symbol or description>",
+      "class": "safe|needs-approval|ambiguous|needs-review",
+      "marked_in_source": true,
+      "evidence": ["no refs (rg, all variants)", "zero refs (pyright LSP)", "not in entry points"],
+      "anchored_docs": ["docs/api.md:40-52"],
+      "allowlist_hit": false,
+      "verdict": null,
+      "verdict_rationale": null
+    }
+  ]
+}
+```
+
+- Whole-file deletions, unused imports, unused dependencies, and standalone
+  doc files are **sidecar-only** (`marked_in_source: false`) — they have no
+  natural bracketable region.
+- `class=needs-review` entries are below the marking bar (e.g. dynamic-language
+  candidates that failed the two-evidence rule). They are carried into Phase 2
+  for examination but default to `keep`.
+- `verdict` and `verdict_rationale` are filled in during Phase 2.
+
+> Add `.dce-pass-*/` to your mental ignore-list. If the repo has a
+> `.gitignore`, you may note (do not commit) that the sidecar directory is
+> transient. Never commit the sidecar directory or the markers.
+
+### End-of-phase review
+
+Print a **Mark Report**: count of candidates by `kind` and `class`, the
+sidecar path, and a reminder that the working tree now contains uncommitted
+markers. Then run `git diff --stat` so the user can see exactly what was
+annotated. **Do not proceed to Phase 2 until you have shown this.** If the
+user wants to stop here, they can discard everything with
+`git restore --worktree -- .` and delete the sidecar directory.
 
 ---
 
-## Phase 7 — Atomic removals
+# Phase 2 — DEBATE
 
-For each `safe-remove` candidate, in dependency order (leaves first):
+Decide the fate of every candidate in the sidecar manifest. The output of this
+phase is a `verdict` (`keep` | `modify` | `remove`) plus a `verdict_rationale`
+written back into `.dce-pass-<n>/candidates.json` for each candidate. **No code
+changes happen in this phase.**
 
-1. **Delete only that one thing.** Bundle in any Phase-6 doc updates anchored
-   to this symbol. No other incidental edits — no refactors, renames, or
-   reformatting.
+Route each candidate by its `class`:
+
+## 2.A — Lighter path (class `safe`)
+
+For trivially-dead regions where the two-evidence rule is already met and there
+is no allowlist hit, public surface, or recency concern, you do not need a full
+debate. Apply a **safety-biased checklist** directly:
+
+- Re-confirm the recorded evidence still holds (no new references introduced).
+- Confirm no allowlist hit, no public-surface membership, not recently touched.
+- If all clear → `verdict: remove` (or `modify` for a doc block that should be
+  trimmed rather than deleted).
+- If *any* check is now uncertain → upgrade the candidate to `ambiguous` and
+  send it through the full debate (2.B). Never downgrade silently to `remove`.
+
+## 2.B — Full debate (class `ambiguous` or `needs-approval`)
+
+For ambiguous or high-blast-radius regions, run a three-advocate debate. Spawn
+three sub-agents via the `Task` tool, one per stance. Give each the same
+context packet: the region's source (with surrounding file context), its
+manifest entry and recorded evidence, the relevant slice of the Exclusion
+Allowlist, and the project's framework/language profile from Phase 1.0–1.1.
+
+You may **batch** several similar regions into one debate round to control
+cost, and you may run the three stance-agents **in parallel** (a single message
+with three `Task` calls). Reserve the full debate for `ambiguous`/`needs-approval`
+regions only — do not spend it on `safe` regions.
+
+Spawn these three advocates:
+
+- **Keep-as-is advocate.** Argues the region must be retained unchanged. Job:
+  find any reason it is or might be live — hidden callers, dynamic dispatch,
+  framework convention, public-surface membership, recency, allowlist hit,
+  external consumers. **May win on genuine uncertainty or a protected
+  pattern.** Must cite concrete evidence (file:line, config key, route table
+  entry); a bare "it might be used somewhere" is not admissible.
+- **Modify advocate.** Argues the region should be transformed rather than kept
+  or deleted (slimmed, inlined, a stub left behind, deprecated, narrowed in
+  visibility, moved). **Must produce a concrete diff**, not a theory. If it
+  cannot produce a specific safe diff, this stance loses by default — "modify"
+  is not a place to park risk.
+- **Remove advocate.** Argues full deletion. **Must enumerate the independent
+  evidence** (the two-evidence sources for dynamic languages) and explicitly
+  confirm there is no allowlist hit. Speculative or hypothetical justifications
+  are inadmissible; only the recorded and re-verified evidence counts.
+
+### Rules of evidence (binding on all advocates)
+
+- Cite concrete artifacts: file:line, grep/LSP results, config keys, route
+  tables, git history. No invented future use-cases. No imagined reflection
+  risks that cannot be pointed to in the code or config.
+- The allowlist is authoritative: if a region hits the allowlist, the
+  Keep/Modify stances are the only ones that can prevail without explicit user
+  approval.
+
+## 2.C — Synthesis (you, the orchestrator, decide)
+
+Collect the three arguments and decide **one** verdict per region using a
+**safety-biased rubric — this is not a majority vote**:
+
+1. **Two-evidence re-check.** For a dynamic-language region, if the `remove`
+   stance cannot point to two independent evidence modalities that still hold,
+   the verdict is `keep` (or a harmless docs-only `modify`). Missing evidence
+   forces `keep`.
+2. **Allowlist / approval gate.** If the region hits the allowlist or any
+   approval-gate category (see "Approval gates"), do not finalize `remove` or a
+   risky `modify` until you have presented the case to the user and received a
+   yes. Pause and ask.
+3. **Uncertainty resolves to `keep`.** If after the debate you are not
+   confident, the verdict is `keep`. A balanced-looking debate is not a license
+   to remove.
+4. **`modify` requires a concrete, safe diff.** Only choose `modify` if the
+   modify advocate produced a specific diff that is clearly behavior-preserving
+   (or an approved behavior change). Otherwise prefer `keep`.
+5. **`remove` requires clear, unrebutted evidence** of deadness with no
+   admissible keep-argument standing.
+
+Write `verdict` and a one-line `verdict_rationale` (citing the deciding
+evidence) back into the sidecar manifest for every candidate, including
+`keep`s. `needs-review` entries default to `keep` unless the debate surfaced
+genuine two-evidence support for removal.
+
+Print a **Debate Report**: per-region verdict with the one-line rationale, and
+a list of any regions escalated to the user for approval. Resolve all
+escalations before Phase 3.
+
+---
+
+# Phase 3 — ACT
+
+Apply the verdicts. Walk the candidates in **dependency order (leaves first)**
+so that removing a callee never orphans a still-present caller mid-pass.
+
+For each candidate with a non-`keep` verdict:
+
+1. **Apply exactly the verdict — nothing more.**
+   - `keep`: strip this region's `DCE-BEGIN`/`DCE-END` markers (and clear its
+     sidecar entry). No commit needed for a pure keep; just remove its
+     scaffolding.
+   - `modify`: apply the concrete diff from the debate, strip the region's
+     markers, and bundle any anchored doc updates. No incidental edits.
+   - `remove`: delete the bracketed region (markers and all) plus any
+     sidecar-listed associated artifacts (anchored docs, now-unused imports
+     the removal creates). No refactors, renames, or reformatting.
 2. **Run a fast targeted check** appropriate to the language:
    - TS/JS: `tsc --noEmit` for the package (or `tsc -b` in monorepos — and
      in a monorepo, also build any package that imports the changed one).
@@ -399,56 +616,72 @@ For each `safe-remove` candidate, in dependency order (leaves first):
      if mypy is configured.
    - C/C++: `make` for the affected target(s) / `cmake --build`.
    - Else: smallest-scope build the project supports.
-3. **Run the tests covering the affected package/module.** Full suite is
-   not required after every single commit (too slow on most repos); a
-   targeted test selection is enough at the per-commit step.
+3. **Run the tests covering the affected package/module.** A targeted test
+   selection is enough at the per-commit step; the full suite runs at the
+   milestones below and in Phase 4.
 4. **If anything fails — recover cleanly before moving on.** Nothing is
    committed yet, but the working tree may have staged changes, unstaged
-   changes, and/or new untracked files (e.g. if a deletion required a
-   new helper file, which it should not in pure removals — but defensive).
-   Run, in order:
+   changes, and/or new untracked files. Run, in order:
    ```
    git restore --staged --worktree -- .
    git clean -fd
    ```
-   Then verify with `git status` that the tree matches `HEAD`. Reclassify
-   the candidate as `needs-approval`, record the failure mode in the
-   report, and move to the next candidate. **Never** use `git reset --hard`
-   or `git push --force` here — they can lose unrelated user state.
-5. **If everything passes**: stage and commit:
+   This also restores the markers for the region you were acting on (they live
+   in the working tree). Re-mark the region if needed, downgrade its verdict to
+   `keep`, record the failure mode in the report, and move to the next
+   candidate. **Never** use `git reset --hard` or `git push --force` here —
+   they can lose unrelated user state.
+5. **If everything passes**: stage and commit only the files this region
+   touched:
    ```
    git add -- <changed files>
    git commit -m "chore: remove unused <thing> (<short evidence>)"
    ```
-   Use commit messages that name the symbol and summarize the evidence,
-   e.g. `chore: remove unused helper foo_bar (no callers per knip + grep)`.
+   Name the symbol and summarize the deciding evidence, e.g.
+   `chore: remove unused helper foo_bar (no callers per knip + grep, debate: remove)`.
+   For a `modify`, use `chore: simplify <thing> (debate: modify — <reason>)`.
 6. **Stop at the blast-radius cap.** Default is 20 commits; the user may
-   override via `cap=N` in `$ARGUMENTS` (`cap=0` disables the cap). When
-   the cap is hit, list remaining candidates in the report and stop —
-   do not silently keep going.
+   override via `cap=N` in `$ARGUMENTS` (`cap=0` disables the cap). When the
+   cap is hit, strip remaining markers for un-acted regions (so none leak),
+   list the remaining verdicts in the report, and stop.
 
-After every ~5 commits **and** at the end of Phase 7, run the **full** baseline
-command set (build + tests + lints) and confirm green. If the milestone full
-run fails, identify the most recent commit that introduced the failure
+After every ~5 commits **and** at the end of Phase 3, run the **full** baseline
+command set (build + tests + lints) and confirm green. If a milestone full run
+fails, identify the most recent commit that introduced the failure
 (`git bisect` or commit-by-commit revert), revert it, and re-run until green.
+
+Before leaving Phase 3, ensure **every** region's markers have been stripped —
+acted-on regions lose them via the commit; `keep` regions and any skipped
+regions must have markers removed manually. Markers must not survive into
+Phase 4.
 
 ---
 
-## Phase 8 — Final verification
+# Phase 4 — VERIFY
 
-1. Run the full baseline command set one more time on the final tree.
-2. `git log --oneline <starting-commit>..HEAD` — confirm only your atomic
-   removal commits are present, no merges, no surprise edits.
-3. `git diff --stat <starting-commit>..HEAD` — record line-count delta.
-4. If the project has a public-API surface tool (Phase 4), capture the
-   diff and ensure no unintended public surface change.
+1. **No markers remain.** Run a repo-wide search and assert zero hits:
+   ```bash
+   rg --hidden -n 'DCE-BEGIN|DCE-END' && echo "FAIL: markers remain" || echo "OK: clean"
+   ```
+   If any marker survives, strip it before doing anything else — markers must
+   never be committed or pushed.
+2. **Full baseline.** Run the full build + test + lint command set one more
+   time on the final tree.
+3. **Commit history is clean.** `git log --oneline <starting-commit>..HEAD` —
+   confirm only your atomic removal/modification commits are present, no
+   merges, no surprise edits, no marker commit.
+4. **Line-count delta.** `git diff --stat <starting-commit>..HEAD`.
+5. **Public-API surface.** If the project has a public-API surface tool
+   (Phase 1.4), capture the diff and ensure no unintended public surface change.
+6. **Remove the sidecar.** Delete the `.dce-pass-<n>/` directory (it is
+   transient analysis state, never committed).
 
 If the final run fails, do not push the branch. Identify and revert the
 offending commit, re-run, and only then proceed.
 
 ---
 
-## Phase 9 — Report
+## Report
 
 Produce a single Markdown report (print it; do not write to disk unless the
 user requests). Structure:
@@ -461,17 +694,20 @@ user requests). Structure:
 **Ending commit**: <sha>
 **Baseline commands**: <commands run before/after>
 **Result**: green / red
+**Markers remaining**: 0 (verified)
 
-## Removed (N commits)
-- `<sha>` — <short message> — <files touched, lines removed>
+## Verdicts
+- Removed: <N>   Modified: <M>   Kept: <K>   Escalated to user: <E>
+
+## Removed / Modified (committed)
+- `<sha>` — <verdict> — <symbol> — <files touched, lines delta> — <deciding evidence>
 - ...
 
-## Deferred (needs-approval) (M items)
-- `<location>` — `<symbol>` — reason for deferral, what evidence was found,
-  what evidence was missing.
+## Kept (and why)
+- `<location>` — `<symbol>` — concrete reference or uncertainty that won the debate.
 
-## Skipped (kept) (K items)
-- `<location>` — `<symbol>` — concrete reference that was found.
+## Deferred (needs-approval, awaiting or denied by user)
+- `<location>` — `<symbol>` — what evidence was found, what was missing, gate triggered.
 
 ## Stale-doc changes
 - <file>:<lines> — <summary>
@@ -480,7 +716,7 @@ user requests). Structure:
 - Tools attempted, tools missing, tools that produced output.
 
 ## Cap status
-- Hit blast-radius cap? Yes/No. Remaining candidates: <count>.
+- Hit blast-radius cap? Yes/No. Remaining non-keep verdicts: <count>.
 - To continue, re-invoke `/eliminate-dead-code <scope>`.
 
 ## Risks and uncertainties
@@ -500,14 +736,15 @@ Then print the proposed next step:
 
 ---
 
-## Approval gates (always pause before any of these)
+## Approval gates (always pause before finalizing a `remove`/`modify` verdict)
 
-Stop and **ask the user** before performing any of the following, regardless
-of static-analysis confidence:
+Stop and **ask the user** during Phase 2 synthesis before finalizing a
+non-`keep` verdict for any of the following, regardless of static-analysis or
+debate confidence:
 
 - Removing or modifying any **public API surface** (library exports, CLI
   commands, web routes, RPC handlers, GraphQL types, OpenAPI endpoints).
-- Removing any symbol matching a pattern in the **Phase 1 Exclusion Allowlist**.
+- Removing any symbol matching a pattern in the **Exclusion Allowlist** (1.1).
 - Removing any **database migration**.
 - Removing files inside **generated** or **vendored** directories.
 - Removing **test fixtures**, **golden files**, or **i18n keys**.
@@ -523,15 +760,19 @@ of static-analysis confidence:
 
 For each gated case, present:
 - the candidate,
-- the evidence you collected,
+- the evidence collected and the three-advocate arguments,
 - the specific reason it triggered the gate,
-- and your recommendation (remove / keep / further investigation),
-then wait for the user's decision before continuing.
+- and your recommendation (remove / modify / keep),
+then wait for the user's decision before writing the verdict.
 
 ---
 
 ## What to never do
 
+- Never **commit or push** `DCE-BEGIN`/`DCE-END` markers or the
+  `.dce-pass-*/` sidecar directory. They are working-tree-only scaffolding.
+- Never insert a marker where a comment is not syntactically legal — sidecar
+  it instead.
 - Never modify `.git/`, `.github/` workflows, CI configs, or hooks unless the
   user explicitly asked for that scope.
 - Never delete a file from a directory containing `# Code generated`,
@@ -542,8 +783,9 @@ then wait for the user's decision before continuing.
 - Never auto-install a static-analysis tool; if it's not present, skip it.
 - Never remove "old-looking" code based purely on age — many projects have
   stable, rarely-touched, still-load-bearing modules.
-- Never trust a single evidence source in a dynamic language. Two-evidence
-  rule is mandatory.
+- Never trust a single evidence source in a dynamic language. The two-evidence
+  rule is mandatory at both marking (1.4) and verdict synthesis (2.C).
+- Never let a balanced-looking debate justify removal. Uncertainty → `keep`.
 - Never claim "no behavior change" — instead report **the evidence collected**
   and let the user judge.
 
@@ -551,10 +793,10 @@ then wait for the user's decision before continuing.
 
 Tell the user. A short message like
 
-> I found 14 candidates. 9 are clearly unreferenced, 3 touch a route-handler
-> file pattern (FastAPI auto-discovery), 2 have a single string-literal
-> reference in a YAML config that may or may not be live. I will remove the
-> 9, defer the others to the report, and ask before touching the 3
-> route-handler candidates. OK?
+> Phase 1 marked 14 candidates: 9 class `safe`, 3 `ambiguous` (route-handler
+> files — FastAPI auto-discovery), 2 `needs-approval` (single string-literal
+> reference in a YAML config). I'll run the lighter path on the 9, the full
+> three-advocate debate on the 3 ambiguous ones, and ask before finalizing the
+> 2 gated ones. OK?
 
 is always preferable to silently making the wrong call.
