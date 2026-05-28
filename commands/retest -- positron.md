@@ -278,7 +278,7 @@ done
 | `PASS` | byte-identical, no skips, no flake quarantine | yes |
 | `SKIPPED` | weights not provisioned, test skipped cleanly | NO — INCOMPLETE coverage |
 | `QUARANTINED-PASS` | `[!mayfail]` test happened to pass | yes (but note it's a flake-tolerant test) |
-| `QUARANTINED-FAIL` | `[!mayfail]` test failed but is annotated as a known flake (e.g. Mixtral 32-tok #2808) | NO — does not block ship, but counts as a known-flake hit |
+| `QUARANTINED-FAIL` | `[!mayfail]`-tagged test failed but is annotated as a known flake with an issue link (none currently active) | NO — does not block ship, but counts as a known-flake hit |
 | `DIVERGE` | bit-level mismatch in last-prompt-token logits | **NO — real correctness regression** |
 | `LOCK-CONTENTION` | FPGA device teardown lagged; re-run alone | re-run; if still fails alone, escalate |
 | `WEIGHTS-MISSING` | canonical AND scratch paths empty — Phase 0 didn't provision | NO — INCOMPLETE; Phase 0 should have caught this |
@@ -364,7 +364,7 @@ across ~95% of logits, confirm that fix is present before treating it as a categ
 
 | Test | Failure | Tag | Issue | Notes |
 |---|---|---|---|---|
-| Mixtral 32-token (kMedGenericPrompt) | SIGABRT on `TRON_ASSERT(other_sp.m_star != -inf)` | `[!mayfail]` | #2808 | Cross-worker attention join race in legacy ingest's per-layer attention plans (regressed by PR #2685, 19-May-2026); 32-core-correlated; quarantine until #2808 fixed. |
+| Mixtral `[long]` (synthetic prompt) | SIGABRT on `TRON_ASSERT(other_sp.m_star != -inf)` | RESOLVED — no longer quarantined | #2808 | **Root-caused, not a race.** Synthetic incrementing-id prompts (`kMed/kLongGenericPrompt` = {1..N}) drive Mixtral's MoE expert FFN to overflow at a deep layer → NaN via `residual_and_rmsnorm` (`wide.hpp:1278`: inf→ `1/√inf=0` → `inf*0=NaN`). The NaN query then makes `max(s_page)` (`self_attention.hpp:853`) launder NaN→−inf via x86 `_mm512_max_ps(data,−inf)` (returns 2nd operand on NaN), so the crash misreports as "−inf in a valid scratchpad" (sails past the NaN guard at :886). Deterministic, input-driven, NOT parallelism-dependent, NOT caused by PR #2685. **Fix in /retest: Mixtral tests use realistic Mixtral tokenizations (`kMixtralReal32/64`), which keep activations bounded — both pass byte-identical.** A real prompt never triggers it; the underlying runtime overflow→NaN hardening is a separate #2808 task (out of /retest scope). **Never use kMed/kLongGenericPrompt for an MoE model.** |
 | GPT-OSS-20B/120B Phase-5 TOKID at tp4 | Token-ID stream diverges run-to-run | (advisory in retest.md) | (documented in `memory/fpga_120b_nondeterminism.md`) | Multi-token-decode nondeterminism at TP4; affects both pipelines identically — confounder, not categorical regression. |
 
 **Adding a new entry:** include exact test name (or tag), failure signature
