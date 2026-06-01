@@ -13,28 +13,34 @@ result table at the end.
 The headline gate is **Phase 3**: FPGA/host logits, top-K overlap, and decoded tokens
 compared against the HF reference. Everything else is supporting evidence. There is only one
 pipeline here, so the oracle is HuggingFace — not a legacy pipeline; this replaces the
-legacy-byte-identity gate used by the categorical `/retest`.
+legacy-byte-identity gate used by the categorical `/retest-categorical`.
 
 # Arguments (`$ARGUMENTS`)
 
 Defaults: every phase runs. Set `MODELS` once (see "Derive the target model set") and feed
 it to Phases 0, 3, and 6.
 
-- **Bare model names / runtime slugs / tags** (e.g. `llama_3p1_8b`, `ingested-gpt-oss-20b`,
-  `[test]`) → **intersect** with the branch-derived set; restrict Phases 3 & 6 to those.
-  A tag is a tag-intersection filter (`filter_models`); it narrows the derived set, never
-  widens it. Variants with no tags are excluded under tag filtering.
+- **Bare model names / runtime slugs** (e.g. `llama_3p1_8b`, `ingested-gpt-oss-20b`) → the
+  model(s) under development. They normally **intersect** with the branch-derived set
+  (restricting Phases 3 & 6); but when the stack touches only shared infra and the diff cannot
+  infer a specific model, an explicit model/slug is **authoritative** and defines the set
+  directly — the one case where an argument widens rather than narrows.
+- **Tags** (e.g. `[test]`) → always a tag-intersection filter (`filter_models`); narrows the
+  derived set, never widens it. Variants with no tags are excluded under tag filtering.
 - **`--all`** → bypass branch-diff narrowing; fall back to the full support matrix at/above
   `--min-support working`, optionally tag-filtered. Precedence: `--all` > explicit
-  model/tag filter > branch-diff set.
+  model/tag filter > branch-diff set. **This is the only thing that widens past the model under
+  development** — a shared-infra edit never auto-triggers it (see "Derive the target model
+  set"). For the categorical pipeline's all-model byte-identity sweep, use `/retest-categorical`
+  instead.
 - **`--no-perf`** → skip Phase 6.
 - **`--no-review`** → skip Phase 4.
 - **`--no-comments`** → skip Phase 5.
 - **`--no-semantic`** → within Phase 3, skip the Python equivalence sub-check
-  (`logit_equivalence_test.py`), keeping the FPGA golden gate. **Narrower than `/retest`'s
-  `--no-semantic`** (which skips an entire standalone Phase-4 semantic matrix); here it only
-  skips Phase-3 check 1. Named the same as the `/retest` flag for muscle memory, but the
-  semantics differ — do not assume parity.
+  (`logit_equivalence_test.py`), keeping the FPGA golden gate. **Narrower than
+  `/retest-categorical`'s `--no-semantic`** (which skips an entire standalone Phase-4 semantic
+  matrix); here it only skips Phase-3 check 1. Named the same as the `/retest-categorical` flag
+  for muscle memory, but the semantics differ — do not assume parity.
 - **Empty diff + no `--all`** → report "no model-affecting changes detected" and run only
   Phases 1–2 + 4–5 (build / unit / review / comments). With an empty `CHANGED` the Phase-1
   flavor table has nothing to key on, so **default to `make build-test -j 4`** (the test
@@ -43,13 +49,25 @@ it to Phases 0, 3, and 6.
 # Derive the target model set from the branch (the core generality step)
 
 **Invariant: NO hardcoded model list. The model set is computed every run from the diff.**
-Run this before Phase 0, from the worktree root (absolute path; never rely on relative
-cwd):
+
+**Scope = the model this PR stack is advancing, not the full support matrix.** This command is
+for a stack of PRs that adds or fixes support for **one** model (or one arch family). Advancing
+a model always means also touching shared infrastructure — shared export files, base plugins,
+IR passes — but those edits are **supporting**: they do **not** widen the Phase-3
+token-fidelity gate to every sibling model. Resolve "the model under development" from the most
+*specific* signals (a new/changed `config/models.yaml` variant; a changed arch-specific
+`ingest/export/<arch>_export.py`; or a changed arch-specific `h/tron/plugins/<arch>.hpp`) and
+gate only that. **Never auto-escalate to the whole family or full matrix because a shared file
+changed** — full-matrix HF regression is opt-in via `--all`, and the categorical pipeline's
+all-model byte-identity sweep is a separate command, `/retest-categorical`.
+
+Run this before Phase 0, from the worktree root (absolute path; never rely on relative cwd):
 
 ```bash
 cd <worktree-root>
 BASE=$(git merge-base HEAD main)
-CHANGED=$(git diff --name-only "$BASE"...HEAD)   # three-dot: branch-only changes
+CHANGED=$(git diff --name-only "$BASE"...HEAD)   # three-dot: every commit on this stack since
+                                                 # main — the stack's full contribution
 ```
 
 Map each changed path back to a `models.yaml` `name`/`slug` via these four signals.
@@ -128,13 +146,17 @@ mappings on main (for orientation — re-derive, don't rely on this staying comp
 | `glm4_moe_export.py` | `Glm4MoeMoE` | `glm_4p7` (and GLM-family routing) |
 | shared (`torch_export.py` / `model_patch.py` / `load_model.py` / `moe_ops.py`) | generic path | **all** generated models |
 
-A changed `*_export.py` **not** in the table → select every `source: generated` arch of that
-class's family and treat that family as `--all`. If a shared export file changed, select all
-generated models:
+A changed **arch-specific** `*_export.py` (e.g. `qwen3_next_export.py`) — even one not in the
+table above — names the architecture under development: scope to that arch's `models.yaml`
+model(s). A changed **shared** export file (`torch_export.py` / `model_patch.py` /
+`load_model.py` / `moe_ops.py`) is the generic path under *every* generated model, but editing
+it is the normal cost of landing one model's support — it is **supporting infra, not a fan-out
+trigger**. Do **not** select all generated models from a shared-file edit; keep the gate on the
+model(s) the specific signals named. Only an explicit `--all` enumerates the full generated set:
 
 ```bash
-echo "$CHANGED" | grep -q '^ingest/export/\(torch_export\|model_patch\|load_model\|moe_ops\)\.py$' \
-  && python3 config/model_definitions.py --registry config/models.yaml --list-ingest
+# Under an explicit --all only — enumerate every generated arch for a full-matrix sweep:
+python3 config/model_definitions.py --registry config/models.yaml --list-ingest
 ```
 
 `--list-ingest` prints one line per generated arch:
@@ -159,15 +181,22 @@ real trigger. If a generated plugin is committed, strip the extension to recover
 **The join.** For every collected `name`, expand to runtime slugs; for every `slug` from
 Signal A, resolve its model's runtime slugs. De-dup. Set `MODELS`, recording each runtime
 slug's `(slug, executor, default_weights, tags)` row (needed by Phases 0/3/6). If explicit
-args were given, intersect; if `--all`, replace with the full matrix. A shared-export change
-(Signal B shared row) or a broad base-plugin change (Signal C with wide fan-out) is already
-large — treat it as `--all` for that architecture family.
+args were given, intersect (or, per the rule above, let an explicit model define the set when
+the diff inferred none); if `--all`, replace with the full matrix. **Do not auto-escalate to
+`--all`:** a shared-export edit or a base-plugin edit is the expected footprint of advancing one
+model's support, so `MODELS` stays the model(s) the specific signals named — it does not
+silently expand to the architecture family or the full matrix. A shared-path change *may* affect
+sibling models; flag that in the final report, but verifying them is a deliberate `--all`, not
+the default sweep.
 
 **Empty / unrunnable derived set.** If the join produces zero runnable rows — empty diff with
-no `--all`, or every changed arch is `source: generated` but variant-less (no
-`executors`/`default_weights`) — do **not** report success off Phases 1/2/4/5 alone. Classify
-the overall run **INCOMPLETE** with the explicit reason ("model tracked but not runnable — no
-variant/executor/weights" or "no model-affecting changes"), and say so in the final report.
+no `--all`; every changed arch is `source: generated` but variant-less (no
+`executors`/`default_weights`); or the stack touches **only shared infra** (shared export
+files, IR passes) with no model-specific signal and no explicit model arg — do **not** report
+success off Phases 1/2/4/5 alone. Classify the overall run **INCOMPLETE** with the explicit
+reason ("model tracked but not runnable — no variant/executor/weights", "no model-affecting
+changes", or "shared-infra change with no inferable model — name the model explicitly or pass
+`--all`"), and say so in the final report.
 
 # Operating rules (apply to every phase)
 

@@ -8,29 +8,29 @@ argument-hint: '[model-tag…] [--no-perf] [--no-semantic]'
 > `main` it does **not** apply: `make build-categorical` is not a make target,
 > `t/t_generate_categorical_fpga_real.cpp`, `bin/ci/categorical_logit_matrix.sh`,
 > `categorical_logit_test.py`, the `--strict-top1` flag, and the `categorical-*` slugs are all
-> absent. On `main`, use **`/retest-this`** (the HF-oracle general battery) instead. Every
-> target/binary/flag below is named relative to the categorical branch; `/retest-this` line
+> absent. On `main`, use **`/retest`** (the HF-oracle general battery) instead. Every
+> target/binary/flag below is named relative to the categorical branch; `/retest` line
 > "`make build-categorical` is not a target in main" is correct *for main* and not in conflict
 > once this precondition is honored. Phase 1 should assert the target exists and abort with
 > this message otherwise (e.g. `make -n build-categorical >/dev/null 2>&1 || { echo "not on
-> the categorical branch — use /retest-this"; exit 2; }`).
+> the categorical branch — use /retest"; exit 2; }`).
 
 Confirm the categorical ingest pipeline is still a byte-for-byte drop-in for the legacy
 ingest path with no performance regression. Work the phases in order, tracking each with
 your task tool. **Do not stop at the first failure** — finish the sweep and emit one
 consolidated result table at the end.
 
-# This is the categorical specialization of `/retest-this`
+# This is the categorical specialization of `/retest`
 
-`/retest` is the **categorical specialization** of `/retest-this`. Run the shared grunt-work
-via `/retest-this` (it owns the general operating rules, the generic Known-traps, the
+`/retest-categorical` is the **categorical specialization** of `/retest`. Run the shared grunt-work
+via `/retest` (it owns the general operating rules, the generic Known-traps, the
 weights-provisioning machinery, the three unit-test layers, the isolated one-TEST_CASE
 runner, the generic perf methodology, and the review/comment phases), then apply the
 categorical overrides below. This is a **documentation-style delegation** — there is no
 machine handoff or argument forwarding; read both docs and apply the overrides by hand.
-**Where `/retest-this` and this doc conflict, this doc wins for categorical runs.**
+**Where `/retest` and this doc conflict, this doc wins for categorical runs.**
 
-| `/retest-this` general | `/retest` categorical override |
+| `/retest` general | `/retest-categorical` categorical override |
 |---|---|
 | Source of truth = HF transformers forward pass (TVD/top-K/decoded-tokens) | **Legacy ingest path; bit-exact last-prompt-token logits** (`require_byte_identical`, 100%) |
 | Comparison binary chosen per derived set | **`gen/t_generate_categorical_fpga_real`** |
@@ -44,15 +44,24 @@ machine handoff or argument forwarding; read both docs and apply the overrides b
 The two docs deliberately differ in two places that bite an operator who read one and acts in
 the other:
 
-- **Phase numbering is off by one for perf.** In `/retest-this`, code review is Phase 4 and
+- **Phase numbering is off by one for perf.** In `/retest`, code review is Phase 4 and
   perf is Phase 6. Here, Phase 4 is the categorical semantic gate and **Phase 5 is perf** —
-  so when this doc says "use the `/retest-this` Phase-6 perf methodology," that maps onto
-  **this doc's Phase 5**. And "Phase 4" means code-review in `/retest-this` but the semantic
+  so when this doc says "use the `/retest` Phase-6 perf methodology," that maps onto
+  **this doc's Phase 5**. And "Phase 4" means code-review in `/retest` but the semantic
   logit matrix here.
-- **`--no-semantic` means different things.** In `/retest-this` it skips only a *sub-check
+- **`--no-semantic` means different things.** In `/retest` it skips only a *sub-check
   inside Phase 3* (the Python equivalence run). Here it skips **all of Phase 4** (the entire
   categorical semantic matrix). They gate structurally different work; do not treat them as
   the same flag.
+
+**Scope contrast with `/retest` (the reason this is a separate command).** `/retest` narrows
+the token-fidelity gate to the *single* model its PR stack is advancing. This command does the
+opposite **on purpose**: the categorical pipeline must be a byte-exact drop-in for the legacy
+path on **every** supported model, so Phase 3 sweeps the **full categorical roster** — the
+fixed eight-model Phase-0 table, which is every model `t_generate_categorical_fpga_real`
+compiles in — with **no** branch-diff narrowing. A tag filter only *subsets* that roster for a
+quick local run; the ship gate is always all supported models. (Keep the roster aligned with
+the `ModelDef` table in `t/t_generate_categorical_fpga_real.cpp`.)
 
 # Arguments (`$ARGUMENTS`)
 
@@ -61,12 +70,12 @@ the other:
   logit matrix) is NOT narrowed by a tag filter** — it always runs the full non-MoE matrix
   regardless of which tags you pass.
 - `--no-perf` → skip Phase 5. `--no-semantic` → skip Phase 4 (the whole categorical semantic
-  matrix; see the note above on how this differs from `/retest-this`'s `--no-semantic`).
+  matrix; see the note above on how this differs from `/retest`'s `--no-semantic`).
 
 # Operating rules
 
-Use the `/retest-this` **Operating rules** verbatim (Nix shell wrapper, `-j 4` max, executor
-selection, the `/opt/positron/weights/...` read-only / `/tmp/retest_weights/<repo>` fallback,
+Use the `/retest` **Operating rules** verbatim (Nix shell wrapper, `-j 4` max, executor
+selection, the `/opt/positron/weights/...` read-only / `/tmp/retest-categorical_weights/<repo>` fallback,
 one-TEST_CASE-per-process for FPGA, background long jobs, the distinct
 `PASS / SKIPPED / QUARANTINED / DIVERGE` states), with two categorical specializations:
 
@@ -79,7 +88,7 @@ one-TEST_CASE-per-process for FPGA, background long jobs, the distinct
 
 # Known traps
 
-Use the `/retest-this` **Known traps** for the generic rows (fetcher-cache, stale CMake
+Use the `/retest` **Known traps** for the generic rows (fetcher-cache, stale CMake
 graph, wrong-weights-dir, multi-case-vs-solo, HBM instance overflow, stale-HBM operator
 reset, the #2808 MoE-synthetic-prompt SIGABRT). Two categorical-specific traps (categorical
 branch only — these paths/targets do not exist on main):
@@ -91,7 +100,7 @@ branch only — these paths/targets do not exist on main):
 
 # Phase 0 — Provision weights + pre-warm cache (mandatory)
 
-Use the `/retest-this` Phase-0 machinery (the `WEIGHTS_ROOT`/`SCRATCH_ROOT`/`CACHE_ROOT`
+Use the `/retest` Phase-0 machinery (the `WEIGHTS_ROOT`/`SCRATCH_ROOT`/`CACHE_ROOT`
 fallback, `bin/get_model REPO --to DIR`, the pre-warm loop, the ≥30-min Phase-3 timeout note)
 but with the **fixed eight-model categorical roster**, not a branch-derived set:
 
@@ -99,7 +108,7 @@ but with the **fixed eight-model categorical roster**, not a branch-derived set:
 nix develop --command bash -c '
 set -uo pipefail
 WEIGHTS_ROOT=/opt/positron/weights/huggingface
-SCRATCH_ROOT=/tmp/retest_weights
+SCRATCH_ROOT=/tmp/retest-categorical_weights
 CACHE_ROOT=/opt/positron/weights_cache/cached
 # (huggingface-repo, default-tp-slug) — keep aligned with the ModelDef table in
 # t/t_generate_categorical_fpga_real.cpp.
@@ -120,14 +129,14 @@ for entry in "${MODELS[@]}"; do
   else echo "  downloading: $repo"; python3 bin/get_model "$repo" --to "$SCRATCH_ROOT/$repo" \
          || echo "    DOWNLOAD-FAILED $repo (private/positron-internal repos must be pre-populated by ops)"; fi
 done
-printf "x\n" > /tmp/retest_warmup_prompt.txt
+printf "x\n" > /tmp/retest-categorical_warmup_prompt.txt
 for entry in "${MODELS[@]}"; do
   slug="${entry##* }"
   find "$CACHE_ROOT" -maxdepth 3 -type d -name "$(basename "${entry%% *}")" -print -quit 2>/dev/null | grep -q . \
     && { echo "  warm: $slug"; continue; }
   echo "  prewarming: $slug"
   SYSTEM_CONFIG="--instance 0,1" timeout 600 gen/runtron stream-generate-text \
-    --model "$slug" -f /tmp/retest_warmup_prompt.txt \
+    --model "$slug" -f /tmp/retest-categorical_warmup_prompt.txt \
     --prompt-length 4 --length 1 --temperature 0 --pay-for-determinism --seed 42 \
     >/dev/null 2>&1 || echo "    PREWARM-FAILED: $slug (Phase 3 will be slow)"
 done
@@ -148,7 +157,7 @@ Regenerates every categorical + legacy plugin and `gen/t_generate_categorical_fp
 precondition at the top). Assert it before building:
 ```
 nix develop --command bash -c 'make -n build-categorical >/dev/null 2>&1' \
-  || { echo "make build-categorical absent — not on the categorical branch; use /retest-this"; exit 2; }
+  || { echo "make build-categorical absent — not on the categorical branch; use /retest"; exit 2; }
 ```
 Require exit 0 and zero `error:` lines. If `gen/` is corrupt from a prior non-Nix `make`,
 `rm -rf gen` and rebuild. (Stale-graph and stale-plugin recovery: see Known traps.)
@@ -161,7 +170,7 @@ nix develop --command bash -c 'make build-test -j 4 && make test-host'          
 ```
 All must pass, including the typed-pipeline byte-identity MD5 baselines. Never weaken or skip
 a failing test — fix the root cause. If a baseline digest legitimately changed because emitter
-output changed, update it deliberately and say why. (See `/retest-this` Phase 2 for the
+output changed, update it deliberately and say why. (See `/retest` Phase 2 for the
 shared discipline; the categorical run does not need the FPGA `make test-ingest` layer.)
 
 # Phase 3 — FPGA byte-exact parity (headline gate)
@@ -170,8 +179,8 @@ shared discipline; the categorical run does not need the FPGA `make test-ingest`
 counterpart on identical weights/prompt/seed/executor with `pay_for_determinism=true`, via the
 in-process C++ API `generate(model, prompt, max_steps=0, …)` with `LogitsMode::LAST`, asserting
 **bit-exact last-prompt-token logits**. (Generated-token parity over a full decode is Phase 5.)
-The oracle is the **legacy ingest pipeline**, not HuggingFace — this is where `/retest`
-diverges from `/retest-this`, whose Phase 3 gates against HF.
+The oracle is the **legacy ingest pipeline**, not HuggingFace — this is where `/retest-categorical`
+diverges from `/retest`, whose Phase 3 gates against HF.
 
 Model → executor: `[llama-3.2-1b]` tp1·16L, `[llama-3.1-8b]` tp1·32L, `[phi-4]` tp1·40L,
 `[chinese-alpaca-2-7b]` tp1·32L, `[mixtral-8x7b]` tp4·32L, `[gpt-oss-20b]` tp4·24L,
@@ -182,10 +191,17 @@ real-text cases). The `[long]` cases catch seq-len-dependent emitter bugs (KV-ca
 attention chunking, visit-order) the 4-token oracle misses. **A `[long]` DIVERGE on a model whose
 4-token case passes is a real bug** — do not excuse it. (These tags exist in
 `t_generate_categorical_fpga_real` on the categorical branch; they do **not** exist in main's
-`t_generate_ingest_1`, which is why `/retest-this` does not gate on `[long]`.)
+`t_generate_ingest_1`, which is why `/retest` does not gate on `[long]`.)
 
-**Isolated sweep runner — one TEST_CASE per process by exact name** (enumerates exact names per
-filter via `--list-tests`, so a `[long]` filter can't pull many cases into one process):
+**Isolated sweep runner — one TEST_CASE per process** (each model's oracle + its
+`[long]`/`[realistic]` cases run in their own processes). The oracle is selected by **tag
+exclusion** `[model]~[long]`, NOT by a name pulled from `--list-tests`: Catch2 wraps/truncates
+the oracle's long `"(full N layers, real …)"` name in the listing, so a name extracted from it
+silently fails to match and the case never runs (a real bug observed in practice — it showed up
+as `rc=2` "No tests ran"). The shorter `[long]`/`[realistic]` names list cleanly, so those run
+by name. A transient FPGA/hugepages contention (`Environment setup failed`, `DEBUG EXIT`, lock)
+is retried up to 3× before being reported, and `No tests ran` is surfaced as NO-MATCH rather
+than silently counted as a failure.
 
 ```bash
 #!/usr/bin/env bash
@@ -193,34 +209,49 @@ set -uo pipefail
 set -f   # noglob: Catch2 tags are bracket-globs ([phi-4]); unquoted they expand against cwd
          # dirs (h/, t/) and mangle phi-4/chinese-alpaca/mixtral into single-char tags.
 BIN=./gen/t_generate_categorical_fpga_real
-LOGDIR=/tmp/retest_fpga_logs; mkdir -p "$LOGDIR"
+LOGDIR=/tmp/retest-categorical_fpga_logs; mkdir -p "$LOGDIR"
 [ -x "$BIN" ] || { echo "FATAL: $BIN missing — run Phase 1 first (categorical branch only)"; exit 2; }
 "$BIN" --list-tests >/dev/null 2>&1 || { echo "FATAL: test binary won't list tests"; exit 2; }
 if [ "$#" -gt 0 ]; then FILTERS="$*"; else
   FILTERS="[llama-3.2-1b] [llama-3.1-8b] [phi-4] [chinese-alpaca-2-7b] [mixtral-8x7b] [gpt-oss-20b] [gpt-oss-120b] [qwen-2.5-32b]"
 fi
-NAMES=()
+# Build per-process run items. Oracle: tag-exclusion [model]~[long] (the one case
+# lacking [long]) — avoids extracting the oracle's long, Catch2-wrapped name.
+# [long]/[realistic]: short names list cleanly, so enumerate them by name from
+# [model][long]. Each item runs in its own process.
+ITEMS=()   # tab-separated "selector<TAB>label"; selector is a tag-expr or exact name
 for f in $FILTERS; do
-  matched=$("$BIN" --list-tests "$f" 2>/dev/null | awk '/^  Categorical/ {sub(/^  /,""); print}')
-  [ -n "$matched" ] && while IFS= read -r line; do NAMES+=("$line"); done <<< "$matched"
+  base="${f%]}"                                # "[llama-3.2-1b]" -> "[llama-3.2-1b"
+  ITEMS+=("${f}~[long]"$'\t'"${f}-oracle")     # oracle, by tag exclusion
+  while IFS= read -r nm; do
+    [ -n "$nm" ] && ITEMS+=("$nm"$'\t'"$nm")   # [long]/[realistic], by (short) name
+  done < <("$BIN" --list-tests "${base}][long]" 2>/dev/null | awk '/^  Categorical/ {sub(/^  /,""); print}')
 done
-if [ "$#" -gt 0 ] && [ "${#NAMES[@]}" -eq 0 ]; then
+if [ "$#" -gt 0 ] && [ "${#ITEMS[@]}" -eq 0 ]; then
   echo "NO-COVERAGE: filters [$FILTERS] matched zero Categorical TEST_CASEs. INCOMPLETE."; exit 3
 fi
 declare -A SEEN; UNIQ=()
-for n in "${NAMES[@]}"; do [ -z "${SEEN[$n]:-}" ] && { SEEN[$n]=1; UNIQ+=("$n"); }; done
-for name in "${UNIQ[@]}"; do
-  safe=$(printf '%s' "$name" | tr -cd 'a-zA-Z0-9-' | head -c 60); log="$LOGDIR/${safe}.log"
-  start=$(date +%s); timeout 1800 "$BIN" "$name" > "$log" 2>&1; rc=$?; dur=$(( $(date +%s) - start ))
-  # 30-min timeout: cold-cache 120B first-runs spend ~5min populating weights_cache.
-  if   [ $rc -eq 0 ] && grep -q 'SKIPPED' "$log"; then v=SKIPPED
-  elif [ $rc -eq 0 ]; then v=PASS
-  elif [ $rc -eq 124 ]; then v="TIMEOUT(30m)"
-  elif grep -qiE "acquire lock|lock after|device busy|EBUSY" "$log"; then v="LOCK-CONTENTION"
-  elif grep -q "first divergence at position" "$log"; then v="DIVERGE: $(grep -oE '[0-9]+/[0-9]+ positions match' "$log" | head -1)"
-  elif grep -qiE "Failed to open file|No such file" "$log"; then v="WEIGHTS-MISSING"
-  else v="FAIL(rc=$rc)"; fi
-  printf '%-70s  %-18s  (%ds)\n' "$name" "$v" "$dur"
+for it in "${ITEMS[@]}"; do [ -z "${SEEN[$it]:-}" ] && { SEEN[$it]=1; UNIQ+=("$it"); }; done
+for it in "${UNIQ[@]}"; do
+  sel="${it%%$'\t'*}"; label="${it##*$'\t'}"
+  safe=$(printf '%s' "$label" | tr -cd 'a-zA-Z0-9-' | head -c 60)
+  v=""
+  for attempt in 1 2 3; do   # retry transient FPGA/hugepages contention before reporting
+    log="$LOGDIR/${safe}_a${attempt}.log"
+    start=$(date +%s); timeout 1800 "$BIN" "$sel" > "$log" 2>&1; rc=$?; dur=$(( $(date +%s) - start ))
+    # 30-min timeout: cold-cache 120B first-runs spend ~5min populating weights_cache.
+    if   [ $rc -eq 0 ] && grep -q 'SKIPPED' "$log"; then v=SKIPPED
+    elif [ $rc -eq 0 ]; then v=PASS
+    elif [ $rc -eq 124 ]; then v="TIMEOUT(30m)"
+    elif grep -q "first divergence at position" "$log"; then v="DIVERGE: $(grep -oE '[0-9]+/[0-9]+ positions match' "$log" | head -1)"
+    elif grep -qiE "Environment setup failed|acquire lock|lock after|device busy|EBUSY|DEBUG EXIT|HBM" "$log"; then v="LOCK-CONTENTION"
+    elif grep -qiE "No tests ran|No test cases matched" "$log"; then v="NO-MATCH (runner/selector bug — report, do NOT count as pass)"
+    elif grep -qiE "Failed to open file|No such file" "$log"; then v="WEIGHTS-MISSING"
+    else v="FAIL(rc=$rc)"; fi
+    if [ "$v" = "LOCK-CONTENTION" ] && [ "$attempt" -lt 3 ]; then sleep 45; continue; fi
+    break
+  done
+  printf '%-70s  %-18s  (%ds)\n' "$label" "$v" "$dur"
   sleep 15   # let tp4 device locks release between cases
 done
 ```
@@ -275,7 +306,7 @@ Dumps a categorical `.py` per model and runs `categorical_logit_test.py --strict
 the HuggingFace reference (allclose + top-1) — the *semantic* gate complementing Phase 3's
 *byte-level* gate. `--strict-top1` is a flag of the **categorical** `categorical_logit_test.py`
 specifically; it is categorical-pipeline-only and does not exist on the legacy/HF reference
-path (which is why `/retest-this` forbids inventing it — confirm its surface with
+path (which is why `/retest` forbids inventing it — confirm its surface with
 `categorical_logit_test.py --help` on the categorical branch). **The matrix excludes all MoE
 models** (Mixtral, GPT-OSS), so MoE currently has no ground-truth check — only
 categorical-vs-legacy byte-identity, which a bug shared by both pipelines would pass. Extend
@@ -285,10 +316,10 @@ regardless of any tag filter** passed in `$ARGUMENTS`.
 # Phase 5 — Performance + decode-token parity — skip if `--no-perf`
 
 Generate through both plugins on the same executor; report perf, and (under `--temperature 0`)
-whether the decoded token sequences match. Use the `/retest-this` **Phase-6** perf methodology
+whether the decoded token sequences match. Use the `/retest` **Phase-6** perf methodology
 (the Phase 3 ≠ Phase-5-here codepath distinction, the TOKID taxonomy, `--instance 0,1`, the
 deterministic flags, the benchmark hygiene, the 5% threshold, `--log-intermediates`
-extraction) — note that `/retest-this`'s Phase 6 is **this doc's Phase 5**; the categorical
+extraction) — note that `/retest`'s Phase 6 is **this doc's Phase 5**; the categorical
 specializations are the dual-slug pairing and the watch-list below.
 
 **Phase 3 ≠ Phase 5 codepath.** Phase 3 is the in-process C++ `generate(max_steps=0)` —
@@ -299,7 +330,7 @@ decode-loop/runtron host path, **not** the emitter.
 **TOKID taxonomy:** (1) Phase-3 PASS + Phase-5 TOKID DIFF on GPT-OSS tp4 → advisory (documented
 multi-token-decode nondeterminism, both pipelines equally). (2) same on any other model → not an
 emitter bug (Phase 3 already proved the prompt path identical); root-cause the decode path
-separately, don't block `/retest`. (3) Phase-3 DIFF → real emitter bug; Phase 3 is the gate.
+separately, don't block `/retest-categorical`. (3) Phase-3 DIFF → real emitter bug; Phase 3 is the gate.
 
 Fixed methodology (don't vary, or numbers aren't comparable):
 - Slugs: categorical = `categorical-$MODEL[-standalone][-tpN]`, legacy = `ingested-$MODEL[-tpN]`
