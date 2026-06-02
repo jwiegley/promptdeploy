@@ -72,3 +72,23 @@ def test_dump_swallows_unlink_failure_and_reraises(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "unlink", boom_unlink)
     with pytest.raises(RuntimeError, match="replace failed"):
         dump_settings_doc(doc, path)
+
+
+def test_read_live_settings_strips_hooks_and_mcp(tmp_path):
+    import json
+    from promptdeploy.config import TargetConfig
+    from promptdeploy.settings_sync import read_live_settings
+
+    tgt = tmp_path / "claude-x"
+    tgt.mkdir()
+    (tgt / "settings.json").write_text(
+        json.dumps(
+            {
+                "effortLevel": "low",
+                "hooks": {"Stop": [1]},
+                "mcpServers": {"pal": {}},
+            }
+        )
+    )
+    tc = TargetConfig(id="claude-x", type="claude", path=tgt)
+    assert read_live_settings(tc) == {"effortLevel": "low"}

@@ -11,8 +11,14 @@ import io
 import os
 import tempfile
 from pathlib import Path
+from typing import Any, Dict
 
 from ruamel.yaml import YAML
+
+from .settings import strip_keys
+from .targets import create_target
+
+_MANAGED_ELSEWHERE = {"hooks", "mcpServers"}
 
 
 def _yaml() -> YAML:
@@ -47,3 +53,18 @@ def dump_settings_doc(doc, path: Path) -> None:
         except OSError:
             pass
         raise
+
+
+def read_live_settings(target_config) -> Dict[str, Any]:
+    """Return a target's live settings.json minus hooks/mcpServers.
+
+    Pulls remote state via the target's prepare()/cleanup() lifecycle (rsync for
+    remote targets, no-op locally) and reads through the public accessor.
+    """
+    target = create_target(target_config)
+    try:
+        target.prepare()
+        raw = target.read_settings_json()
+    finally:
+        target.cleanup()
+    return strip_keys(raw, _MANAGED_ELSEWHERE)
