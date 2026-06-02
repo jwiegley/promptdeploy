@@ -119,6 +119,91 @@ def validate_all(config: Config) -> List[ValidationIssue]:
                 )
             )
 
+    issues.extend(validate_settings(config))
+
+    return issues
+
+
+def validate_settings(config: Config) -> List[ValidationIssue]:
+    """Validate settings.yaml structure and override targeting."""
+    path = config.source_root / "settings.yaml"
+    if not path.exists():
+        return []
+    issues: List[ValidationIssue] = []
+    try:
+        doc = yaml.safe_load(path.read_text("utf-8"))
+    except yaml.YAMLError as exc:
+        return [ValidationIssue("error", f"settings.yaml: {exc}", path)]
+    if doc is None:
+        return []
+    if not isinstance(doc, dict):
+        return [
+            ValidationIssue("error", "settings.yaml: top level must be a mapping", path)
+        ]
+
+    known = set(config.targets) | set(config.groups)
+
+    base = doc.get("base")
+    if base is not None and not isinstance(base, dict):
+        issues.append(
+            ValidationIssue("error", "settings.yaml: 'base' must be a mapping", path)
+        )
+        base = None
+
+    def _check_section(section: dict, where: str) -> None:
+        for key in ("hooks", "mcpServers"):
+            if key in section:
+                issues.append(
+                    ValidationIssue(
+                        "warning",
+                        f"settings.yaml: '{key}' in {where} is ignored "
+                        f"(managed by {'hooks/' if key == 'hooks' else 'mcp/'})",
+                        path,
+                    )
+                )
+
+    if isinstance(base, dict):
+        _check_section(base, "base")
+        for k, v in base.items():
+            if v is None:
+                issues.append(
+                    ValidationIssue(
+                        "warning",
+                        f"settings.yaml: 'base.{k}' is null and will be stripped "
+                        f"(null deletes only inside overrides)",
+                        path,
+                    )
+                )
+
+    overrides = doc.get("overrides")
+    if overrides is not None:
+        if not isinstance(overrides, dict):
+            issues.append(
+                ValidationIssue(
+                    "error", "settings.yaml: 'overrides' must be a mapping", path
+                )
+            )
+        else:
+            for ov_key, ov_val in overrides.items():
+                if ov_key not in known:
+                    issues.append(
+                        ValidationIssue(
+                            "error",
+                            f"settings.yaml: override key '{ov_key}' is not a known "
+                            f"target id or group",
+                            path,
+                        )
+                    )
+                if ov_val is not None and not isinstance(ov_val, dict):
+                    issues.append(
+                        ValidationIssue(
+                            "error",
+                            f"settings.yaml: override '{ov_key}' must be a mapping",
+                            path,
+                        )
+                    )
+                elif isinstance(ov_val, dict):
+                    _check_section(ov_val, f"overrides.{ov_key}")
     return issues
 
 

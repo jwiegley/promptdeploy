@@ -1096,3 +1096,137 @@ class TestValidationIssue:
             level="warning", message="warn", file_path=Path("/tmp/x")
         )
         assert issue.line is None
+
+
+def _cfg_with(tmp_path, settings_yaml: str):
+    from promptdeploy.config import Config, TargetConfig
+
+    (tmp_path / "settings.yaml").write_text(settings_yaml)
+    tc = TargetConfig(
+        id="claude-positron",
+        type="claude",
+        path=tmp_path / "p",
+        labels=["claude", "positron"],
+    )
+    return Config(
+        source_root=tmp_path,
+        targets={tc.id: tc},
+        groups={"positron": ["claude-positron"], "claude": ["claude-positron"]},
+    )
+
+
+def test_validate_settings_ok(tmp_path):
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(
+        tmp_path,
+        "base:\n  effortLevel: low\noverrides:\n  claude-positron:\n    model: sonnet\n",
+    )
+    issues = [i for i in validate_all(cfg) if "settings.yaml" in str(i.file_path)]
+    assert issues == []
+
+
+def test_validate_settings_unknown_override_key_errors(tmp_path):
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "base: {}\noverrides:\n  nope-target:\n    model: x\n")
+    msgs = [i.message for i in validate_all(cfg) if i.level == "error"]
+    assert any("nope-target" in m for m in msgs)
+
+
+def test_validate_settings_hooks_in_base_warns(tmp_path):
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "base:\n  hooks:\n    Stop: []\n")
+    warns = [
+        i for i in validate_all(cfg) if i.level == "warning" and "hooks" in i.message
+    ]
+    assert warns
+
+
+def test_validate_settings_null_in_base_warns(tmp_path):
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "base:\n  effortLevel: null\n")
+    assert any(
+        i.level == "warning" and "null" in i.message.lower() for i in validate_all(cfg)
+    )
+
+
+def test_validate_settings_non_dict_base_errors(tmp_path):
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "base:\n  - 1\n  - 2\n")
+    assert any(i.level == "error" for i in validate_all(cfg))
+
+
+def test_validate_settings_group_key_accepted(tmp_path):
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "base: {}\noverrides:\n  positron:\n    model: x\n")
+    assert [
+        i for i in validate_all(cfg) if i.level == "error" and "positron" in i.message
+    ] == []
+
+
+# --- branch-coverage tests for the structural guards (each hits a distinct
+# --- statement in validate_settings; required for the 100% line gate) ---
+
+
+def test_validate_settings_malformed_yaml_errors(tmp_path):
+    # Unparseable YAML -> the `except yaml.YAMLError` early return.
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "base: [unclosed\n")
+    issues = [
+        i
+        for i in validate_all(cfg)
+        if i.level == "error" and "settings.yaml" in str(i.file_path)
+    ]
+    assert issues
+
+
+def test_validate_settings_empty_file_no_issues(tmp_path):
+    # Comment-only / empty doc -> `if doc is None: return []` (no settings issue).
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "# just a comment\n")
+    assert [i for i in validate_all(cfg) if "settings.yaml" in str(i.file_path)] == []
+
+
+def test_validate_settings_top_level_list_errors(tmp_path):
+    # Whole document is a list (not a mapping) -> the top-level not-a-dict error.
+    # NOTE: test_validate_settings_non_dict_base_errors makes only `base` a list,
+    # leaving `doc` a dict, so it does NOT cover this branch.
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "- a\n- b\n")
+    assert any(
+        i.level == "error" and "top level must be a mapping" in i.message
+        for i in validate_all(cfg)
+    )
+
+
+def test_validate_settings_non_dict_overrides_errors(tmp_path):
+    # `overrides` present but a scalar -> the `'overrides' must be a mapping` error.
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "overrides: 5\n")
+    assert any(
+        i.level == "error" and "'overrides' must be a mapping" in i.message
+        for i in validate_all(cfg)
+    )
+
+
+def test_validate_settings_non_dict_override_value_errors(tmp_path):
+    # An override value that is a scalar -> the per-override `must be a mapping`
+    # error. Key is a known id so the unknown-key error does not mask the shape one.
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "overrides:\n  claude-positron: 5\n")
+    assert any(
+        i.level == "error"
+        and "must be a mapping" in i.message
+        and "claude-positron" in i.message
+        for i in validate_all(cfg)
+    )
