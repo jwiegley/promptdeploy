@@ -46,6 +46,7 @@ class SourceDiscovery:
         yield from self.discover_models()
         yield from self.discover_hooks()
         yield from self.discover_prompts()
+        yield from self.discover_settings()
 
     def discover_prompts(self) -> Iterator[SourceItem]:
         """Discover prompts from prompts/*.{poet,j2,jinja,jinja2,txt,md,org,json}."""
@@ -163,6 +164,26 @@ class SourceDiscovery:
             item_type="models",
             name="models",
             path=models_path,
+            metadata=metadata,
+            content=content,
+        )
+
+    def discover_settings(self) -> Iterator[SourceItem]:
+        """Discover the singleton settings master from settings.yaml."""
+        settings_path = self.source_root / "settings.yaml"
+        if not settings_path.exists():
+            return
+        content = settings_path.read_bytes()
+        try:
+            metadata = yaml.safe_load(content)
+        except yaml.YAMLError:
+            metadata = None
+        if not isinstance(metadata, dict):
+            metadata = None
+        yield SourceItem(
+            item_type="settings",
+            name="settings",
+            path=settings_path,
             metadata=metadata,
             content=content,
         )

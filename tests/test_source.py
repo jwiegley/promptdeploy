@@ -686,3 +686,41 @@ class TestDiscoverHooks:
         assert len(hooks) == 1
         assert hooks[0].name == "scalar"
         assert hooks[0].metadata is None
+
+
+def test_discover_settings_yields_singleton(tmp_path):
+    from promptdeploy.source import SourceDiscovery
+
+    (tmp_path / "settings.yaml").write_text(
+        "base:\n  effortLevel: low\noverrides:\n  claude-positron:\n    model: sonnet\n"
+    )
+    items = list(SourceDiscovery(tmp_path).discover_settings())
+    assert len(items) == 1
+    it = items[0]
+    assert it.item_type == "settings"
+    assert it.name == "settings"
+    assert it.metadata["base"]["effortLevel"] == "low"
+
+
+def test_discover_settings_absent_yields_nothing(tmp_path):
+    from promptdeploy.source import SourceDiscovery
+
+    assert list(SourceDiscovery(tmp_path).discover_settings()) == []
+
+
+def test_discover_settings_invalid_yaml(tmp_path):
+    from promptdeploy.source import SourceDiscovery
+
+    (tmp_path / "settings.yaml").write_bytes(b"not: valid: yaml: [broken\n")
+    items = list(SourceDiscovery(tmp_path).discover_settings())
+    assert len(items) == 1
+    assert items[0].metadata is None
+
+
+def test_discover_settings_non_dict_yaml(tmp_path):
+    from promptdeploy.source import SourceDiscovery
+
+    (tmp_path / "settings.yaml").write_bytes(b"just a string\n")
+    items = list(SourceDiscovery(tmp_path).discover_settings())
+    assert len(items) == 1
+    assert items[0].metadata is None
