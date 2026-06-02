@@ -25,7 +25,16 @@ def main():
     deploy_parser.add_argument(
         "--only-type",
         action="append",
-        choices=["agents", "commands", "skills", "mcp", "models", "hooks", "prompts"],
+        choices=[
+            "agents",
+            "commands",
+            "skills",
+            "mcp",
+            "models",
+            "hooks",
+            "prompts",
+            "settings",
+        ],
         help="Only deploy specific item types",
     )
     deploy_parser.add_argument("--verbose", action="store_true", help="Verbose output")
@@ -239,6 +248,7 @@ def _run_list(args):
                 "models": "Models",
                 "hooks": "Hooks",
                 "prompts": "Prompts",
+                "settings": "Settings",
             }
             for category in (
                 "agents",
@@ -248,6 +258,7 @@ def _run_list(args):
                 "models",
                 "hooks",
                 "prompts",
+                "settings",
             ):
                 items = manifest.items.get(category, {})
                 if not items:

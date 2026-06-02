@@ -175,6 +175,27 @@ class TestRunListIntegration:
         assert "Hooks:" in captured.out
         assert "my-hook" in captured.out
 
+    def test_cli_list_shows_settings(self, tmp_path: Path, capsys, monkeypatch) -> None:
+        """A deployed settings item appears under a Settings label."""
+        src = tmp_path / "source"
+        src.mkdir()
+        (src / "settings.yaml").write_text("base:\n  effortLevel: low\n")
+        tc = _make_claude_target(tmp_path, "settings-target")
+        config = _make_config(src, {tc.id: tc})
+        deploy(config)
+
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        import argparse
+        from promptdeploy.cli import _run_list
+
+        args = argparse.Namespace(target=None, target_root=None)
+        _run_list(args)
+
+        captured = capsys.readouterr()
+        assert "Settings:" in captured.out
+        assert "settings" in captured.out
+
     def test_cli_list_not_installed(self, tmp_path: Path, capsys, monkeypatch) -> None:
         src = _make_source(tmp_path)
         tc = TargetConfig(id="ghost", type="claude", path=tmp_path / "nope")
