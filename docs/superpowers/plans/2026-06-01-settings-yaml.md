@@ -32,7 +32,7 @@
 - `src/promptdeploy/targets/base.py` — default no-op `deploy_settings`/`remove_settings`, default `read_settings_json` → `{}`.
 - `src/promptdeploy/targets/claude.py` — implement the three methods.
 - `src/promptdeploy/targets/droid.py`, `targets/opencode.py` — `should_skip` skips `settings`.
-- `src/promptdeploy/targets/remote.py` — delegate `read_settings_json`.
+- `src/promptdeploy/targets/remote.py` — delegate all three settings methods (`deploy_settings`, `remove_settings`, `read_settings_json`) to the inner target (RemoteTarget is exhaustive delegation, not inheritance).
 - `src/promptdeploy/deploy.py` — type maps; dedicated `settings` deploy branch; `_remove_item` routing.
 - `src/promptdeploy/status.py` — add `settings` (and missing `prompt`) to its `_TYPE_TO_CATEGORY`.
 - `src/promptdeploy/cli.py` — `--only-type settings`; `list` labels/iteration; `settings` subcommand group.
@@ -772,48 +772,79 @@ git add src/promptdeploy/targets/droid.py src/promptdeploy/targets/opencode.py t
 git commit -m "feat(targets): droid and opencode skip the settings item"
 ```
 
-### Task 2.6: `RemoteTarget` delegates `read_settings_json`
+### Task 2.6: `RemoteTarget` delegates the three settings methods
 
 **Files:**
-- Modify: `src/promptdeploy/targets/remote.py` (add a delegating method alongside the others)
+- Modify: `src/promptdeploy/targets/remote.py` (add three delegating methods alongside the others)
 - Test: `tests/test_remote_target.py`
 
-- [ ] **Step 1: Write the failing test** — use the file's existing `MagicMock` inner convention (the real ctor is `RemoteTarget(inner, host, remote_path, staging_path)`; `tests/test_remote_target.py` already builds one with a `MagicMock` inner via keyword args).
+> **Why all three (not just `read_settings_json`):** `RemoteTarget` does **exhaustive delegation** — it overrides *every* `Target` method to forward to `self._inner` (verified in `remote.py`: `deploy_agent`, `remove_agent`, … are all explicit forwards). It does **not** inherit `ClaudeTarget` behavior. So if it only delegates `read_settings_json`, then `deploy_settings`/`remove_settings` fall through to the base **no-ops** added in Task 2.2. The deploy loop's settings branch (Task 3.2) calls `target.deploy_settings(...)` and `_remove_item` calls `target.remove_settings(...)` on whatever `create_target` returned. For the **four remote claude targets** in `deploy.yaml` (`claude-git-ai-remote`/host git-ai, `claude-vulcan`/host vulcan, `claude-vps`/host vps, `claude-andoria`/host andoria-08), `create_target` returns a `RemoteTarget` wrapping a `ClaudeTarget`. Without these two extra delegations, settings.json is **silently never written or removed on any remote host** — and the 100% line gate would not catch it (no test deploys settings through a `RemoteTarget`).
+
+- [ ] **Step 1: Write the failing tests** — use the file's existing `MagicMock` inner convention (the real ctor is `RemoteTarget(inner, host, remote_path, staging_path)`; `tests/test_remote_target.py` already builds one with a `MagicMock` inner via keyword args).
 
 ```python
-def test_read_settings_json_delegates_to_inner():
+def _make_remote(inner):
     from pathlib import Path
-    from unittest.mock import MagicMock
     from promptdeploy.targets.remote import RemoteTarget
 
-    inner = MagicMock()
-    inner.read_settings_json.return_value = {"model": "x"}
-    remote = RemoteTarget(
+    return RemoteTarget(
         inner=inner,
         host="user@host",
         remote_path=Path("/remote/target"),
         staging_path=Path("/staging"),
     )
+
+
+def test_read_settings_json_delegates_to_inner():
+    from unittest.mock import MagicMock
+
+    inner = MagicMock()
+    inner.read_settings_json.return_value = {"model": "x"}
+    remote = _make_remote(inner)
     assert remote.read_settings_json() == {"model": "x"}
     inner.read_settings_json.assert_called_once_with()
+
+
+def test_deploy_settings_delegates_to_inner():
+    from unittest.mock import MagicMock
+
+    inner = MagicMock()
+    remote = _make_remote(inner)
+    remote.deploy_settings({"model": "x"}, ["model"])
+    inner.deploy_settings.assert_called_once_with({"model": "x"}, ["model"])
+
+
+def test_remove_settings_delegates_to_inner():
+    from unittest.mock import MagicMock
+
+    inner = MagicMock()
+    remote = _make_remote(inner)
+    remote.remove_settings(["model", "env"])
+    inner.remove_settings.assert_called_once_with(["model", "env"])
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [ ] **Step 2: Run to verify they fail**
 
-Run: `PYTHONPATH=src python -m pytest tests/test_remote_target.py::test_read_settings_json_delegates_to_inner -v`
-Expected: FAIL — without the delegating override, `RemoteTarget` inherits the base `read_settings_json` (returns `{}`), so the assertion `{} == {"model": "x"}` fails (and `assert_called_once_with` fails, since the inner is never consulted).
+Run: `PYTHONPATH=src python -m pytest tests/test_remote_target.py -k settings -v`
+Expected: FAIL — without the delegating overrides, `RemoteTarget` inherits the base `read_settings_json` (returns `{}`, so `{} == {"model": "x"}` fails) and the base no-op `deploy_settings`/`remove_settings` (the inner is never consulted, so `assert_called_once_with` fails).
 
 - [ ] **Step 3: Implement** — in `RemoteTarget`, next to the other delegations (e.g. `rsync_includes`):
 
 ```python
+    def deploy_settings(self, rendered: dict, previous_keys: list[str]) -> None:
+        self._inner.deploy_settings(rendered, previous_keys)
+
+    def remove_settings(self, previous_keys: list[str]) -> None:
+        self._inner.remove_settings(previous_keys)
+
     def read_settings_json(self) -> dict:
         return self._inner.read_settings_json()
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [ ] **Step 4: Run to verify they pass**
 
-Run: `PYTHONPATH=src python -m pytest tests/test_remote_target.py::test_read_settings_json_delegates_to_inner -v`
-Expected: PASS.
+Run: `PYTHONPATH=src python -m pytest tests/test_remote_target.py -k settings -v`
+Expected: PASS (3 tests).
 
 - [ ] **Step 5: Full chunk check + commit**
 
@@ -822,7 +853,7 @@ Expected: all pass.
 
 ```bash
 git add src/promptdeploy/targets/remote.py tests/test_remote_target.py
-git commit -m "feat(remote): delegate read_settings_json to inner target"
+git commit -m "feat(remote): delegate settings deploy/remove/read to inner target"
 ```
 
 ---
@@ -1083,7 +1114,7 @@ def _remove_item(
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `PYTHONPATH=src python -m pytest tests/test_deploy.py::TestDeploySettingsItem -v`
-Expected: PASS (8 tests).
+Expected: PASS (7 tests).
 
 - [ ] **Step 5: Full deploy-test check + commit**
 
@@ -1280,6 +1311,53 @@ def test_validate_settings_group_key_accepted(tmp_path):
     cfg = _cfg_with(tmp_path, "base: {}\noverrides:\n  positron:\n    model: x\n")
     assert [i for i in validate_all(cfg) if i.level == "error"
             and "positron" in i.message] == []
+
+
+# --- branch-coverage tests for the structural guards (each hits a distinct
+# --- statement in validate_settings; required for the 100% line gate) ---
+
+def test_validate_settings_malformed_yaml_errors(tmp_path):
+    # Unparseable YAML -> the `except yaml.YAMLError` early return.
+    from promptdeploy.validate import validate_all
+    cfg = _cfg_with(tmp_path, "base: [unclosed\n")
+    issues = [i for i in validate_all(cfg)
+              if i.level == "error" and "settings.yaml" in str(i.file_path)]
+    assert issues
+
+
+def test_validate_settings_empty_file_no_issues(tmp_path):
+    # Comment-only / empty doc -> `if doc is None: return []` (no settings issue).
+    from promptdeploy.validate import validate_all
+    cfg = _cfg_with(tmp_path, "# just a comment\n")
+    assert [i for i in validate_all(cfg) if "settings.yaml" in str(i.file_path)] == []
+
+
+def test_validate_settings_top_level_list_errors(tmp_path):
+    # Whole document is a list (not a mapping) -> the top-level not-a-dict error.
+    # NOTE: test_validate_settings_non_dict_base_errors makes only `base` a list,
+    # leaving `doc` a dict, so it does NOT cover this branch.
+    from promptdeploy.validate import validate_all
+    cfg = _cfg_with(tmp_path, "- a\n- b\n")
+    assert any(i.level == "error" and "top level must be a mapping" in i.message
+               for i in validate_all(cfg))
+
+
+def test_validate_settings_non_dict_overrides_errors(tmp_path):
+    # `overrides` present but a scalar -> the `'overrides' must be a mapping` error.
+    from promptdeploy.validate import validate_all
+    cfg = _cfg_with(tmp_path, "overrides: 5\n")
+    assert any(i.level == "error" and "'overrides' must be a mapping" in i.message
+               for i in validate_all(cfg))
+
+
+def test_validate_settings_non_dict_override_value_errors(tmp_path):
+    # An override value that is a scalar -> the per-override `must be a mapping`
+    # error. Key is a known id so the unknown-key error does not mask the shape one.
+    from promptdeploy.validate import validate_all
+    cfg = _cfg_with(tmp_path, "overrides:\n  claude-positron: 5\n")
+    assert any(i.level == "error" and "must be a mapping" in i.message
+               and "claude-positron" in i.message
+               for i in validate_all(cfg))
 ```
 
 - [ ] **Step 2: Run to verify they fail**
@@ -1353,7 +1431,7 @@ def validate_settings(config: Config) -> List[ValidationIssue]:
     return issues
 ```
 
-Then, in `validate_all`, before `return issues`:
+Then wire it into `validate_all`. Insert immediately **before** the `return issues` at the end of `validate_all` (currently `validate.py:122`, right after the `for target in config.targets.values():` model-validation loop — **not** the `return issues` statements inside `validate_item`):
 
 ```python
     issues.extend(validate_settings(config))
@@ -1477,6 +1555,47 @@ def test_dump_is_atomic_no_tmp_left(tmp_path):
     dump_settings_doc(load_settings_doc(path), path)
     leftovers = [p for p in tmp_path.iterdir() if p.suffix == ".tmp"]
     assert leftovers == []
+
+
+def test_dump_cleans_up_tmp_on_replace_failure(tmp_path, monkeypatch):
+    # Drives the `except BaseException -> os.unlink(tmp)` cleanup branch.
+    # Mirrors tests/test_manifest.py::test_cleanup_on_replace_failure_unlink_fails.
+    import os
+    import pytest
+    path = tmp_path / "settings.yaml"
+    doc = load_settings_doc(path)
+    doc["base"] = {"effortLevel": "low"}
+
+    def boom(_src, _dst):
+        raise OSError("replace failed")
+
+    monkeypatch.setattr(os, "replace", boom)
+    with pytest.raises(OSError):
+        dump_settings_doc(doc, path)
+    # tmp file was unlinked; nothing left behind.
+    assert [p for p in tmp_path.iterdir() if p.suffix == ".tmp"] == []
+
+
+def test_dump_swallows_unlink_failure_and_reraises(tmp_path, monkeypatch):
+    # Drives the inner `except OSError: pass` while the original error propagates:
+    # os.replace raises, then os.unlink ALSO raises -> the unlink OSError is
+    # swallowed and the ORIGINAL replace error is re-raised.
+    import os
+    import pytest
+    path = tmp_path / "settings.yaml"
+    doc = load_settings_doc(path)
+    doc["base"] = {"effortLevel": "low"}
+
+    def boom_replace(_src, _dst):
+        raise RuntimeError("replace failed")
+
+    def boom_unlink(_p):
+        raise OSError("unlink failed too")
+
+    monkeypatch.setattr(os, "replace", boom_replace)
+    monkeypatch.setattr(os, "unlink", boom_unlink)
+    with pytest.raises(RuntimeError, match="replace failed"):
+        dump_settings_doc(doc, path)
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -1558,10 +1677,15 @@ def dump_settings_doc(doc, path: Path) -> None:
         raise
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [ ] **Step 4: Run to verify it passes (with coverage on this module)**
 
 Run: `PYTHONPATH=src python -m pytest tests/test_settings_sync.py -v`
-Expected: PASS (3 tests).
+Expected: PASS (5 tests — 3 happy-path + 2 atomic-write cleanup-branch).
+
+Then confirm the new module is fully covered before committing (the per-commit lefthook pytest hook runs `--cov` with `fail_under=100`, so the atomic-write cleanup block must be exercised now, not later):
+
+Run: `PYTHONPATH=src python -m pytest tests/test_settings_sync.py --cov=promptdeploy.settings_sync --cov-report=term-missing`
+Expected: `settings_sync.py` 100% (no missing lines in the `except BaseException` / `os.unlink` / `except OSError` cleanup block).
 
 - [ ] **Step 5: Commit**
 
@@ -1685,6 +1809,43 @@ def test_init_settings_refuses_existing_without_force(tmp_path):
     out = tmp_path / "settings.yaml"; out.write_text("base: {}\n")
     with pytest.raises(FileExistsError):
         init_settings(config, ["claude-personal"], from_ref=None, out_path=out, force=False)
+
+
+# --- guard-branch tests (each hits one `raise ValueError` statement; required
+# --- at THIS commit because the lefthook per-commit pytest hook enforces the
+# --- 100% line gate — they cannot wait for Task 5.6) ---
+
+def test_init_settings_no_claude_targets_raises(tmp_path):
+    # A selection containing only a non-claude target -> `_claude_target_ids` is
+    # empty -> `raise ValueError("no claude targets selected")`.
+    import json
+    import pytest
+    from promptdeploy.config import Config, TargetConfig
+    from promptdeploy.settings_sync import init_settings
+
+    d = tmp_path / "droid-x"; d.mkdir()
+    (d / "settings.json").write_text(json.dumps({}))
+    tc = TargetConfig(id="droid-x", type="droid", path=d)
+    config = Config(source_root=tmp_path, targets={tc.id: tc}, groups={})
+    out = tmp_path / "settings.yaml"
+    with pytest.raises(ValueError, match="no claude targets"):
+        init_settings(config, ["droid-x"], from_ref=None, out_path=out, force=False)
+
+
+def test_init_settings_from_not_among_targets_raises(tmp_path):
+    # `--from` names a claude target outside the selected set ->
+    # `raise ValueError("--from ... is not among the selected claude targets")`.
+    import pytest
+    from promptdeploy.config import Config
+    from promptdeploy.settings_sync import init_settings
+
+    p = _claude_tc(tmp_path, "claude-personal", {"effortLevel": "low"})
+    q = _claude_tc(tmp_path, "claude-positron", {"effortLevel": "high"})
+    config = Config(source_root=tmp_path, targets={p.id: p, q.id: q}, groups={})
+    out = tmp_path / "settings.yaml"
+    with pytest.raises(ValueError, match="--from"):
+        init_settings(config, ["claude-personal"], from_ref="claude-positron",
+                      out_path=out, force=False)
 ```
 
 - [ ] **Step 2: Run to verify it fails**
@@ -1755,10 +1916,15 @@ from ruamel.yaml.comments import CommentedMap
 
 > Note: this is the single, canonical `init_settings` body — there is no `os.devnull`/`doc` local. The earlier `dump_settings_doc` already handles a non-existent `out_path` (it writes fresh), and the `out_path.exists() and not force` guard at the top covers the overwrite case.
 
-- [ ] **Step 4: Run to verify it passes**
+- [ ] **Step 4: Run to verify it passes (with coverage on this module)**
 
 Run: `PYTHONPATH=src python -m pytest tests/test_settings_sync.py -k init -v`
 Expected: PASS.
+
+Then confirm 100% on the module before committing (the lefthook per-commit pytest hook enforces `fail_under=100`; both `raise ValueError` guards must be exercised by the two guard-branch tests above):
+
+Run: `PYTHONPATH=src python -m pytest tests/test_settings_sync.py --cov=promptdeploy.settings_sync --cov-report=term-missing`
+Expected: `settings_sync.py` 100% (no missing lines on the `if not claude_ids` / `if ref not in claude_ids` guards).
 
 - [ ] **Step 5: Commit**
 
@@ -2082,15 +2248,38 @@ Expected: PASS.
 
 - [ ] **Step 5: Add error-path tests for the handlers, then full-suite + coverage + lint, then commit**
 
-The happy-path CLI test above does not exercise the handlers' `except` (`sys.exit(1)`) branches; the 100% gate needs them. Add two small tests (mirroring the harness of `test_settings_init_and_reconcile_cli`):
+The happy-path CLI test above does not exercise the handlers' `except` (`sys.exit(1)`) branches; the 100% line gate needs them. Add two **fully runnable** tests below — they must drive the handler's `try` body and raise an exception of a **caught** type, so the `except ...: print('ERROR'); sys.exit(1)` block runs (init catches `(FileExistsError, ValueError)`; reconcile catches `(FileNotFoundError, ValueError)`).
+
+A small helper builds the on-disk `deploy.yaml` + chdir that the happy-path test set up inline; factor it so both error-path tests reuse it (or inline the same setup in each):
 
 ```python
+def _write_deploy_yaml(tmp_path, monkeypatch, *, with_settings_yaml: bool):
+    """Create a src/ tree with deploy.yaml (one local claude target) and chdir into it.
+
+    Mirrors the inline setup in test_settings_init_and_reconcile_cli.
+    """
+    import json
+    src = tmp_path / "src"; src.mkdir()
+    p = src.parent / "claude-personal"; p.mkdir()
+    (p / "settings.json").write_text(json.dumps({"effortLevel": "low"}))
+    (src / "deploy.yaml").write_text(
+        "source_root: .\n"
+        "targets:\n"
+        f"  claude-personal:\n    type: claude\n    path: {p}\n    labels: [claude]\n")
+    if with_settings_yaml:
+        (src / "settings.yaml").write_text("base:\n  effortLevel: low\n")
+    monkeypatch.chdir(src)
+    return src
+
+
 def test_settings_init_bad_target_exits(tmp_path, monkeypatch, capsys):
-    # expand_target_arg raises ValueError on an unknown --target -> ERROR + exit 1
+    # `--target nope` -> expand_target_arg raises ValueError (a CAUGHT type)
+    # inside _run_settings_init's try -> ERROR printed + exit 1.
     import pytest
     from promptdeploy import cli
-    # ... build the same deploy.yaml + chdir as the happy-path test ...
-    monkeypatch.setattr("sys.argv", ["promptdeploy", "settings", "init", "--target", "nope"])
+    _write_deploy_yaml(tmp_path, monkeypatch, with_settings_yaml=False)
+    monkeypatch.setattr("sys.argv",
+                        ["promptdeploy", "settings", "init", "--target", "nope"])
     with pytest.raises(SystemExit) as exc:
         cli.main()
     assert exc.value.code == 1
@@ -2098,9 +2287,12 @@ def test_settings_init_bad_target_exits(tmp_path, monkeypatch, capsys):
 
 
 def test_settings_reconcile_missing_yaml_exits(tmp_path, monkeypatch, capsys):
+    # Valid deploy.yaml with one claude target but NO settings.yaml ->
+    # reconcile_settings raises FileNotFoundError (a CAUGHT type) -> exit 1,
+    # message mentions `init`.
     import pytest
     from promptdeploy import cli
-    # ... build deploy.yaml with one claude target, NO settings.yaml, chdir ...
+    _write_deploy_yaml(tmp_path, monkeypatch, with_settings_yaml=False)
     monkeypatch.setattr("sys.argv", ["promptdeploy", "settings", "reconcile"])
     with pytest.raises(SystemExit) as exc:
         cli.main()
@@ -2108,8 +2300,10 @@ def test_settings_reconcile_missing_yaml_exits(tmp_path, monkeypatch, capsys):
     assert "init" in capsys.readouterr().err  # FileNotFoundError message mentions init
 ```
 
+> **Caught-type check:** `--target nope` makes `expand_target_arg` raise `ValueError`, which is in init's `except (FileExistsError, ValueError)` — so the handler converts it to `sys.exit(1)` rather than letting it propagate as an uncaught error. Reconcile with no `settings.yaml` raises `FileNotFoundError`, which is in reconcile's `except (FileNotFoundError, ValueError)`. Both reach the `print('ERROR'); sys.exit(1)` lines. (Note: `load_config()` runs *before* the `try` in both handlers, so the on-disk `deploy.yaml` is required — otherwise `load_config` raises `FileNotFoundError` outside the `try` and the except branch is never reached.)
+
 Run: `PYTHONPATH=src python -m pytest tests/ --cov --cov-report=term-missing`
-Expected: all pass; **100%** coverage. If the report still flags a line, add a focused test (likely candidates already covered by Task 5.5's tests: the `-` diff kind, the `apply`-no-drift no-dump path, and the override-pop branch; and Task 5.4's `init` no-claude-targets `ValueError` and `--from` not-among-targets `ValueError`).
+Expected: all pass; **100%** coverage. (The `init` no-claude-targets / `--from`-not-among-targets `ValueError`s and the `reconcile` `-`/no-drift/override-pop branches are now covered directly by Tasks 5.4 and 5.5; nothing should remain.)
 
 ```bash
 git add src/promptdeploy/cli.py tests/test_cli.py
