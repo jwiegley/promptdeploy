@@ -1,6 +1,11 @@
 """Tests for the pure settings rendering core."""
 
-from promptdeploy.settings import apply_merge_patch, generate_merge_patch
+from promptdeploy.settings import (
+    apply_merge_patch,
+    generate_merge_patch,
+    strip_keys,
+    strip_nulls,
+)
 
 
 class TestApplyMergePatch:
@@ -66,3 +71,22 @@ class TestGenerateMergePatch:
         }  # d removed within b, e removed, f added
         patch = generate_merge_patch(base, target)
         assert apply_merge_patch(base, patch) == target
+
+
+class TestStripHelpers:
+    def test_strip_keys_removes_named_top_level_keys(self):
+        d = {"env": {}, "hooks": {"x": 1}, "mcpServers": {"y": 2}, "model": "a"}
+        assert strip_keys(d, {"hooks", "mcpServers"}) == {"env": {}, "model": "a"}
+
+    def test_strip_nulls_removes_none_values_recursively(self):
+        d = {"a": 1, "b": None, "env": {"X": "1", "Y": None}}
+        assert strip_nulls(d) == {"a": 1, "env": {"X": "1"}}
+
+    def test_strip_nulls_preserves_empty_dicts(self):
+        # extraKnownMarketplaces: {} is a legitimate setting and must survive.
+        d = {"extraKnownMarketplaces": {}, "env": {"X": None}}
+        assert strip_nulls(d) == {"extraKnownMarketplaces": {}, "env": {}}
+
+    def test_strip_nulls_leaves_lists_atomic(self):
+        d = {"allowWrite": ["/tmp", None]}
+        assert strip_nulls(d) == {"allowWrite": ["/tmp", None]}

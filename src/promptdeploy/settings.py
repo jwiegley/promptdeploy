@@ -8,7 +8,7 @@ RFC 7386 (JSON Merge Patch); ``render_settings`` composes ``base`` with the
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict
+from typing import Any, Dict, Iterable
 
 
 def apply_merge_patch(base: Any, patch: Any) -> Any:
@@ -51,3 +51,20 @@ def generate_merge_patch(
         else:
             patch[key] = copy.deepcopy(tval)
     return patch
+
+
+def strip_keys(d: Dict[str, Any], keys: Iterable[str]) -> Dict[str, Any]:
+    """Return a shallow copy of ``d`` without the named top-level keys."""
+    drop = set(keys)
+    return {k: v for k, v in d.items() if k not in drop}
+
+
+def strip_nulls(value: Any) -> Any:
+    """Recursively drop ``None`` values from dicts.
+
+    Empty dicts are preserved (e.g. ``extraKnownMarketplaces: {}`` is a valid
+    setting). Lists are atomic per RFC 7386 — their elements are not inspected.
+    """
+    if not isinstance(value, dict):
+        return value
+    return {k: strip_nulls(v) for k, v in value.items() if v is not None}
