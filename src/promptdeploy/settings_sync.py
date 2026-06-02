@@ -11,11 +11,13 @@ import io
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap
 
-from .settings import strip_keys
+from .config import Config
+from .settings import generate_merge_patch, strip_keys
 from .targets import create_target
 
 _MANAGED_ELSEWHERE = {"hooks", "mcpServers"}
@@ -68,3 +70,48 @@ def read_live_settings(target_config) -> Dict[str, Any]:
     finally:
         target.cleanup()
     return strip_keys(raw, _MANAGED_ELSEWHERE)
+
+
+def _claude_target_ids(config: Config, target_ids: List[str]) -> List[str]:
+    return [tid for tid in target_ids if config.targets[tid].type == "claude"]
+
+
+def init_settings(
+    config: Config,
+    target_ids: List[str],
+    *,
+    from_ref: Optional[str],
+    out_path: Path,
+    force: bool,
+) -> None:
+    """Bootstrap settings.yaml from live host settings.json files."""
+    if out_path.exists() and not force:
+        raise FileExistsError(
+            f"{out_path} exists; pass --force to overwrite or use reconcile"
+        )
+
+    claude_ids = _claude_target_ids(config, target_ids)
+    if not claude_ids:
+        raise ValueError("no claude targets selected")
+
+    ref = from_ref or claude_ids[0]
+    if ref not in claude_ids:
+        raise ValueError(f"--from {ref} is not among the selected claude targets")
+
+    live = {tid: read_live_settings(config.targets[tid]) for tid in claude_ids}
+    base = live[ref]
+    overrides: Dict[str, Any] = {}
+    for tid in claude_ids:
+        if tid == ref:
+            continue
+        patch = generate_merge_patch(base, live[tid])
+        if patch:
+            overrides[tid] = patch
+
+    # init always produces a clean document — build a fresh CommentedMap rather
+    # than round-tripping any pre-existing file.
+    fresh = CommentedMap()
+    fresh["base"] = base
+    if overrides:
+        fresh["overrides"] = overrides
+    dump_settings_doc(fresh, out_path)

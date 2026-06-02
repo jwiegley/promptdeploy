@@ -92,3 +92,100 @@ def test_read_live_settings_strips_hooks_and_mcp(tmp_path):
     )
     tc = TargetConfig(id="claude-x", type="claude", path=tgt)
     assert read_live_settings(tc) == {"effortLevel": "low"}
+
+
+def _claude_tc(tmp_path, tid, settings: dict):
+    import json
+    from promptdeploy.config import TargetConfig
+
+    d = tmp_path / tid
+    d.mkdir()
+    (d / "settings.json").write_text(json.dumps(settings))
+    return TargetConfig(id=tid, type="claude", path=d)
+
+
+def test_init_settings_factors_base_and_overrides(tmp_path):
+    from promptdeploy.config import Config
+    from promptdeploy.settings_sync import init_settings, load_settings_doc
+
+    p = _claude_tc(
+        tmp_path, "claude-personal", {"effortLevel": "low", "env": {"A": "1"}}
+    )
+    q = _claude_tc(
+        tmp_path, "claude-positron", {"effortLevel": "high", "env": {"A": "1"}}
+    )
+    config = Config(source_root=tmp_path, targets={p.id: p, q.id: q}, groups={})
+    out = tmp_path / "settings.yaml"
+
+    init_settings(
+        config,
+        ["claude-personal", "claude-positron"],
+        from_ref="claude-personal",
+        out_path=out,
+        force=False,
+    )
+
+    doc = load_settings_doc(out)
+    assert doc["base"]["effortLevel"] == "low"
+    assert doc["base"]["env"] == {"A": "1"}
+    assert doc["overrides"]["claude-positron"] == {"effortLevel": "high"}
+    assert "claude-personal" not in doc.get("overrides", {})
+
+
+def test_init_settings_refuses_existing_without_force(tmp_path):
+    import pytest
+    from promptdeploy.config import Config
+    from promptdeploy.settings_sync import init_settings
+
+    p = _claude_tc(tmp_path, "claude-personal", {"effortLevel": "low"})
+    config = Config(source_root=tmp_path, targets={p.id: p}, groups={})
+    out = tmp_path / "settings.yaml"
+    out.write_text("base: {}\n")
+    with pytest.raises(FileExistsError):
+        init_settings(
+            config, ["claude-personal"], from_ref=None, out_path=out, force=False
+        )
+
+
+# --- guard-branch tests (each hits one `raise ValueError` statement; required
+# --- at THIS commit because the lefthook per-commit pytest hook enforces the
+# --- 100% line gate — they cannot wait for Task 5.6) ---
+
+
+def test_init_settings_no_claude_targets_raises(tmp_path):
+    # A selection containing only a non-claude target -> `_claude_target_ids` is
+    # empty -> `raise ValueError("no claude targets selected")`.
+    import json
+    import pytest
+    from promptdeploy.config import Config, TargetConfig
+    from promptdeploy.settings_sync import init_settings
+
+    d = tmp_path / "droid-x"
+    d.mkdir()
+    (d / "settings.json").write_text(json.dumps({}))
+    tc = TargetConfig(id="droid-x", type="droid", path=d)
+    config = Config(source_root=tmp_path, targets={tc.id: tc}, groups={})
+    out = tmp_path / "settings.yaml"
+    with pytest.raises(ValueError, match="no claude targets"):
+        init_settings(config, ["droid-x"], from_ref=None, out_path=out, force=False)
+
+
+def test_init_settings_from_not_among_targets_raises(tmp_path):
+    # `--from` names a claude target outside the selected set ->
+    # `raise ValueError("--from ... is not among the selected claude targets")`.
+    import pytest
+    from promptdeploy.config import Config
+    from promptdeploy.settings_sync import init_settings
+
+    p = _claude_tc(tmp_path, "claude-personal", {"effortLevel": "low"})
+    q = _claude_tc(tmp_path, "claude-positron", {"effortLevel": "high"})
+    config = Config(source_root=tmp_path, targets={p.id: p, q.id: q}, groups={})
+    out = tmp_path / "settings.yaml"
+    with pytest.raises(ValueError, match="--from"):
+        init_settings(
+            config,
+            ["claude-personal"],
+            from_ref="claude-positron",
+            out_path=out,
+            force=False,
+        )
