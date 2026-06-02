@@ -17,6 +17,7 @@
           with ps; [
             pyyaml
             jinja2
+            ruamel-yaml
             pytest
             pytest-cov
             mypy
@@ -39,6 +40,7 @@
           dependencies = with python.pkgs; [
             pyyaml
             jinja2
+            ruamel-yaml
           ];
 
           doCheck = false;

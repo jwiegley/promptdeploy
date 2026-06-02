@@ -7,7 +7,7 @@ name = "promptdeploy"
 version = "0.1.0"
 description = "Deploy prompts, agents, skills, and MCP servers to multiple tools."
 requires-python = ">=3.11"
-dependencies = ["PyYAML>=6.0", "Jinja2>=3.1"]
+dependencies = ["PyYAML>=6.0", "Jinja2>=3.1", "ruamel.yaml>=0.18"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov"]
@@ -23,6 +23,10 @@ testpaths = ["tests"]
 
 [[tool.mypy.overrides]]
 module = "yaml"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "ruamel.*"
 ignore_missing_imports = true
 
 [tool.coverage.run]
