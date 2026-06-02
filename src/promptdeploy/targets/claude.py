@@ -246,6 +246,18 @@ class ClaudeTarget(Target):
         settings.get("mcpServers", {}).pop(name, None)
         self._save_json(path, settings)
 
+    def remove_settings(self, previous_keys: list[str]) -> None:
+        path = self._settings_path()
+        if not path.exists():
+            return
+        settings = self._load_json(path)
+        for key in previous_keys:
+            settings.pop(key, None)
+        self._save_json(path, settings)
+
+    def read_settings_json(self) -> dict:
+        return self._load_json(self._settings_path())
+
     # ------------------------------------------------------------------
     # Pre-existing detection
     # ------------------------------------------------------------------

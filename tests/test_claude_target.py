@@ -807,3 +807,25 @@ class TestDeploySettings:
         data = json.loads((tmp_path / ".claude" / "settings.json").read_text())
         assert data["feedbackSurveyState"] == {"x": 1}
         assert data["effortLevel"] == "low"
+
+
+class TestRemoveAndReadSettings:
+    def test_remove_settings_pops_keys_preserving_rest(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        (tmp_path / ".claude" / "settings.json").write_text(
+            json.dumps({"model": "x", "env": {"A": "1"}, "hooks": {"Y": 1}})
+        )
+        target.remove_settings(["model", "env"])
+        data = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+        assert data == {"hooks": {"Y": 1}}
+
+    def test_remove_settings_no_file_is_noop(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.remove_settings(["model"])  # must not raise
+        assert not (tmp_path / ".claude" / "settings.json").exists()
+
+    def test_read_settings_json_returns_dict_or_empty(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.read_settings_json() == {}
+        (tmp_path / ".claude" / "settings.json").write_text(json.dumps({"model": "x"}))
+        assert target.read_settings_json() == {"model": "x"}
