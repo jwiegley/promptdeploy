@@ -973,3 +973,138 @@ class TestTargetRootList:
 
         assert "test-claude:" in captured.out
         assert "helper" in captured.out
+
+
+# ===================================================================
+# settings init / reconcile subcommands
+# ===================================================================
+
+
+def test_settings_init_and_reconcile_cli(tmp_path, monkeypatch, capsys):
+    import json
+    from promptdeploy import cli
+
+    # Source tree with deploy.yaml pointing at two local claude targets.
+    src = tmp_path / "src"
+    src.mkdir()
+    p = src.parent / "claude-personal"
+    p.mkdir()
+    q = src.parent / "claude-positron"
+    q.mkdir()
+    (p / "settings.json").write_text(json.dumps({"effortLevel": "low"}))
+    (q / "settings.json").write_text(json.dumps({"effortLevel": "high"}))
+    (src / "deploy.yaml").write_text(
+        "source_root: .\n"
+        "targets:\n"
+        f"  claude-personal:\n    type: claude\n    path: {p}\n    labels: [claude]\n"
+        f"  claude-positron:\n    type: claude\n    path: {q}\n    labels: [claude]\n"
+    )
+    monkeypatch.chdir(src)
+
+    monkeypatch.setattr(
+        "sys.argv",
+        ["promptdeploy", "settings", "init", "--from", "claude-personal"],
+    )
+    cli.main()
+    doc_text = (src / "settings.yaml").read_text()
+    assert "effortLevel: low" in doc_text
+    assert "claude-positron" in doc_text  # override captured
+
+    # Reconcile (report-only) must not raise and should print a diff or "clean".
+    monkeypatch.setattr("sys.argv", ["promptdeploy", "settings", "reconcile"])
+    cli.main()
+    capsys.readouterr()  # drained; no exception is the contract
+
+
+def _write_settings_deploy_yaml(tmp_path, monkeypatch, *, with_settings_yaml: bool):
+    """Create a src/ tree with deploy.yaml (one local claude target) and chdir into it.
+
+    Mirrors the inline setup in test_settings_init_and_reconcile_cli.
+    """
+    import json
+
+    src = tmp_path / "src"
+    src.mkdir()
+    p = src.parent / "claude-personal"
+    p.mkdir()
+    (p / "settings.json").write_text(json.dumps({"effortLevel": "low"}))
+    (src / "deploy.yaml").write_text(
+        "source_root: .\n"
+        "targets:\n"
+        f"  claude-personal:\n    type: claude\n    path: {p}\n    labels: [claude]\n"
+    )
+    if with_settings_yaml:
+        (src / "settings.yaml").write_text("base:\n  effortLevel: low\n")
+    monkeypatch.chdir(src)
+    return src
+
+
+def test_settings_init_bad_target_exits(tmp_path, monkeypatch, capsys):
+    # `--target nope` -> expand_target_arg raises ValueError (a CAUGHT type)
+    # inside _run_settings_init's try -> ERROR printed + exit 1.
+    import pytest
+    from promptdeploy import cli
+
+    _write_settings_deploy_yaml(tmp_path, monkeypatch, with_settings_yaml=False)
+    monkeypatch.setattr(
+        "sys.argv", ["promptdeploy", "settings", "init", "--target", "nope"]
+    )
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 1
+    assert "ERROR" in capsys.readouterr().err
+
+
+def test_settings_reconcile_missing_yaml_exits(tmp_path, monkeypatch, capsys):
+    # Valid deploy.yaml with one claude target but NO settings.yaml ->
+    # reconcile_settings raises FileNotFoundError (a CAUGHT type) -> exit 1,
+    # message mentions `init`.
+    import pytest
+    from promptdeploy import cli
+
+    _write_settings_deploy_yaml(tmp_path, monkeypatch, with_settings_yaml=False)
+    monkeypatch.setattr("sys.argv", ["promptdeploy", "settings", "reconcile"])
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 1
+    assert "init" in capsys.readouterr().err  # FileNotFoundError message mentions init
+
+
+def test_settings_reconcile_prints_diffs_report_and_apply(
+    tmp_path, monkeypatch, capsys
+):
+    # Host has drift (autoUpdates) absent from settings.yaml -> reconcile reports
+    # a diff. Covers the diff-printing loop and BOTH `if args.apply` arms.
+    import json
+    from promptdeploy import cli
+
+    src = tmp_path / "src"
+    src.mkdir()
+    p = src.parent / "claude-personal"
+    p.mkdir()
+    (p / "settings.json").write_text(
+        json.dumps({"effortLevel": "low", "autoUpdates": False})
+    )
+    (src / "deploy.yaml").write_text(
+        "source_root: .\n"
+        "targets:\n"
+        f"  claude-personal:\n    type: claude\n    path: {p}\n    labels: [claude]\n"
+    )
+    (src / "settings.yaml").write_text("base:\n  model: opus\n")
+    monkeypatch.chdir(src)
+
+    # Report-only: prints '+' (host-only) and '-' (rendered-only) diff lines, then
+    # the "Re-run with --apply" footer.
+    monkeypatch.setattr("sys.argv", ["promptdeploy", "settings", "reconcile"])
+    cli.main()
+    out = capsys.readouterr().out
+    assert "autoUpdates" in out
+    assert "Re-run with --apply" in out
+
+    # Apply: prints the same diffs and the "Applied host drift" footer.
+    monkeypatch.setattr(
+        "sys.argv", ["promptdeploy", "settings", "reconcile", "--apply"]
+    )
+    cli.main()
+    out = capsys.readouterr().out
+    assert "Applied host drift into overrides." in out

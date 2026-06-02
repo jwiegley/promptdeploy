@@ -78,6 +78,31 @@ def main():
         help="Redirect all deployment output under DIR (using target IDs as subdirectories)",
     )
 
+    # settings subcommand group
+    settings_parser = subparsers.add_parser("settings", help="Manage settings.yaml")
+    settings_sub = settings_parser.add_subparsers(
+        dest="settings_command", required=True
+    )
+
+    init_parser = settings_sub.add_parser(
+        "init", help="Bootstrap settings.yaml from live hosts"
+    )
+    init_parser.add_argument(
+        "--from", dest="from_ref", help="Reference target for base"
+    )
+    init_parser.add_argument("--target", action="append", help="Targets to pull from")
+    init_parser.add_argument(
+        "--force", action="store_true", help="Overwrite existing settings.yaml"
+    )
+
+    rec_parser = settings_sub.add_parser(
+        "reconcile", help="Pull host settings drift into overrides"
+    )
+    rec_parser.add_argument("--target", action="append", help="Targets to reconcile")
+    rec_parser.add_argument(
+        "--apply", action="store_true", help="Write drift into overrides"
+    )
+
     args = parser.parse_args()
 
     if args.command == "deploy":
@@ -88,6 +113,11 @@ def main():
         _run_status(args)
     elif args.command == "list":
         _run_list(args)
+    elif args.command == "settings":
+        if args.settings_command == "init":
+            _run_settings_init(args)
+        elif args.settings_command == "reconcile":
+            _run_settings_reconcile(args)
 
 
 def _run_deploy(args):
@@ -269,6 +299,55 @@ def _run_list(args):
                     print(f"    - {name}")
         finally:
             target.cleanup()
+
+
+def _run_settings_init(args):
+    from .settings_sync import init_settings
+
+    config = load_config()
+    out_path = config.source_root / "settings.yaml"
+    try:
+        target_ids = expand_target_arg(args.target, config)
+        init_settings(
+            config,
+            target_ids,
+            from_ref=args.from_ref,
+            out_path=out_path,
+            force=args.force,
+        )
+    except (FileExistsError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    print(f"Wrote {out_path}")
+
+
+def _run_settings_reconcile(args):
+    from .settings_sync import reconcile_settings
+
+    config = load_config()
+    settings_path = config.source_root / "settings.yaml"
+    try:
+        target_ids = expand_target_arg(args.target, config)
+        diffs = reconcile_settings(
+            config, target_ids, settings_path=settings_path, apply=args.apply
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if not diffs:
+        print("settings.yaml is in sync with all selected targets.")
+        return
+    for d in diffs:
+        detail = {
+            "+": f"{d.key} = {d.host_value!r} (host only)",
+            "~": f"{d.key}: {d.rendered_value!r} -> {d.host_value!r}",
+            "-": f"{d.key} (settings.yaml only; deploy would add)",
+        }[d.kind]
+        print(f"  {d.kind}  {d.target_id}: {detail}")
+    if args.apply:
+        print("Applied host drift into overrides.")
+    else:
+        print("Re-run with --apply to write these into overrides.")
 
 
 if __name__ == "__main__":
