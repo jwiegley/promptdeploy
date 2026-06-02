@@ -200,6 +200,7 @@ class TestDiscoverAll:
             "models",
             "hook",
             "prompt",
+            "settings",
         }
 
     def test_total_count(self, discovery):
@@ -207,7 +208,8 @@ class TestDiscoverAll:
         assert len(items) >= 60
 
     def test_order(self, discovery):
-        """Items appear in order: agents, commands, skills, mcp, models, hooks, prompts."""
+        """Items appear in order: agents, commands, skills, mcp, models, hooks,
+        prompts, settings (settings is discovered last in ``discover_all``)."""
         items = list(discovery.discover_all())
         types_seen = []
         for item in items:
@@ -221,6 +223,7 @@ class TestDiscoverAll:
             "models",
             "hook",
             "prompt",
+            "settings",
         ]
 
 
