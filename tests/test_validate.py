@@ -1230,3 +1230,64 @@ def test_validate_settings_non_dict_override_value_errors(tmp_path):
         and "claude-positron" in i.message
         for i in validate_all(cfg)
     )
+
+
+# --- §6.13 JSON-representability: reject YAML-only types (dates/times/etc.)
+# --- that yaml.safe_load produces but json.dump cannot serialize, which would
+# --- otherwise crash deploy with an uncaught TypeError.
+
+
+def test_validate_settings_rejects_yaml_date_in_base(tmp_path):
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "base:\n  releaseDate: 2026-06-01\n")
+    assert any(
+        i.level == "error" and "non-JSON" in i.message for i in validate_all(cfg)
+    )
+
+
+def test_validate_settings_rejects_date_nested_in_dict(tmp_path):
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "base:\n  env:\n    when: 2026-06-01\n")
+    assert any(
+        i.level == "error" and "non-JSON" in i.message for i in validate_all(cfg)
+    )
+
+
+def test_validate_settings_rejects_date_in_list(tmp_path):
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "base:\n  items:\n    - ok\n    - 2026-06-01\n")
+    assert any(
+        i.level == "error" and "non-JSON" in i.message for i in validate_all(cfg)
+    )
+
+
+def test_validate_settings_rejects_date_in_override(tmp_path):
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(
+        tmp_path,
+        "base: {}\noverrides:\n  claude-positron:\n    when: 2026-06-01\n",
+    )
+    assert any(
+        i.level == "error" and "non-JSON" in i.message for i in validate_all(cfg)
+    )
+
+
+def test_validate_settings_accepts_nested_json_types(tmp_path):
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(
+        tmp_path,
+        "base:\n"
+        "  sandbox:\n"
+        "    enabled: false\n"
+        "    paths:\n"
+        "      - /tmp\n"
+        "      - /var\n"
+        "  count: 3\n"
+        "  ratio: 0.5\n",
+    )
+    assert [i for i in validate_all(cfg) if i.level == "error"] == []

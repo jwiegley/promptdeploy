@@ -162,8 +162,33 @@ def validate_settings(config: Config) -> List[ValidationIssue]:
                     )
                 )
 
+    # JSON-representability: yaml.safe_load yields YAML-only types (e.g.
+    # ``datetime.date`` from an unquoted ``2026-06-01``) that json.dump cannot
+    # serialize. Reject them at validate time so they surface as a clear error
+    # rather than an uncaught TypeError when settings.json is written at deploy.
+    _json_scalars = (str, int, float, bool, type(None))
+
+    def _check_json(value: object, where: str) -> None:
+        if isinstance(value, dict):
+            for k, v in value.items():
+                _check_json(v, f"{where}.{k}")
+        elif isinstance(value, list):
+            for i, v in enumerate(value):
+                _check_json(v, f"{where}[{i}]")
+        elif not isinstance(value, _json_scalars):
+            issues.append(
+                ValidationIssue(
+                    "error",
+                    f"settings.yaml: {where} has a non-JSON-representable value "
+                    f"of type {type(value).__name__} (quote YAML dates/times so "
+                    f"they deploy as strings)",
+                    path,
+                )
+            )
+
     if isinstance(base, dict):
         _check_section(base, "base")
+        _check_json(base, "base")
         for k, v in base.items():
             if v is None:
                 issues.append(
@@ -204,6 +229,7 @@ def validate_settings(config: Config) -> List[ValidationIssue]:
                     )
                 elif isinstance(ov_val, dict):
                     _check_section(ov_val, f"overrides.{ov_key}")
+                    _check_json(ov_val, f"overrides.{ov_key}")
     return issues
 
 
