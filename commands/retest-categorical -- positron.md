@@ -33,7 +33,7 @@ machine handoff or argument forwarding; read both docs and apply the overrides b
 | `/retest` general | `/retest-categorical` categorical override |
 |---|---|
 | Source of truth = HF transformers forward pass (TVD/top-K/decoded-tokens) | **Legacy ingest path; bit-exact last-prompt-token logits** (`require_byte_identical`, 100%) |
-| Token-fidelity boundary sweep {8,64,256,4096,16384} gated vs HF top-K inclusion | **Same boundary set, gated vs legacy byte-identity** (no top-K slack — exact parity through every page boundary) |
+| Token-fidelity boundary sweep `{8,64,256,4096,16384}` (methodology in the `/retest` *Token fidelity across context-length boundaries* section) gated vs HF top-K inclusion | **Same boundary set + base methodology, but gated vs legacy byte-identity** — no top-K slack; every *in-scope* `(model, length)` cell must be bit-exact through the page boundaries (out-of-scope lengths reported `N/A`) |
 | Comparison binary chosen per derived set | **`gen/t_generate_categorical_fpga_real`** |
 | Build = `make build` / `build-test` / `build-ingest` per diff | **`make build-categorical -j 4`** (regenerates categorical + legacy plugins; categorical-branch target only) |
 | Model set derived from branch diff | **Fixed eight-model Phase-0 table** (Phase 0 below) |
@@ -199,30 +199,54 @@ attention chunking, visit-order) the 4-token oracle misses. **A `[long]` DIVERGE
 `t_generate_categorical_fpga_real` on the categorical branch; they do **not** exist in main's
 `t_generate_ingest_1`, which is why `/retest` does not gate on `[long]`.)
 
-**Token fidelity across context-length boundaries.** Extend the `[long]` notion to the full
-boundary set **{8, 64, 256, 4096, 16384}** (the KV cache is paginated at `page::page_size == 64`,
-so these span 1 / 1 / 4 / 64 / 256 pages — see the `/retest` "Token fidelity across
-context-length boundaries" section for the page-boundary rationale and the realistic-prompt /
-NaN-#2808 rule). The **oracle differs**: where `/retest` checks per-position top-K inclusion vs
-HF, the categorical run keeps this command's oracle — **bit-exact categorical-vs-legacy parity at
-every position** (`require_byte_identical`). Byte-identity is drift-free, so there is no top-K
-slack: at each reachable length the categorical and legacy pipelines must agree exactly, and the
-gate is `first divergence at position …` never firing through the page boundaries. Both pipelines
-must reach the length (KV-cache HBM and `max_position_embeddings`); a length only one side can run
-is **NOT-REACHABLE** (INCOMPLETE for that cell), never a PASS. Inline prompt-id arrays are
-impractical past a few hundred tokens, so the 256/4096/16384 cases must load their realistic
-token stream from a file/corpus (extend `kMixtralReal*`/`kGptOssReal*`-style constants with a
-file-backed loader rather than a hand-written array). Report a per-`(model, length)` row.
+**Token fidelity across context-length boundaries.** Apply the `/retest`
+**Token fidelity across context-length boundaries** section — it owns the boundary set
+**{8, 64, 256, 4096, 16384}**, the page-regime rationale (the KV cache is paginated at
+`page::page_size == 64`, so these lengths span 1 / 1 / 4 / 64 / 256 pages), the in-scope
+pre-check (`max_position_embeddings` + documented hard KV-cache/HBM capacity), the file-backed
+realistic-stream sourcing for the 256/4096/16384 cells, the MoE NaN-#2808 rule, and the
+one-process-per-cell isolation. Apply that section, then take **only** the categorical override
+below. The **oracle differs**: where `/retest` checks per-position top-K inclusion vs
+HuggingFace, the categorical run keeps this command's oracle — **bit-exact categorical-vs-legacy
+parity at every position** (`require_byte_identical`), legacy ingest being the source of truth,
+not HuggingFace. Byte-identity is drift-free, so there is no top-K slack: at each in-scope length
+the categorical and legacy pipelines must agree exactly, and the gate is `first divergence at
+position …` never firing through the page boundaries.
 
-**Isolated sweep runner — one TEST_CASE per process** (each model's oracle + its
-`[long]`/`[realistic]` cases run in their own processes). The oracle is selected by **tag
-exclusion** `[model]~[long]`, NOT by a name pulled from `--list-tests`: Catch2 wraps/truncates
-the oracle's long `"(full N layers, real …)"` name in the listing, so a name extracted from it
-silently fails to match and the case never runs (a real bug observed in practice — it showed up
-as `rc=2` "No tests ran"). The shorter `[long]`/`[realistic]` names list cleanly, so those run
-by name. A transient FPGA/hugepages contention (`Environment setup failed`, `DEBUG EXIT`, lock)
-is retried up to 3× before being reported, and `No tests ran` is surfaced as NO-MATCH rather
-than silently counted as a failure.
+Reachability is judged **against the model's declared contract**, and the two cases are kept
+distinct:
+
+- A length `L` is **in-scope** when `L ≤ max_position_embeddings` and within the executor's
+  documented hard KV-cache/HBM capacity. Decide this **before** running the cell — never
+  discover it from a crash. Every in-scope cell must run **both** pipelines and agree byte-exact.
+- A length beyond that declared support is **`OUT-OF-SCOPE`** (`N/A-MAX-POSITION`): report it
+  with the exact reason and limit. It is **not** PASS, **not** INCOMPLETE, **not** REGRESSION.
+- An **in-scope** length that only one pipeline (categorical XOR legacy) can execute is a
+  **`REACHABILITY-REGRESSION`** — a categorical drop-in failure, counted as `REGRESSION`, never
+  excused as merely incomplete.
+
+Inline prompt-id arrays are impractical past a few hundred tokens, so the 256/4096/16384 cases
+must load their realistic token stream from a file/corpus (extend
+`kMixtralReal*`/`kGptOssReal*`-style constants with a file-backed loader rather than a
+hand-written array; the binary must register a boundary case per enumerated length so the runner
+can select it one process at a time). Report a per-`(model, length)` row with the verdict, the
+pages crossed, and (for an out-of-scope cell) the model limit that excluded it.
+
+**Isolated sweep runner — one TEST_CASE per process** (each model's oracle, its
+`[long]`/`[realistic]` cases, **and each boundary-length cell** run in their own processes). The
+runner **enumerates the full boundary matrix {8, 64, 256, 4096, 16384} directly** — it does
+*not* rely solely on whatever `[long]`/`[realistic]` tags happen to exist. For each model it
+decides each length's scope first (`max_position_embeddings` + documented hard capacity; see the
+`/retest` base section), skip-launches any out-of-scope length (reported `OUT-OF-SCOPE`), and
+runs each in-scope length in its own process; the 256/4096/16384 cells use the file-backed
+realistic-token loader, so the binary must register a boundary case per in-scope length. The
+oracle case is selected by **tag exclusion** `[model]~[long]`, NOT by a name pulled from
+`--list-tests`: Catch2 wraps/truncates the oracle's long `"(full N layers, real …)"` name in the
+listing, so a name extracted from it silently fails to match and the case never runs (a real bug
+observed in practice — it showed up as `rc=2` "No tests ran"). The shorter `[long]`/`[realistic]`
+names list cleanly, so those run by name. A transient FPGA/hugepages contention
+(`Environment setup failed`, `DEBUG EXIT`, lock) is retried up to 3× before being reported, and
+`No tests ran` is surfaced as NO-MATCH rather than silently counted as a failure.
 
 ```bash
 #!/usr/bin/env bash
@@ -247,6 +271,23 @@ for f in $FILTERS; do
   while IFS= read -r nm; do
     [ -n "$nm" ] && ITEMS+=("$nm"$'\t'"$nm")   # [long]/[realistic], by (short) name
   done < <("$BIN" --list-tests "${base}][long]" 2>/dev/null | awk '/^  Categorical/ {sub(/^  /,""); print}')
+  # Boundary matrix {8,64,256,4096,16384}, one process per (model,length) cell. Enumerate the
+  # cells DIRECTLY — do NOT rely solely on [long]/[realistic] tags covering them. Decide scope
+  # first: in-scope means L <= the model's max_position_embeddings and within the executor's
+  # documented hard KV-cache/HBM capacity (see the /retest base section). 256/4096/16384 use
+  # the file-backed realistic-token loader. The binary registers each in-scope boundary case
+  # under a per-length tag ([model][len-<L>]); the runner selects it by that tag. A length the
+  # binary does not register lists as nothing -> reported NO-COVERAGE (INCOMPLETE); a length
+  # above the model's contract is reported OUT-OF-SCOPE (never a PASS); an in-scope length only
+  # one pipeline can run is REACHABILITY-REGRESSION (a REGRESSION, not INCOMPLETE).
+  for L in 8 64 256 4096 16384; do
+    sel="${base}][len-${L}]"
+    if "$BIN" --list-tests "$sel" 2>/dev/null | grep -q '^  Categorical'; then
+      ITEMS+=("$sel"$'\t'"${f}-len-${L}")            # in-scope boundary cell, by [model][len-L] tag
+    else
+      ITEMS+=("@uncovered:${L}"$'\t'"${f}-len-${L}") # not registered: report rather than drop
+    fi
+  done
 done
 if [ "$#" -gt 0 ] && [ "${#ITEMS[@]}" -eq 0 ]; then
   echo "NO-COVERAGE: filters [$FILTERS] matched zero Categorical TEST_CASEs. INCOMPLETE."; exit 3
@@ -255,6 +296,20 @@ declare -A SEEN; UNIQ=()
 for it in "${ITEMS[@]}"; do [ -z "${SEEN[$it]:-}" ] && { SEEN[$it]=1; UNIQ+=("$it"); }; done
 for it in "${UNIQ[@]}"; do
   sel="${it%%$'\t'*}"; label="${it##*$'\t'}"
+  # Synthetic boundary marker: this (model,length) cell is not a registered TEST_CASE.
+  # Classify it without launching the binary: above the model's max_position_embeddings ->
+  # OUT-OF-SCOPE (reported, never PASS); in-scope but unregistered -> NO-COVERAGE (INCOMPLETE).
+  # MAXPOS for the model comes from its config.json max_position_embeddings plus any documented
+  # hard KV-cache/HBM cap; is_out_of_scope is the operator hook that applies that limit.
+  if [[ "$sel" == @uncovered:* ]]; then
+    Lc="${sel#@uncovered:}"
+    if is_out_of_scope "$label" "$Lc"; then
+      printf '%-70s  %-22s  (0s)\n' "$label" "OUT-OF-SCOPE(>maxpos)"
+    else
+      printf '%-70s  %-22s  (0s)\n' "$label" "NO-COVERAGE"
+    fi
+    continue
+  fi
   safe=$(printf '%s' "$label" | tr -cd 'a-zA-Z0-9-' | head -c 60)
   v=""
   for attempt in 1 2 3; do   # retry transient FPGA/hugepages contention before reporting
@@ -265,6 +320,8 @@ for it in "${UNIQ[@]}"; do
     elif [ $rc -eq 0 ]; then v=PASS
     elif [ $rc -eq 124 ]; then v="TIMEOUT(30m)"
     elif grep -q "first divergence at position" "$log"; then v="DIVERGE: $(grep -oE '[0-9]+/[0-9]+ positions match' "$log" | head -1)"
+    elif grep -qiE "only one pipeline|one-sided|reachable by (categorical|legacy) only" "$log"; then v="REACHABILITY-REGRESSION"   # in-scope, single-pipeline reach => REGRESSION
+    elif grep -qiE "exceeds max_position_embeddings|over max position|beyond declared context|OUT-OF-SCOPE" "$log"; then v="OUT-OF-SCOPE(>maxpos)"   # L beyond model contract => reported N/A, never a failure
     elif grep -qiE "Environment setup failed|acquire lock|lock after|device busy|EBUSY|DEBUG EXIT|HBM" "$log"; then v="LOCK-CONTENTION"
     elif grep -qiE "No tests ran|No test cases matched" "$log"; then v="NO-MATCH (runner/selector bug — report, do NOT count as pass)"
     elif grep -qiE "Failed to open file|No such file" "$log"; then v="WEIGHTS-MISSING"
@@ -272,7 +329,7 @@ for it in "${UNIQ[@]}"; do
     if [ "$v" = "LOCK-CONTENTION" ] && [ "$attempt" -lt 3 ]; then sleep 45; continue; fi
     break
   done
-  printf '%-70s  %-18s  (%ds)\n' "$label" "$v" "$dur"
+  printf '%-70s  %-22s  (%ds)\n' "$label" "$v" "$dur"
   sleep 15   # let tp4 device locks release between cases
 done
 ```
@@ -289,17 +346,28 @@ QUARANTINED rows below apply only if a `mayfail`-tagged case is later added.)
 | `PASS` / `QUARANTINED-PASS` | yes |
 | `DIVERGE` | **NO — real correctness regression** |
 | `NO-COVERAGE` | NO — INCOMPLETE; a passed tag matched zero TEST_CASEs |
-| `NOT-REACHABLE` | NO — INCOMPLETE for that `(model, length)` cell; only one pipeline can reach L, or L exceeds `max_position_embeddings`/KV-cache HBM — never a PASS |
+| `REACHABILITY-REGRESSION` | **NO — REGRESSION** for that `(model, length)` cell; L is *inside* the model's declared support (`L ≤ max_position_embeddings`, within hard KV-cache/HBM capacity) but only one pipeline (categorical XOR legacy) can execute it — a categorical drop-in failure at a supported length, never merely INCOMPLETE |
+| `OUT-OF-SCOPE` (`N/A-MAX-POSITION`) | neither PASS nor INCOMPLETE nor REGRESSION; L exceeds the model's declared `max_position_embeddings` or a documented hard KV-cache/HBM capacity limit. Report the cell with the exact reason + limit; it is never counted toward the gate either way |
 | `SKIPPED` / `WEIGHTS-MISSING` / `TIMEOUT` | NO — INCOMPLETE (Phase 0 should have provisioned/pre-warmed) |
 | `QUARANTINED-FAIL` | does not block ship, but report as a known-flake hit (only if a `mayfail` case exists) |
 | `LOCK-CONTENTION` | re-run alone; if it still fails alone, escalate |
 | `FAIL(rc=…)` | investigate (SIGABRT/SIGSEGV); not necessarily categorical — see Known traps |
 
-**Gate:** every supported model must `PASS`/`QUARANTINED-PASS` on its 4-token and `[long]`
-cases **and** on the token-fidelity boundary sweep at every reachable length in
-{8, 64, 256, 4096, 16384} (bit-exact categorical-vs-legacy parity through the page boundaries).
-Any `DIVERGE` fails. Any `NO-COVERAGE`/`NOT-REACHABLE`/`SKIPPED`/`WEIGHTS-MISSING`/`TIMEOUT`
-makes the run INCOMPLETE.
+**Gate (built around in-scope cells).** Decide each boundary length's scope first (`L ≤` the
+model's declared `max_position_embeddings`, within its documented hard KV-cache/HBM capacity).
+Then, for every model:
+
+- Every supported model must `PASS`/`QUARANTINED-PASS` on its 4-token and `[long]` cases **and**
+  on every **in-scope** boundary cell in {8, 64, 256, 4096, 16384} — running **both** pipelines
+  and passing bit-exact categorical-vs-legacy parity through the page boundaries.
+- Any byte `DIVERGE` on an in-scope cell is a **REGRESSION**.
+- Any in-scope length only one pipeline can execute is a **REACHABILITY-REGRESSION**, counted as
+  **REGRESSION** — not merely incomplete.
+- Any `NO-COVERAGE`/`SKIPPED`/`WEIGHTS-MISSING`/`TIMEOUT`/unresolved `LOCK-CONTENTION`/selector
+  failure on an in-scope cell makes the run **INCOMPLETE**.
+- Any **out-of-scope** length (`L` beyond the model's declared support) is reported
+  `OUT-OF-SCOPE` (`N/A-MAX-POSITION`) with the exact limit; it is **never** counted as `PASS`,
+  `INCOMPLETE`, or `REGRESSION`.
 
 **MoE models must use realistic prompts.** Synthetic incrementing-id prompts overflow an MoE
 expert FFN to NaN at depth (issue #2808). Both MoE families now use realistic tokenizations —
@@ -380,14 +448,27 @@ QUARANTINED / NO-COVERAGE into PASS):
 - **Build / Unit tests:** clean? Haskell N/N, C++ host pass/fail.
 - **Phase 0:** per model — weights canonical/scratch/DOWNLOAD-FAILED; cache pre-warmed y/n.
 - **Phase 3:** per `(model, prompt-length)` — the verdict + executor + runtime, **including the
-  boundary sweep over {8, 64, 256, 4096, 16384}** (per-`(model, length)` byte-exact parity,
-  pages crossed, PASS/DIVERGE/NOT-REACHABLE per cell).
+  boundary sweep over {8, 64, 256, 4096, 16384}** (per-`(model, length)` bit-exact parity, pages
+  crossed; each cell one of `PASS` / `DIVERGE` / `REACHABILITY-REGRESSION` /
+  `OUT-OF-SCOPE`(`N/A-MAX-POSITION`) / `NO-COVERAGE` / `SKIPPED` / `WEIGHTS-MISSING` / `TIMEOUT`).
+  Mark each boundary cell in-scope vs out-of-scope and show the limit for any `OUT-OF-SCOPE` cell.
 - **Phase 4:** per model allclose + top-1 (MoE excluded).
 - **Phase 5:** per model Δ gen-time/tok-s/wall + TOKID match.
-- **Overall verdict:** `BYTE-EXACT DROP-IN` (all measured rows PASS/QUARANTINED-PASS, no
-  DIVERGE, no NO-COVERAGE, no >5% regression — and quote the oracle+codepath+prompt-set bound) /
-  `INCOMPLETE` (any NO-COVERAGE/SKIPPED/WEIGHTS-MISSING/TIMEOUT) / `REGRESSION` (any DIVERGE or
-  >5% slowdown).
+- **Overall verdict** (every status Phase 3 can emit maps to exactly one of these):
+  - **`BYTE-EXACT DROP-IN`** — all **in-scope** measured rows `PASS`/`QUARANTINED-PASS`; no
+    `DIVERGE`; no `REACHABILITY-REGRESSION`; no missing required coverage; no setup failure; no
+    perf regression above the 5% threshold. Quote the oracle + codepath + prompt-set bound.
+    Out-of-scope cells reported as `N/A` do not block this verdict.
+  - **`INCOMPLETE`** — any in-scope cell with `NO-COVERAGE`/`SKIPPED`/`WEIGHTS-MISSING`/`TIMEOUT`/
+    unresolved `LOCK-CONTENTION`/selector (`NO-MATCH`) failure, or any other env-or-harness
+    failure that prevents a required verdict.
+  - **`REGRESSION`** — any byte `DIVERGE`, any in-scope `REACHABILITY-REGRESSION` (a length
+    inside the model's contract that only one pipeline can run), or any perf regression above the
+    5% threshold.
+  - **`OUT-OF-SCOPE` / `N/A`** — reported per cell for lengths beyond the model's declared
+    support; never counted as `PASS`, `INCOMPLETE`, or `REGRESSION`.
+  - A **`FAIL(rc=…)`** (SIGABRT/SIGSEGV) is **triaged first** (see Known traps): an env/harness
+    cause folds into `INCOMPLETE`; a confirmed categorical fault folds into `REGRESSION`.
 
 Root-cause anything that genuinely diverged or regressed at file:line level — don't paper over
 it, and don't silence a real DIVERGE as "flaky" (quarantine with an issue link + removal
