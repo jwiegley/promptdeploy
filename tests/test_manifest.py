@@ -257,3 +257,34 @@ class TestHasChanged:
         manifest = Manifest()
         manifest.items["agents"]["my-agent"] = ManifestItem(source_hash="sha256:same")
         assert not has_changed(manifest, "agents", "my-agent", "sha256:same")
+
+
+def test_managed_keys_roundtrips(tmp_path):
+    from promptdeploy.manifest import (
+        Manifest,
+        ManifestItem,
+        load_manifest,
+        save_manifest,
+    )
+
+    m = Manifest()
+    m.items.setdefault("settings", {})["settings"] = ManifestItem(
+        source_hash="sha256:abc", managed_keys=["env", "model"]
+    )
+    path = tmp_path / ".prompt-deploy-manifest.json"
+    save_manifest(m, path)
+    loaded = load_manifest(path)
+    item = loaded.items["settings"]["settings"]
+    assert item.managed_keys == ["env", "model"]
+
+
+def test_managed_keys_absent_serializes_without_field(tmp_path):
+    import json
+    from promptdeploy.manifest import Manifest, ManifestItem, save_manifest
+
+    m = Manifest()
+    m.items.setdefault("agents", {})["a"] = ManifestItem(source_hash="sha256:x")
+    path = tmp_path / ".prompt-deploy-manifest.json"
+    save_manifest(m, path)
+    data = json.loads(path.read_text())
+    assert "managed_keys" not in data["items"]["agents"]["a"]

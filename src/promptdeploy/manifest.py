@@ -23,6 +23,7 @@ class ManifestItem:
     source_hash: str
     target_path: Optional[str] = None
     config_key: Optional[str] = None
+    managed_keys: Optional[list[str]] = None
 
 
 @dataclass
@@ -93,6 +94,8 @@ def save_manifest(manifest: Manifest, manifest_path: Path) -> None:
                 entry["target_path"] = item.target_path
             if item.config_key is not None:
                 entry["config_key"] = item.config_key
+            if item.managed_keys is not None:
+                entry["managed_keys"] = item.managed_keys
             serialized[category][name] = entry
 
     data = {
