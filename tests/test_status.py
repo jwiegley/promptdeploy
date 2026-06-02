@@ -250,3 +250,23 @@ class TestGetStatusSkills:
         assert entries[0].item_type == "skill"
         assert entries[0].name == "my-skill"
         assert entries[0].state == "new"
+
+
+def test_status_handles_settings_and_prompts(tmp_path):
+    from promptdeploy.config import Config, TargetConfig
+    from promptdeploy.status import get_status
+
+    src = tmp_path / "source"
+    src.mkdir()
+    (src / "settings.yaml").write_text("base:\n  effortLevel: low\n")
+    (src / "prompts").mkdir()
+    (src / "prompts" / "p.txt").write_text("hello")
+    tgt = tmp_path / "claude"
+    tgt.mkdir()
+    tc = TargetConfig(id="claude-x", type="claude", path=tgt)
+    config = Config(source_root=src, targets={tc.id: tc}, groups={})
+
+    entries = get_status(config, ["claude-x"])  # must not KeyError
+    kinds = {e.item_type for e in entries}
+    assert "settings" in kinds
+    assert "prompt" in kinds

@@ -34,6 +34,8 @@ _TYPE_TO_CATEGORY = {
     "mcp": "mcp_servers",
     "models": "models",
     "hook": "hooks",
+    "prompt": "prompts",
+    "settings": "settings",
 }
 
 _CATEGORY_TO_TYPE = {v: k for k, v in _TYPE_TO_CATEGORY.items()}
