@@ -19,6 +19,7 @@ from .manifest import (
     load_manifest,
     save_manifest,
 )
+from .settings import render_settings
 from .source import SourceDiscovery, SourceItem
 from .targets import create_target
 from .targets.base import Target
@@ -32,6 +33,7 @@ _TYPE_TO_CATEGORY = {
     "models": "models",
     "hook": "hooks",
     "prompt": "prompts",
+    "settings": "settings",
 }
 
 # Maps CLI --only-type values (plural) -> SourceItem.item_type (singular)
@@ -43,6 +45,7 @@ _CLI_TYPE_TO_ITEM_TYPE = {
     "models": "models",
     "hooks": "hook",
     "prompts": "prompt",
+    "settings": "settings",
 }
 
 
@@ -191,6 +194,7 @@ def _remove_item(
     category: str,
     name: str,
     target_path: Optional[Path] = None,
+    managed_keys: Optional[list[str]] = None,
 ) -> None:
     """Remove a single item from a target by manifest category.
 
@@ -212,6 +216,8 @@ def _remove_item(
         target.remove_hook(name)
     elif category == "prompts":
         target.remove_prompt(name, target_path=target_path)
+    elif category == "settings":
+        target.remove_settings(managed_keys or [])
 
 
 def deploy(
@@ -293,6 +299,44 @@ def deploy(
                 deployed_names.add((category, item.name))
 
                 changed = has_changed(manifest, category, item.name, current_hash)
+
+                if item.item_type == "settings":
+                    rendered = render_settings(item.metadata or {}, target_id, config)
+                    prev = manifest.items.get("settings", {}).get(item.name)
+                    previous_keys = (
+                        list(prev.managed_keys) if prev and prev.managed_keys else []
+                    )
+                    is_update = prev is not None
+                    if force or changed:
+                        if not dry_run:
+                            target.deploy_settings(rendered, previous_keys)
+                        actions.append(
+                            DeployAction(
+                                action="update" if is_update else "create",
+                                item_type="settings",
+                                name=item.name,
+                                target_id=target_id,
+                                source_path=str(item.path),
+                            )
+                        )
+                    else:
+                        actions.append(
+                            DeployAction(
+                                action="skip",
+                                item_type="settings",
+                                name=item.name,
+                                target_id=target_id,
+                                source_path=str(item.path),
+                            )
+                        )
+                    new_manifest.items.setdefault("settings", {})[item.name] = (
+                        ManifestItem(
+                            source_hash=current_hash,
+                            managed_keys=list(rendered.keys()),
+                        )
+                    )
+                    continue
+
                 exists_on_target = target.item_exists(item.item_type, item.name)
 
                 # Drift detection: even when the source hash still matches the
@@ -441,7 +485,15 @@ def deploy(
                         target_path = Path(prev_item.target_path)
 
                     if not dry_run:
-                        _remove_item(target, category, name, target_path=target_path)
+                        _remove_item(
+                            target,
+                            category,
+                            name,
+                            target_path=target_path,
+                            managed_keys=(
+                                prev_item.managed_keys if prev_item else None
+                            ),
+                        )
 
                     actions.append(
                         DeployAction(

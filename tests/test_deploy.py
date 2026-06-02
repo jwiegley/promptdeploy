@@ -1319,3 +1319,107 @@ class TestCacheInvalidation:
         actions = deploy(config)
         non_skips = [a for a in actions if a.action != "skip"]
         assert non_skips == []
+
+
+class TestDeploySettingsItem:
+    def _src_with_settings(self, tmp_path: Path, yaml_text: str) -> Path:
+        src = tmp_path / "source"
+        src.mkdir()
+        (src / "settings.yaml").write_text(yaml_text)
+        return src
+
+    def test_create_then_skip_then_update(self, tmp_path: Path):
+        src = self._src_with_settings(tmp_path, "base:\n  effortLevel: low\n")
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        a1 = deploy(config)
+        assert [a for a in a1 if a.item_type == "settings"][0].action == "create"
+        data = json.loads((tc.path / "settings.json").read_text())
+        assert data["effortLevel"] == "low"
+
+        a2 = deploy(config)
+        assert [a for a in a2 if a.item_type == "settings"][0].action == "skip"
+
+        (src / "settings.yaml").write_text("base:\n  effortLevel: high\n")
+        a3 = deploy(config)
+        s3 = [a for a in a3 if a.item_type == "settings"][0]
+        assert s3.action == "update"
+        assert (
+            json.loads((tc.path / "settings.json").read_text())["effortLevel"] == "high"
+        )
+
+    def test_manifest_records_managed_keys(self, tmp_path: Path):
+        src = self._src_with_settings(
+            tmp_path, "base:\n  effortLevel: low\n  model: opus\n"
+        )
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        deploy(config)
+        manifest = load_manifest(tc.path / MANIFEST_FILENAME)
+        managed_keys = manifest.items["settings"]["settings"].managed_keys
+        assert managed_keys is not None
+        assert set(managed_keys) == {"effortLevel", "model"}
+
+    def test_override_applies_per_target(self, tmp_path: Path):
+        src = self._src_with_settings(
+            tmp_path,
+            (
+                "base:\n  effortLevel: low\n"
+                "overrides:\n  claude-positron:\n    effortLevel: high\n"
+            ),
+        )
+        personal = _make_claude_target(tmp_path, "claude-personal")
+        positron = _make_claude_target(tmp_path, "claude-positron")
+        config = _make_config(src, {personal.id: personal, positron.id: positron})
+        deploy(config)
+        assert (
+            json.loads((personal.path / "settings.json").read_text())["effortLevel"]
+            == "low"
+        )
+        assert (
+            json.loads((positron.path / "settings.json").read_text())["effortLevel"]
+            == "high"
+        )
+
+    def test_removing_settings_yaml_removes_managed_keys(self, tmp_path: Path):
+        src = self._src_with_settings(tmp_path, "base:\n  effortLevel: low\n")
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        deploy(config)
+        (src / "settings.yaml").unlink()
+        actions = deploy(config)
+        removed = [
+            a for a in actions if a.item_type == "settings" and a.action == "remove"
+        ]
+        assert len(removed) == 1
+        assert "effortLevel" not in json.loads((tc.path / "settings.json").read_text())
+
+    def test_settings_preserves_hooks_and_mcp(self, tmp_path: Path):
+        src = self._src_with_settings(tmp_path, "base:\n  effortLevel: low\n")
+        tc = _make_claude_target(tmp_path)
+        (tc.path / "settings.json").write_text(
+            json.dumps({"hooks": {"Stop": [1]}, "mcpServers": {"pal": {}}})
+        )
+        config = _make_config(src, {tc.id: tc})
+        deploy(config)
+        data = json.loads((tc.path / "settings.json").read_text())
+        assert data["hooks"] == {"Stop": [1]}
+        assert data["mcpServers"] == {"pal": {}}
+        assert data["effortLevel"] == "low"
+
+    def test_only_type_settings_filters(self, tmp_path: Path):
+        src = _make_source(tmp_path)  # has agent/command/skill
+        (src / "settings.yaml").write_text("base:\n  effortLevel: low\n")
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        actions = deploy(config, item_types=["settings"])
+        assert {a.item_type for a in actions if a.action == "create"} == {"settings"}
+
+    def test_dry_run_writes_nothing(self, tmp_path: Path):
+        src = self._src_with_settings(tmp_path, "base:\n  effortLevel: low\n")
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        deploy(config, dry_run=True)
+        assert not (tc.path / "settings.json").exists()
+        assert not (tc.path / MANIFEST_FILENAME).exists()
