@@ -22,6 +22,23 @@ class Target(ABC):
     def cleanup(self) -> None:
         """Called to release resources (e.g. temp dirs) without pushing changes."""
 
+    def deploy_settings(self, rendered: dict, previous_keys: list[str]) -> None:
+        """Merge rendered Claude settings into the target's settings.json.
+
+        Default no-op so non-Claude targets need no changes.
+        """
+
+    def remove_settings(self, previous_keys: list[str]) -> None:
+        """Remove previously-managed settings keys. No-op by default."""
+
+    def read_settings_json(self) -> dict:
+        """Return the target's current settings.json as a dict.
+
+        Returns ``{}`` when the target has no Claude settings file (the default
+        for non-Claude targets).
+        """
+        return {}
+
     def rsync_includes(self) -> list[str] | None:
         """Return rsync include patterns for managed paths.
 

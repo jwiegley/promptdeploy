@@ -340,3 +340,15 @@ class TestReadDeployedBytes:
         assert target.read_deployed_bytes("agent", "x") is None
         assert target.read_deployed_bytes("command", "x") is None
         assert target.read_deployed_bytes("skill", "x") is None
+
+
+def test_base_settings_methods_are_noops(tmp_path):
+    from promptdeploy.targets.gptel import GptelTarget
+
+    d = tmp_path / "g"
+    d.mkdir()
+    t = GptelTarget("g", d)
+    # Inherited no-ops must not raise and read returns {}.
+    t.deploy_settings({"a": 1}, [])
+    t.remove_settings(["a"])
+    assert t.read_settings_json() == {}
