@@ -2,11 +2,11 @@
 
 I've been using three different AI coding tools -- Claude Code, Factory Droid, and OpenCode -- and quickly got tired of maintaining the same agents, commands, and configurations in three different places with three different formats. So I wrote `promptdeploy`: you define everything once in this repository, and it deploys to all your targets, handling the format differences for you.
 
-It's a single Python CLI tool with one dependency (PyYAML). You describe what you want in Markdown files and YAML, point it at your targets in `deploy.yaml`, and it figures out the rest.
+It's a single Python CLI tool with a few small dependencies (PyYAML, Jinja2, ruamel.yaml). You describe what you want in Markdown files and YAML, point it at your targets in `deploy.yaml`, and it figures out the rest.
 
 ## What's in here
 
-The repository holds six types of content, all defined in simple Markdown or YAML:
+The repository holds these types of content, all defined in simple Markdown or YAML:
 
 | Type | Location | What it is |
 |------|----------|------------|
@@ -16,6 +16,7 @@ The repository holds six types of content, all defined in simple Markdown or YAM
 | MCP Servers | `mcp/*.yaml` | Model Context Protocol server definitions |
 | Hooks | `hooks/*.yaml` | Claude Code hook groups for tool events |
 | Models | `models.yaml` | Custom model providers and their models |
+| Settings | `settings.yaml` | Claude Code `settings.json`, single-sourced with `base:` + per-target `overrides:` |
 
 Any item can use `only`/`except` in its frontmatter to control which targets it deploys to. Group names from `deploy.yaml` expand to their members.
 
@@ -26,6 +27,8 @@ promptdeploy deploy [--dry-run] [--target TARGET] [--only-type TYPE] [--verbose|
 promptdeploy validate    # check for YAML errors, missing fields
 promptdeploy status      # show what's changed since last deploy
 promptdeploy list        # show managed items per target
+promptdeploy settings init [--from REF] [--target T] [--force]  # bootstrap settings.yaml from live hosts
+promptdeploy settings reconcile [--target T] [--apply]          # pull host settings drift into overrides
 ```
 
 The deploy pipeline works like this: discover all source items, filter by target, compute SHA256 hashes against the last manifest, write only what changed, clean up anything that's been removed from source. Unmanaged items in target directories are never touched.
@@ -54,6 +57,37 @@ groups:
 ### Environment variables
 
 API keys use `${VAR}` syntax in MCP and model definitions. Claude targets pass these through verbatim for runtime expansion; Droid and OpenCode expand them at deploy time from your shell environment. See `.env.example` for the full list.
+
+### Single-source settings.yaml
+
+`settings.yaml` lets you maintain Claude Code's `settings.json` from one place. You write a shared `base:` and, where targets differ, per-target or per-group `overrides:`. Overrides are applied as a JSON Merge Patch ([RFC 7386](https://www.rfc-editor.org/rfc/rfc7386)): a key set to `null` deletes it, nested objects merge, and an exact target id wins over any group.
+
+```yaml
+base:
+  effortLevel: low
+  env:
+    EDITOR: vim
+overrides:
+  claude-positron:        # exact target id
+    effortLevel: high
+  positron:               # a group from deploy.yaml
+    env:
+      FAST: "1"
+```
+
+Deploying renders the settings for each claude target and gently merges only the rendered top-level keys into that target's `settings.json`. Keys you manage are tracked per target, so dropping one from `settings.yaml` removes it on the next deploy, while `hooks`, `mcpServers`, and any keys you didn't put under `settings.yaml` are left untouched. Droid and OpenCode targets skip settings entirely.
+
+Two helpers bootstrap and maintain the file:
+
+```bash
+# Build settings.yaml from what's already on your hosts: shared values become
+# base, per-host differences become overrides.
+promptdeploy settings init [--from REF_TARGET] [--target T] [--force]
+
+# Report where live hosts have drifted from settings.yaml; with --apply, fold
+# that drift back into overrides (comments are preserved).
+promptdeploy settings reconcile [--target T] [--apply]
+```
 
 ## Getting started
 

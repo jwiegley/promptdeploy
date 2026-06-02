@@ -22,18 +22,22 @@ promptdeploy deploy [--dry-run] [--target TARGET] [--only-type TYPE] [--verbose|
 promptdeploy validate
 promptdeploy status [--target TARGET]
 promptdeploy list [--target TARGET]
+promptdeploy settings init [--from REF] [--target TARGET] [--force]
+promptdeploy settings reconcile [--target TARGET] [--apply]
 ```
 
 - **deploy** -- Copy agents, commands, skills, and MCP servers to target environments. Items unchanged since the last deploy are skipped. Items removed from the source are cleaned up from targets.
 - **validate** -- Check all source items for YAML errors, invalid environment IDs, and missing required fields.
 - **status** -- Compare source items against deployed manifests. Shows new (A), modified (M), deleted (D), and current items.
 - **list** -- Show all items currently managed by promptdeploy in each target.
+- **settings init** -- Bootstrap `settings.yaml` from live Claude hosts: shared values become `base`, per-host differences become `overrides`.
+- **settings reconcile** -- Report where live hosts have drifted from `settings.yaml`; with `--apply`, fold that drift back into `overrides`.
 
 ### Flags
 
 - `--dry-run` -- Show what would happen without making changes.
 - `--target TARGET` -- Limit to specific targets. Repeatable. Accepts group names (e.g., `claude`).
-- `--only-type TYPE` -- Limit to `agents`, `commands`, `skills`, or `mcp`. Repeatable.
+- `--only-type TYPE` -- Limit to `agents`, `commands`, `skills`, `mcp`, `models`, `hooks`, `prompts`, or `settings`. Repeatable.
 - `--verbose` -- Show diffs and timing.
 - `--quiet` -- Suppress output except errors and change counts.
 
@@ -100,6 +104,54 @@ providers:
 ```
 
 The `anthropic` provider itself is scoped to claude targets via `except:` so it does not leak into Droid or OpenCode configuration. The `models:` dict is informational -- it lets `promptdeploy validate` warn when a per-target `model:` references a model not listed here (typo detection). `models:` entries require no credentials; `base_url` and `api_key` are only required when a provider deploys to Droid or OpenCode.
+
+## Settings (Claude targets)
+
+`settings.yaml` at the repository root single-sources Claude Code's `settings.json`. It has two keys: a shared `base:` and an optional `overrides:` map keyed by target id or group name.
+
+```yaml
+# settings.yaml
+base:
+  effortLevel: low
+  env:
+    EDITOR: vim
+overrides:
+  claude-positron:        # exact target id -- wins over any group
+    effortLevel: high
+  positron:               # a group from deploy.yaml
+    env:
+      FAST: "1"
+```
+
+### Rendering
+
+For each claude target, `promptdeploy` renders the effective settings by starting from `base` and applying every matching `overrides` entry as a JSON Merge Patch ([RFC 7386](https://www.rfc-editor.org/rfc/rfc7386)):
+
+- A value of `null` deletes that key; nested objects merge deeply.
+- Group/label overrides apply first, in file order; the exact target id override applies last, so an exact match always wins over a group.
+- `hooks` and `mcpServers` are stripped from the rendered result (they are managed by the hook/MCP deploy paths, not here), along with any leftover `null` values.
+
+### Gentle merge into settings.json
+
+Deploy merges only the rendered top-level keys into the target's `settings.json`. The keys it manages are recorded per target in the manifest (`managed_keys`), so:
+
+- Keys you add under `settings.yaml` are written.
+- Keys you later remove from `settings.yaml` are removed from `settings.json` on the next deploy.
+- `hooks`, `mcpServers`, and any keys you never put under `settings.yaml` are left untouched.
+
+Removing `settings.yaml` (or filtering a target out) removes exactly the previously-managed keys. Droid and OpenCode targets skip settings entirely. Remote claude targets are covered: the rendered settings are written into the staging tree and synced over rsync like everything else.
+
+### init and reconcile
+
+```bash
+# Build settings.yaml from what is already on your hosts.
+promptdeploy settings init [--from REF] [--target TARGET] [--force]
+
+# Show host drift relative to settings.yaml; --apply folds it into overrides.
+promptdeploy settings reconcile [--target TARGET] [--apply]
+```
+
+`settings init` reads live `settings.json` from each selected target, factors the values shared across all of them into `base`, and records per-target differences as `overrides` (use `--from` to pick which target seeds the base, `--force` to overwrite an existing file). `settings reconcile` compares each host against the rendered settings and reports drift; with `--apply` it writes that drift back into `overrides`. Write-back uses ruamel.yaml, so existing comments and formatting in `settings.yaml` are preserved.
 
 ## Development
 
