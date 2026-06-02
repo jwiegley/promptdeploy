@@ -153,15 +153,17 @@ Patch**:
    override wins. (File order lets the user control precedence among overlapping
    group/label overrides.)
 4. Strip `hooks` and `mcpServers` from the result.
-5. Recursively strip any remaining `null` values (and now-empty dicts they
-   leave behind). Override-driven `null`s are already resolved as deletes in step
-   3, but a literal `null` written directly in `base` would otherwise survive into
-   `rendered` and be emitted to `settings.json` as a JSON `null`. This final
-   sweep guarantees the invariant below; `validate` additionally warns on `null`
-   values in `base` so the author notices an unintended one. The sweep targets
-   dict values and top-level keys; per RFC 7386, **list elements are atomic** — a
-   `null` inside a list value is left as-is (no settings value here is a list of
-   nullable elements, so this is a documentation caveat, not a live case).
+5. Recursively strip any remaining `null` values from dicts. Override-driven
+   `null`s are already resolved as deletes in step 3, but a literal `null` written
+   directly in `base` would otherwise survive into `rendered` and be emitted to
+   `settings.json` as a JSON `null`. This final sweep guarantees the invariant
+   below; `validate` additionally warns on `null` values in `base` so the author
+   notices an unintended one. **Empty dicts are preserved** — `extraKnownMarketplaces:
+   {}` is a legitimate setting (it appears in the live `claude-positron` file), so
+   the sweep removes `null` values but never drops a `{}`. Per RFC 7386, **list
+   elements are atomic** — a `null` inside a list value is left as-is (no settings
+   value here is a list of nullable elements, so this is a documentation caveat,
+   not a live case).
 
 The returned dict has all `null`s resolved; it is the concrete set of managed
 top-level keys for that target. **No `null`s reach the target.**
