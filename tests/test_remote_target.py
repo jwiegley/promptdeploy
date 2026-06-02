@@ -312,3 +312,43 @@ class TestRemoteTargetDelegation:
         result = remote_target.read_deployed_bytes("agent", "a")
         assert result == b"y"
         mock_inner.read_deployed_bytes.assert_called_once_with("agent", "a")
+
+
+def _make_remote(inner):
+    from pathlib import Path
+    from promptdeploy.targets.remote import RemoteTarget
+
+    return RemoteTarget(
+        inner=inner,
+        host="user@host",
+        remote_path=Path("/remote/target"),
+        staging_path=Path("/staging"),
+    )
+
+
+def test_read_settings_json_delegates_to_inner():
+    from unittest.mock import MagicMock
+
+    inner = MagicMock()
+    inner.read_settings_json.return_value = {"model": "x"}
+    remote = _make_remote(inner)
+    assert remote.read_settings_json() == {"model": "x"}
+    inner.read_settings_json.assert_called_once_with()
+
+
+def test_deploy_settings_delegates_to_inner():
+    from unittest.mock import MagicMock
+
+    inner = MagicMock()
+    remote = _make_remote(inner)
+    remote.deploy_settings({"model": "x"}, ["model"])
+    inner.deploy_settings.assert_called_once_with({"model": "x"}, ["model"])
+
+
+def test_remove_settings_delegates_to_inner():
+    from unittest.mock import MagicMock
+
+    inner = MagicMock()
+    remote = _make_remote(inner)
+    remote.remove_settings(["model", "env"])
+    inner.remove_settings.assert_called_once_with(["model", "env"])

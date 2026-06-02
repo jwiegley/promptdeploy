@@ -148,5 +148,14 @@ class RemoteTarget(Target):
     def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
         return self._inner.read_deployed_bytes(item_type, name)
 
+    def deploy_settings(self, rendered: dict, previous_keys: list[str]) -> None:
+        self._inner.deploy_settings(rendered, previous_keys)
+
+    def remove_settings(self, previous_keys: list[str]) -> None:
+        self._inner.remove_settings(previous_keys)
+
+    def read_settings_json(self) -> dict:
+        return self._inner.read_settings_json()
+
     def manifest_path(self) -> Path:
         return self._inner.manifest_path()
