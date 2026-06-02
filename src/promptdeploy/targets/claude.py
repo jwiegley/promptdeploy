@@ -182,6 +182,16 @@ class ClaudeTarget(Target):
 
         self._save_json(self._settings_path(), settings)
 
+    def deploy_settings(self, rendered: dict, previous_keys: list[str]) -> None:
+        path = self._settings_path()
+        settings = self._load_json(path)
+        for key in previous_keys:
+            if key not in rendered:
+                settings.pop(key, None)
+        for key, value in rendered.items():
+            settings[key] = value
+        self._save_json(path, settings)
+
     # ------------------------------------------------------------------
     # Remove
     # ------------------------------------------------------------------

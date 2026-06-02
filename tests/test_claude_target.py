@@ -763,3 +763,47 @@ class TestReadDeployedBytes:
         assert target.read_deployed_bytes("mcp", "x") is None
         assert target.read_deployed_bytes("hook", "x") is None
         assert target.read_deployed_bytes("models", "x") is None
+
+
+class TestDeploySettings:
+    def _seed(self, tmp_path: Path, data: dict) -> ClaudeTarget:
+        target = _make_target(tmp_path)
+        (tmp_path / ".claude" / "settings.json").write_text(json.dumps(data))
+        return target
+
+    def test_creates_file_when_absent(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_settings({"effortLevel": "low"}, [])
+        data = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+        assert data == {"effortLevel": "low"}
+
+    def test_merges_without_touching_hooks_or_mcp(self, tmp_path: Path):
+        target = self._seed(
+            tmp_path,
+            {
+                "hooks": {"Stop": [{"_source": "claude-vault"}]},
+                "mcpServers": {"pal": {"command": "x"}},
+                "model": "opus",
+            },
+        )
+        target.deploy_settings({"effortLevel": "high", "model": "sonnet"}, ["model"])
+        data = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+        assert data["hooks"] == {"Stop": [{"_source": "claude-vault"}]}
+        assert data["mcpServers"] == {"pal": {"command": "x"}}
+        assert data["effortLevel"] == "high"
+        assert data["model"] == "sonnet"
+
+    def test_removes_previously_managed_key_dropped_from_render(self, tmp_path: Path):
+        target = self._seed(tmp_path, {"model": "sonnet", "env": {"A": "1"}})
+        # Previously managed {model, env}; now render only {env}. model must go.
+        target.deploy_settings({"env": {"A": "1"}}, ["model", "env"])
+        data = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+        assert "model" not in data
+        assert data["env"] == {"A": "1"}
+
+    def test_preserves_unmanaged_keys(self, tmp_path: Path):
+        target = self._seed(tmp_path, {"feedbackSurveyState": {"x": 1}})
+        target.deploy_settings({"effortLevel": "low"}, [])
+        data = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+        assert data["feedbackSurveyState"] == {"x": 1}
+        assert data["effortLevel"] == "low"
