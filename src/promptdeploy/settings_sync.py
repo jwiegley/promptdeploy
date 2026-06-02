@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import os
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -17,7 +18,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 
 from .config import Config
-from .settings import generate_merge_patch, strip_keys
+from .settings import generate_merge_patch, render_settings, strip_keys
 from .targets import create_target
 
 _MANAGED_ELSEWHERE = {"hooks", "mcpServers"}
@@ -115,3 +116,75 @@ def init_settings(
     if overrides:
         fresh["overrides"] = overrides
     dump_settings_doc(fresh, out_path)
+
+
+@dataclass
+class SettingsDiff:
+    target_id: str
+    kind: str  # '+' host-only, '~' differs, '-' rendered-only
+    key: str
+    host_value: Any = None
+    rendered_value: Any = None
+
+
+def _diff_target(
+    target_id: str, host: Dict[str, Any], rendered: Dict[str, Any]
+) -> List[SettingsDiff]:
+    diffs: List[SettingsDiff] = []
+    for k in sorted(set(host) | set(rendered)):
+        in_host, in_rend = k in host, k in rendered
+        if in_host and not in_rend:
+            diffs.append(SettingsDiff(target_id, "+", k, host_value=host[k]))
+        elif in_rend and not in_host:
+            diffs.append(SettingsDiff(target_id, "-", k, rendered_value=rendered[k]))
+        elif host[k] != rendered[k]:
+            diffs.append(SettingsDiff(target_id, "~", k, host[k], rendered[k]))
+    return diffs
+
+
+def reconcile_settings(
+    config: Config,
+    target_ids: List[str],
+    *,
+    settings_path: Path,
+    apply: bool,
+) -> List[SettingsDiff]:
+    """Diff each claude target's live settings against settings.yaml.
+
+    With ``apply``, write each host's drifted top-level keys into that target's
+    overrides block (a ``null`` when the host lacks a key that ``base`` has),
+    preserving comments on untouched override keys.
+    """
+    if not settings_path.exists():
+        raise FileNotFoundError(
+            f"{settings_path} not found; run `promptdeploy settings init` first"
+        )
+
+    doc = load_settings_doc(settings_path)
+    base = dict(doc.get("base") or {})
+    claude_ids = _claude_target_ids(config, target_ids)
+
+    all_diffs: List[SettingsDiff] = []
+    changed = False
+    for tid in claude_ids:
+        host = read_live_settings(config.targets[tid])
+        rendered = render_settings(doc, tid, config)
+        diffs = _diff_target(tid, host, rendered)
+        all_diffs.extend(diffs)
+        if not apply:
+            continue
+        drifted = [d for d in diffs if d.kind in ("+", "~")]
+        if not drifted:
+            continue
+        patch = generate_merge_patch(base, host)  # base -> host, per key
+        overrides = doc.setdefault("overrides", {})
+        ov = overrides.setdefault(tid, {})
+        for d in drifted:
+            if d.key in patch:
+                ov[d.key] = patch[d.key]
+            else:
+                ov.pop(d.key, None)
+        changed = True
+    if apply and changed:
+        dump_settings_doc(doc, settings_path)
+    return all_diffs

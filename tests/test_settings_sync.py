@@ -189,3 +189,105 @@ def test_init_settings_from_not_among_targets_raises(tmp_path):
             out_path=out,
             force=False,
         )
+
+
+def test_reconcile_reports_diff_without_apply(tmp_path):
+    from promptdeploy.config import Config
+    from promptdeploy.settings_sync import reconcile_settings
+
+    p = _claude_tc(
+        tmp_path, "claude-personal", {"effortLevel": "low", "autoUpdates": False}
+    )
+    config = Config(source_root=tmp_path, targets={p.id: p}, groups={})
+    out = tmp_path / "settings.yaml"
+    out.write_text("base:\n  effortLevel: low\n")
+
+    diffs = reconcile_settings(
+        config, ["claude-personal"], settings_path=out, apply=False
+    )
+    # autoUpdates is on the host but not rendered -> reported as host-only ("+").
+    keys = {(d.target_id, d.kind, d.key) for d in diffs}
+    assert ("claude-personal", "+", "autoUpdates") in keys
+    # No write happened.
+    assert "autoUpdates" not in out.read_text()
+
+
+def test_reconcile_apply_writes_override(tmp_path):
+    from promptdeploy.config import Config
+    from promptdeploy.settings_sync import reconcile_settings, load_settings_doc
+
+    p = _claude_tc(tmp_path, "claude-positron", {"effortLevel": "high"})
+    config = Config(source_root=tmp_path, targets={p.id: p}, groups={})
+    out = tmp_path / "settings.yaml"
+    out.write_text("base:\n  effortLevel: low\n")
+
+    reconcile_settings(config, ["claude-positron"], settings_path=out, apply=True)
+    doc = load_settings_doc(out)
+    assert doc["overrides"]["claude-positron"]["effortLevel"] == "high"
+
+
+def test_reconcile_requires_existing_yaml(tmp_path):
+    import pytest
+    from promptdeploy.config import Config
+    from promptdeploy.settings_sync import reconcile_settings
+
+    p = _claude_tc(tmp_path, "claude-personal", {"effortLevel": "low"})
+    config = Config(source_root=tmp_path, targets={p.id: p}, groups={})
+    with pytest.raises(FileNotFoundError):
+        reconcile_settings(
+            config,
+            ["claude-personal"],
+            settings_path=tmp_path / "nope.yaml",
+            apply=False,
+        )
+
+
+def test_reconcile_reports_rendered_only_key(tmp_path):
+    # Covers the '-' diff kind: settings.yaml renders a key the host lacks.
+    from promptdeploy.config import Config
+    from promptdeploy.settings_sync import reconcile_settings
+
+    p = _claude_tc(tmp_path, "claude-personal", {})  # empty host settings.json
+    config = Config(source_root=tmp_path, targets={p.id: p}, groups={})
+    out = tmp_path / "settings.yaml"
+    out.write_text("base:\n  model: opus\n")
+    diffs = reconcile_settings(
+        config, ["claude-personal"], settings_path=out, apply=False
+    )
+    assert ("claude-personal", "-", "model") in {
+        (d.target_id, d.kind, d.key) for d in diffs
+    }
+
+
+def test_reconcile_apply_no_drift_writes_nothing(tmp_path):
+    # Covers `if not drifted: continue` and the `apply and not changed` no-dump path.
+    from promptdeploy.config import Config
+    from promptdeploy.settings_sync import reconcile_settings
+
+    p = _claude_tc(tmp_path, "claude-personal", {"effortLevel": "low"})
+    config = Config(source_root=tmp_path, targets={p.id: p}, groups={})
+    out = tmp_path / "settings.yaml"
+    out.write_text("base:\n  effortLevel: low\n")
+    before = out.read_text()
+    diffs = reconcile_settings(
+        config, ["claude-personal"], settings_path=out, apply=True
+    )
+    assert diffs == []
+    assert out.read_text() == before
+
+
+def test_reconcile_apply_removes_override_when_host_matches_base(tmp_path):
+    # Covers the `else: ov.pop(...)` branch: host equals base, but an existing
+    # override makes rendered differ -> the override key is dropped.
+    from promptdeploy.config import Config
+    from promptdeploy.settings_sync import reconcile_settings, load_settings_doc
+
+    p = _claude_tc(tmp_path, "claude-x", {"effortLevel": "low"})  # == base
+    config = Config(source_root=tmp_path, targets={p.id: p}, groups={})
+    out = tmp_path / "settings.yaml"
+    out.write_text(
+        "base:\n  effortLevel: low\noverrides:\n  claude-x:\n    effortLevel: high\n"
+    )
+    reconcile_settings(config, ["claude-x"], settings_path=out, apply=True)
+    doc = load_settings_doc(out)
+    assert "effortLevel" not in doc["overrides"]["claude-x"]
