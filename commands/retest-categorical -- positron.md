@@ -33,6 +33,7 @@ machine handoff or argument forwarding; read both docs and apply the overrides b
 | `/retest` general | `/retest-categorical` categorical override |
 |---|---|
 | Source of truth = HF transformers forward pass (TVD/top-K/decoded-tokens) | **Legacy ingest path; bit-exact last-prompt-token logits** (`require_byte_identical`, 100%) |
+| Token-fidelity boundary sweep {8,64,256,4096,16384} gated vs HF top-K inclusion | **Same boundary set, gated vs legacy byte-identity** (no top-K slack — exact parity through every page boundary) |
 | Comparison binary chosen per derived set | **`gen/t_generate_categorical_fpga_real`** |
 | Build = `make build` / `build-test` / `build-ingest` per diff | **`make build-categorical -j 4`** (regenerates categorical + legacy plugins; categorical-branch target only) |
 | Model set derived from branch diff | **Fixed eight-model Phase-0 table** (Phase 0 below) |
@@ -77,7 +78,12 @@ the `ModelDef` table in `t/t_generate_categorical_fpga_real.cpp`.)
 Use the `/retest` **Operating rules** verbatim (Nix shell wrapper, `-j 4` max, executor
 selection, the `/opt/positron/weights/...` read-only / `/tmp/retest-categorical_weights/<repo>` fallback,
 one-TEST_CASE-per-process for FPGA, background long jobs, the distinct
-`PASS / SKIPPED / QUARANTINED / DIVERGE` states), with two categorical specializations:
+`PASS / SKIPPED / QUARANTINED / DIVERGE` states) — **including the "this host HAS FPGA cards,
+run the FPGA tests here every time" rule**: the Phase-3 byte-exact parity gate and Phase-5
+decode run on the FPGA cards present on this machine (`ls /dev/vfio/` populated ⇒ present;
+`pgrep -af 'runtron\|t_generate'` ⇒ free). Never call this a "host-only environment" or defer
+the FPGA gate for lack of hardware — a skipped FPGA gate is `INCOMPLETE`, never `PASS`. With
+these, plus two categorical specializations:
 
 - **The Phase-3 runner enforces one-TEST_CASE-per-process** (the sweep runner below).
 - **Claim discipline (categorical example).** Bind every "byte-identical" statement to its
@@ -193,6 +199,21 @@ attention chunking, visit-order) the 4-token oracle misses. **A `[long]` DIVERGE
 `t_generate_categorical_fpga_real` on the categorical branch; they do **not** exist in main's
 `t_generate_ingest_1`, which is why `/retest` does not gate on `[long]`.)
 
+**Token fidelity across context-length boundaries.** Extend the `[long]` notion to the full
+boundary set **{8, 64, 256, 4096, 16384}** (the KV cache is paginated at `page::page_size == 64`,
+so these span 1 / 1 / 4 / 64 / 256 pages — see the `/retest` "Token fidelity across
+context-length boundaries" section for the page-boundary rationale and the realistic-prompt /
+NaN-#2808 rule). The **oracle differs**: where `/retest` checks per-position top-K inclusion vs
+HF, the categorical run keeps this command's oracle — **bit-exact categorical-vs-legacy parity at
+every position** (`require_byte_identical`). Byte-identity is drift-free, so there is no top-K
+slack: at each reachable length the categorical and legacy pipelines must agree exactly, and the
+gate is `first divergence at position …` never firing through the page boundaries. Both pipelines
+must reach the length (KV-cache HBM and `max_position_embeddings`); a length only one side can run
+is **NOT-REACHABLE** (INCOMPLETE for that cell), never a PASS. Inline prompt-id arrays are
+impractical past a few hundred tokens, so the 256/4096/16384 cases must load their realistic
+token stream from a file/corpus (extend `kMixtralReal*`/`kGptOssReal*`-style constants with a
+file-backed loader rather than a hand-written array). Report a per-`(model, length)` row.
+
 **Isolated sweep runner — one TEST_CASE per process** (each model's oracle + its
 `[long]`/`[realistic]` cases run in their own processes). The oracle is selected by **tag
 exclusion** `[model]~[long]`, NOT by a name pulled from `--list-tests`: Catch2 wraps/truncates
@@ -268,14 +289,17 @@ QUARANTINED rows below apply only if a `mayfail`-tagged case is later added.)
 | `PASS` / `QUARANTINED-PASS` | yes |
 | `DIVERGE` | **NO — real correctness regression** |
 | `NO-COVERAGE` | NO — INCOMPLETE; a passed tag matched zero TEST_CASEs |
+| `NOT-REACHABLE` | NO — INCOMPLETE for that `(model, length)` cell; only one pipeline can reach L, or L exceeds `max_position_embeddings`/KV-cache HBM — never a PASS |
 | `SKIPPED` / `WEIGHTS-MISSING` / `TIMEOUT` | NO — INCOMPLETE (Phase 0 should have provisioned/pre-warmed) |
 | `QUARANTINED-FAIL` | does not block ship, but report as a known-flake hit (only if a `mayfail` case exists) |
 | `LOCK-CONTENTION` | re-run alone; if it still fails alone, escalate |
 | `FAIL(rc=…)` | investigate (SIGABRT/SIGSEGV); not necessarily categorical — see Known traps |
 
 **Gate:** every supported model must `PASS`/`QUARANTINED-PASS` on its 4-token and `[long]`
-cases. Any `DIVERGE` fails. Any `NO-COVERAGE`/`SKIPPED`/`WEIGHTS-MISSING`/`TIMEOUT` makes the
-run INCOMPLETE.
+cases **and** on the token-fidelity boundary sweep at every reachable length in
+{8, 64, 256, 4096, 16384} (bit-exact categorical-vs-legacy parity through the page boundaries).
+Any `DIVERGE` fails. Any `NO-COVERAGE`/`NOT-REACHABLE`/`SKIPPED`/`WEIGHTS-MISSING`/`TIMEOUT`
+makes the run INCOMPLETE.
 
 **MoE models must use realistic prompts.** Synthetic incrementing-id prompts overflow an MoE
 expert FFN to NaN at depth (issue #2808). Both MoE families now use realistic tokenizations —
@@ -355,7 +379,9 @@ One consolidated summary, using the verdict taxonomy verbatim (do not collapse S
 QUARANTINED / NO-COVERAGE into PASS):
 - **Build / Unit tests:** clean? Haskell N/N, C++ host pass/fail.
 - **Phase 0:** per model — weights canonical/scratch/DOWNLOAD-FAILED; cache pre-warmed y/n.
-- **Phase 3:** per `(model, prompt-length)` — the verdict + executor + runtime.
+- **Phase 3:** per `(model, prompt-length)` — the verdict + executor + runtime, **including the
+  boundary sweep over {8, 64, 256, 4096, 16384}** (per-`(model, length)` byte-exact parity,
+  pages crossed, PASS/DIVERGE/NOT-REACHABLE per cell).
 - **Phase 4:** per model allclose + top-1 (MoE excluded).
 - **Phase 5:** per model Δ gen-time/tok-s/wall + TOKID match.
 - **Overall verdict:** `BYTE-EXACT DROP-IN` (all measured rows PASS/QUARANTINED-PASS, no
