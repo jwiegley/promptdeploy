@@ -954,3 +954,11 @@ class TestReadDeployedBytes:
         assert target.read_deployed_bytes("prompt", "x") is None
         assert target.read_deployed_bytes("mcp", "x") is None
         assert target.read_deployed_bytes("models", "x") is None
+
+
+def test_should_skip_settings(tmp_path):
+    from promptdeploy.targets.droid import DroidTarget
+
+    d = tmp_path / "f"
+    d.mkdir()
+    assert DroidTarget("droid", d).should_skip("settings", "settings") is True

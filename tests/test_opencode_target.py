@@ -1226,3 +1226,11 @@ class TestReadDeployedBytes:
         assert target.read_deployed_bytes("mcp", "x") is None
         assert target.read_deployed_bytes("hook", "x") is None
         assert target.read_deployed_bytes("models", "x") is None
+
+
+def test_should_skip_settings(tmp_path):
+    from promptdeploy.targets.opencode import OpenCodeTarget
+
+    d = tmp_path / "oc"
+    d.mkdir()
+    assert OpenCodeTarget("opencode", d).should_skip("settings", "settings") is True

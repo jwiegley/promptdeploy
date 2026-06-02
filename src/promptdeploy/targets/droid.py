@@ -57,6 +57,8 @@ class DroidTarget(Target):
         content: Optional[bytes] = None,
         metadata: Optional[dict] = None,
     ) -> bool:
+        if item_type == "settings":
+            return True
         if item_type == "hook":
             return True
         if item_type == "command":
