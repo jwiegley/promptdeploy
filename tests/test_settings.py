@@ -1,6 +1,6 @@
 """Tests for the pure settings rendering core."""
 
-from promptdeploy.settings import apply_merge_patch
+from promptdeploy.settings import apply_merge_patch, generate_merge_patch
 
 
 class TestApplyMergePatch:
@@ -35,3 +35,34 @@ class TestApplyMergePatch:
         base = {"env": {"X": "1"}}
         apply_merge_patch(base, {"env": {"X": "2"}})
         assert base == {"env": {"X": "1"}}
+
+
+class TestGenerateMergePatch:
+    def test_added_key(self):
+        assert generate_merge_patch({"a": 1}, {"a": 1, "b": 2}) == {"b": 2}
+
+    def test_removed_key_becomes_null(self):
+        assert generate_merge_patch({"a": 1, "b": 2}, {"a": 1}) == {"b": None}
+
+    def test_changed_scalar(self):
+        assert generate_merge_patch({"a": 1}, {"a": 2}) == {"a": 2}
+
+    def test_identical_yields_empty_patch(self):
+        assert (
+            generate_merge_patch({"a": 1, "b": {"c": 2}}, {"a": 1, "b": {"c": 2}}) == {}
+        )
+
+    def test_nested_diff_is_minimal(self):
+        base = {"env": {"X": "1", "Y": "2"}}
+        target = {"env": {"X": "1", "Y": "9", "Z": "3"}}
+        assert generate_merge_patch(base, target) == {"env": {"Y": "9", "Z": "3"}}
+
+    def test_roundtrip_reproduces_target(self):
+        base = {"a": 1, "b": {"c": 2, "d": 3}, "e": 5}
+        target = {
+            "a": 1,
+            "b": {"c": 9},
+            "f": 7,
+        }  # d removed within b, e removed, f added
+        patch = generate_merge_patch(base, target)
+        assert apply_merge_patch(base, patch) == target

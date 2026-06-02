@@ -24,3 +24,30 @@ def apply_merge_patch(base: Any, patch: Any) -> Any:
         else:
             result[key] = copy.deepcopy(value)
     return result
+
+
+def generate_merge_patch(
+    base: Dict[str, Any], target: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Return the minimal patch ``P`` with ``apply_merge_patch(base, P) == target``.
+
+    ``base`` and ``target`` are both dicts (the settings domain). Keys dropped
+    in ``target`` become ``None``; nested dicts recurse; everything else is
+    replaced by the ``target`` value.
+    """
+    patch: Dict[str, Any] = {}
+    for key in base:
+        if key not in target:
+            patch[key] = None
+    for key, tval in target.items():
+        if key not in base:
+            patch[key] = copy.deepcopy(tval)
+            continue
+        bval = base[key]
+        if bval == tval:
+            continue
+        if isinstance(bval, dict) and isinstance(tval, dict):
+            patch[key] = generate_merge_patch(bval, tval)
+        else:
+            patch[key] = copy.deepcopy(tval)
+    return patch
