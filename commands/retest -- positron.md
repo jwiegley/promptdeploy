@@ -418,11 +418,17 @@ permuted case uses `outlier_cap 0.1 / max 6%`); GPT-OSS-20B `tvd 0.10`, extracte
 **Executor map** is per-derived-variant (dense → tp1; MoE / large → tp4); **no fixed
 enumeration**. `t_generate_ingest_1` currently registers only a single prompt per model
 (there are **no `[long]`/`[realistic]` tags** in any `t/` binary — that distinction lived only
-in the categorical `t_generate_categorical_fpga_real`, absent from main). Treat seq-len
-coverage as a **known limitation**, not a gate: run the longer-prompt / higher-`max_layers`
-cases where a binary actually registers them, and where a model only has a single short case,
-say so rather than claiming `[long]` coverage. Where a longer case does exist, a DIVERGE on it
-while the short case passes is a real bug — do not excuse it.
+in the categorical `t_generate_categorical_fpga_real`, absent from main). **Token fidelity
+across context-length boundaries** is the methodology below; apply it honestly scoped to what
+the binary registers: run the boundary sweep where a binary actually registers the boundary
+cells and **gate** divergences there (a `DIVERGE` on a longer case while the short case passes
+is a real bug — do not excuse it); where a model has only a single short case, report each unrun
+boundary length as an acknowledged seq-len coverage gap (`NO-COVERAGE`) rather than claiming
+`[long]` or boundary coverage that was never run — in the generic path that gap is reported, not
+a run-level INCOMPLETE (the sweep is a hard gate only where boundary cells are registered, and
+mandatory in `/retest-categorical`). Decide each length's scope against the model's
+`max_position_embeddings` before running it, and report out-of-scope lengths as `OUT-OF-SCOPE`
+(`N/A`), never as PASS.
 
 **Isolated sweep runner — one TEST_CASE per process by exact name** (`BIN` and the test-name
 filter are parameterized for the chosen binary, e.g. `t_generate_ingest_1` or `t_generate`):
@@ -501,6 +507,74 @@ in-tree Mixtral case is not a usable template**: it is `SKIP("TODO(#2808)")`, us
 incrementing-id prompt (0..600), samples with `top_p=0.7` (not greedy), runs tp2, and is a
 self-comparison (`logits1` vs `logits2`) — **not** an HF-golden gate. A new MoE case must use a
 realistic tokenized prompt **and** an HF golden **and** `temperature 0`.
+
+# Token fidelity across context-length boundaries
+
+This is the generic, oracle-agnostic methodology `/retest-categorical` inherits and overrides.
+It is a *methodology*, not a claim that any given binary already runs it — whether it gates
+depends entirely on what TEST_CASEs a binary registers (see the reporting rule below).
+`t_generate_ingest_1` on main registers only a single short prompt per model with no
+`[long]`/`[realistic]` tags, so in the generic `/retest` path the boundary lengths below are an
+**acknowledged seq-len coverage gap**: report each unrun length as uncovered (`NO-COVERAGE`),
+never as a PASS — but on its own that gap does **not** make the run INCOMPLETE; the run's
+verdict is driven by the registered case(s) per the Phase-3 gate. The sweep becomes a hard gate
+only where a binary registers the boundary cells, and it is **mandatory in
+`/retest-categorical`**, where every in-scope `(model, length)` cell must run.
+
+**Boundary set: `{8, 64, 256, 4096, 16384}`.** The KV cache is paginated at
+`page::page_size == 64`, so these lengths exercise **1 / 1 / 4 / 64 / 256** page regimes
+(8 and 64 each fit in one page; 256 = 4 pages; 4096 = 64 pages; 16384 = 256 pages). The set is
+chosen to cross the page boundaries where KV-cache stride, attention-chunking, and
+visit-order bugs surface that a single short prompt cannot reach.
+
+**Oracle for the generic `/retest` path = HuggingFace.** At each in-scope length, compare the
+pipeline's logits against the HF `transformers` forward pass with the same metrics as the rest
+of Phase 3: per-position **top-K inclusion** (`topk_params{k=5, min_overlap≥3}` on the C++
+path; `top1_agreement`/`top5_agreement` on the Python path) plus the committed TVD/outlier
+caps. There is **no `--strict-top1` flag** here (that is categorical-only) — top-1 is the
+top-K-overlap guard plus the agreement metrics. Tolerances are the per-model literals committed
+in `t/t_generate_ingest_1.cpp`; do **not** invent new ones, and a longer prompt does not relax
+them (a brand-new model has no committed tolerance — choosing one is a reviewed authoring step).
+
+**Decide in-scope BEFORE running a length.** A length `L` is in scope for a model only when
+`L ≤` the model's declared `max_position_embeddings` (from its HF `config.json`) **and** within
+any documented hard KV-cache/HBM capacity limit for the chosen executor. Resolve this *before*
+launching the cell — never discover it from a crash. A length beyond the declared contract is
+reported **`OUT-OF-SCOPE`** (`N/A-MAX-POSITION`) with the exact limit; it is neither PASS,
+INCOMPLETE, nor DIVERGE, and is never counted toward the gate.
+
+**Source realistic token streams for the long cases.** Inline prompt-id arrays are impractical
+past a few hundred tokens, so the 256/4096/16384 cells must load their token stream from a
+file/corpus (a file-backed loader, not a hand-written array). Use a real tokenized text so the
+distribution is representative, and feed the same stream to the pipeline and the HF oracle so
+the comparison is apples-to-apples. The 8- and 64-token cells may use short inline prompts.
+
+**MoE models never use synthetic incrementing-id prompts.** A synthetic incrementing-id prompt
+overflows an MoE expert FFN to NaN at depth (issue #2808, SIGABRT `m_star != -inf`). Any MoE
+model in the sweep must use a realistic tokenization at every boundary length; dense models may
+use a synthetic prompt (no expert-FFN path to overflow).
+
+**Run each `(model, length)` cell in its own process.** One TEST_CASE per process, exactly as
+the Phase-3 isolated sweep runner does — Catch2 single-process runs share FPGA state (KV-cache
+pages, worker assignment, scratch HBM) across cases, so the boundary cells must not share a
+process or they yield non-reproducible verdicts.
+
+**Reporting and gate (per `(model, length)` cell).** Run the sweep wherever a binary actually
+registers the boundary cells, and gate divergences there:
+
+- **In-scope, ran, within tolerance vs HF** → `PASS`.
+- **In-scope, exceeds tolerance vs HF** → `DIVERGE` (a real correctness regression; a `DIVERGE`
+  on a longer case while the short case passes is a real bug, not flake).
+- **In-scope, but the environment cannot run a registered cell** (weights missing, timeout,
+  unresolved lock contention) → `WEIGHTS-MISSING` / `TIMEOUT` / `LOCK-CONTENTION` →
+  **INCOMPLETE** (Phase 0 should have provisioned/pre-warmed).
+- **In-scope, but the binary registers no case at this length** → `NO-COVERAGE`. Report it as an
+  acknowledged seq-len coverage gap; never claim the boundary was exercised or PASS it. In the
+  generic `/retest` path this is the default on main (only the single short prompt is registered)
+  and does **not** by itself make the run INCOMPLETE; in `/retest-categorical` the boundary sweep
+  is **mandatory**, so an in-scope `NO-COVERAGE` cell there **is** INCOMPLETE.
+- **Out-of-scope** (`L` beyond the model's declared support) → `OUT-OF-SCOPE` (`N/A`), reported
+  with the limit, never counted as PASS.
 
 # Phase 4 — Code review — skip if `--no-review`
 
