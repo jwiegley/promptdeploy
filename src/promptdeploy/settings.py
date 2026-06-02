@@ -10,6 +10,8 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict, Iterable
 
+from .config import Config
+
 
 def apply_merge_patch(base: Any, patch: Any) -> Any:
     """Apply an RFC 7386 JSON Merge Patch. Pure; inputs are never mutated."""
@@ -68,3 +70,34 @@ def strip_nulls(value: Any) -> Any:
     if not isinstance(value, dict):
         return value
     return {k: strip_nulls(v) for k, v in value.items() if v is not None}
+
+
+def render_settings(
+    doc: Dict[str, Any], target_id: str, config: Config
+) -> Dict[str, Any]:
+    """Render the concrete managed settings for one target.
+
+    Starts from ``doc['base']`` and applies every matching ``overrides`` entry as
+    a merge patch: group/label overrides first (in file order), then the exact
+    ``target_id`` override last (most specific wins). Finally strips
+    ``hooks``/``mcpServers`` and any remaining ``null`` values. Returns plain
+    dicts only — no ``null`` reaches the caller.
+    """
+    base = doc.get("base") or {}
+    result: Dict[str, Any] = copy.deepcopy(dict(base))
+
+    overrides = doc.get("overrides") or {}
+    exact = None
+    for key, patch in overrides.items():
+        if patch is None:
+            continue
+        if key == target_id:
+            exact = patch
+            continue
+        if target_id in config.groups.get(key, []):
+            result = apply_merge_patch(result, patch)
+    if exact is not None:
+        result = apply_merge_patch(result, exact)
+
+    result = strip_keys(result, {"hooks", "mcpServers"})
+    return strip_nulls(result)

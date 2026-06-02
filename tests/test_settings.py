@@ -1,8 +1,10 @@
 """Tests for the pure settings rendering core."""
 
+from promptdeploy.config import Config, TargetConfig
 from promptdeploy.settings import (
     apply_merge_patch,
     generate_merge_patch,
+    render_settings,
     strip_keys,
     strip_nulls,
 )
@@ -90,3 +92,87 @@ class TestStripHelpers:
     def test_strip_nulls_leaves_lists_atomic(self):
         d = {"allowWrite": ["/tmp", None]}
         assert strip_nulls(d) == {"allowWrite": ["/tmp", None]}
+
+
+def _cfg(*target_ids: str, groups=None) -> Config:
+    targets = {
+        tid: TargetConfig(
+            id=tid, type="claude", path=__import__("pathlib").Path("/x") / tid
+        )
+        for tid in target_ids
+    }
+    return Config(
+        source_root=__import__("pathlib").Path("/x"),
+        targets=targets,
+        groups=groups or {},
+    )
+
+
+class TestRenderSettings:
+    def test_base_only_when_no_override_matches(self):
+        doc = {"base": {"effortLevel": "low", "env": {"A": "1"}}}
+        cfg = _cfg("claude-personal")
+        assert render_settings(doc, "claude-personal", cfg) == {
+            "effortLevel": "low",
+            "env": {"A": "1"},
+        }
+
+    def test_exact_target_override_add_change_delete(self):
+        doc = {
+            "base": {"effortLevel": "low", "env": {"A": "1", "B": "2"}},
+            "overrides": {
+                "claude-positron": {
+                    "effortLevel": None,
+                    "model": "sonnet",
+                    "env": {"B": "9", "A": None},
+                }
+            },
+        }
+        cfg = _cfg("claude-positron")
+        assert render_settings(doc, "claude-positron", cfg) == {
+            "model": "sonnet",
+            "env": {"B": "9"},
+        }
+
+    def test_group_override_applies_via_config_groups(self):
+        doc = {
+            "base": {"effortLevel": "low"},
+            "overrides": {"positron": {"effortLevel": "med"}},
+        }
+        cfg = _cfg("claude-positron", groups={"positron": ["claude-positron"]})
+        assert render_settings(doc, "claude-positron", cfg) == {"effortLevel": "med"}
+
+    def test_exact_target_wins_over_group(self):
+        doc = {
+            "base": {"x": "base"},
+            "overrides": {
+                "positron": {"x": "group"},  # group, applied first
+                "claude-positron": {"x": "exact"},  # exact id, applied last
+            },
+        }
+        cfg = _cfg("claude-positron", groups={"positron": ["claude-positron"]})
+        assert render_settings(doc, "claude-positron", cfg)["x"] == "exact"
+
+    def test_overlapping_groups_apply_in_file_order(self):
+        doc = {
+            "base": {"x": "base"},
+            "overrides": {"g1": {"x": "first"}, "g2": {"x": "second"}},
+        }
+        cfg = _cfg("t", groups={"g1": ["t"], "g2": ["t"]})
+        # g2 appears later in file order -> wins
+        assert render_settings(doc, "t", cfg)["x"] == "second"
+
+    def test_strips_hooks_and_mcp_servers(self):
+        doc = {"base": {"hooks": {"X": 1}, "mcpServers": {"Y": 2}, "model": "a"}}
+        assert render_settings(doc, "t", _cfg("t")) == {"model": "a"}
+
+    def test_strips_literal_null_in_base(self):
+        doc = {"base": {"a": 1, "b": None}}
+        assert render_settings(doc, "t", _cfg("t")) == {"a": 1}
+
+    def test_missing_base_and_overrides_yield_empty(self):
+        assert render_settings({}, "t", _cfg("t")) == {}
+
+    def test_none_override_value_is_ignored(self):
+        doc = {"base": {"a": 1}, "overrides": {"t": None}}
+        assert render_settings(doc, "t", _cfg("t")) == {"a": 1}
