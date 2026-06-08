@@ -1,17 +1,17 @@
 name: stock-trader
 description: Live stock-trader research tools (quotes, technical analysis, options, scans, news/sentiment, risk, Alpha Vantage) via the vulcan REST service — the same 18 tools OpenClaw uses
-command: /Users/johnw/src/stock-trader/.venv/bin/python
-args:
-  - /Users/johnw/.config/stock-trader/mcp-client.py
-env:
-  STOCK_TRADER_BASE_URL: https://trader.vulcan.lan
-  REQUESTS_CA_BUNDLE: /Users/johnw/.config/stock-trader/vulcan-root-ca.crt
+command: /etc/profiles/per-user/johnw/bin/stock-trader-mcp
+args: []
 scope: user
 enabled: true
-# Laptop-only: the command path (stock-trader .venv) and the CA bundle exist
-# only on this machine, so restrict to the local personal Claude config. Do NOT
-# broaden to the `claude` label — that fans out to vulcan/vps/andoria/git-ai
-# where these paths don't exist. Add claude-positron / claude-git-ai-local here
-# if you want it in those local profiles too.
+# `stock-trader-mcp` is installed via home-manager (~/src/nix overlay
+# `stock-trader-mcp`, built from the stock-trader repo's scripts/ via a
+# flake = false input). The wrapper bakes in the merged Vulcan CA bundle and a
+# default STOCK_TRADER_BASE_URL, so no env, paths, or args are needed here.
+#
+# Scoped to the local personal Claude config. The bin now exists on every host
+# where johnw's home-manager runs, so you *could* broaden this — but leave it
+# laptop-only unless you actually want stock-trader tools in another Claude
+# config (e.g. add claude-positron / claude-git-ai-local / claude-vulcan).
 only:
   - claude-personal
