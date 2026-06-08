@@ -1,0 +1,24 @@
+name: drafts
+description: Drive the Drafts app (macOS) — create, read, update, search, tag, flag, archive/trash drafts, list workspaces/actions, and run Drafts actions, all via AppleScript
+command: /etc/profiles/per-user/johnw/bin/drafts-mcp-server
+args: []
+scope: user
+enabled: true
+# `drafts-mcp-server` is installed via home-manager (~/src/nix overlay
+# `drafts-mcp-server`, built from agiletortoise/drafts-mcp-server v1.0.12 with
+# buildNpmPackage). It is macOS-only BY DESIGN: it drives Drafts.app through
+# AppleScript (osascript) and CANNOT run on Linux. The overlay defines it only
+# on Darwin and config/packages.nix installs it under `lib.optionals isDarwin`,
+# so the bin exists on hera/clio but on no Linux host.
+#
+# Because of that, this server MUST stay scoped to Mac-resident profiles only.
+#   Safe to add (all macOS): claude-git-ai-local, opencode-hera, opencode-clio,
+#     droid. (opencode-hera / opencode-clio are the "OpenClaw"-on-Mac profiles.)
+#   NEVER add (Linux — no Drafts.app, no osascript): claude-vulcan, claude-vps,
+#     claude-positron, claude-andoria, claude-git-ai-remote, opencode-vulcan.
+#
+# Runtime prerequisites on the Mac: Drafts v50.0.3+ installed and running, and
+# macOS Automation permission granted to the MCP host
+# (System Settings > Privacy & Security > Automation).
+only:
+  - claude-personal
