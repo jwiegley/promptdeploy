@@ -1,0 +1,37 @@
+name: drafts-hera
+description: Drafts.app on hera (macOS) via SSH-stdio to drafts-mcp-server — host Claude Code (claude-vulcan, operator context, FULL toolset incl. drafts_run_action). Bypasses the SSE bridge; the autonomous OpenClaw/Hermes microVMs use the write-gated SSE endpoint instead.
+command: ssh
+args:
+  - "-T"
+  - "-o"
+  - "BatchMode=yes"
+  - "-o"
+  - "StrictHostKeyChecking=yes"
+  - "-o"
+  - "ConnectTimeout=10"
+  - "-o"
+  - "ServerAliveInterval=30"
+  - "-o"
+  - "ServerAliveCountMax=3"
+  - "johnw@hera.lan"
+  - "/etc/profiles/per-user/johnw/bin/drafts-mcp-server"
+scope: user
+enabled: true
+# Host Claude Code on the vulcan HOST reaching Drafts.app on hera via SSH-stdio
+# (the microVMs can't do this — they use the write-gated SSE bridge instead).
+#
+# Operator context: authenticates as johnw using johnw's normal ssh identity
+# (agent / default key authorized on hera). Do NOT set `IdentitiesOnly=yes`
+# here: vulcan's `Host *` pins id_vulcan, which hera does NOT authorize, so
+# IdentitiesOnly would force that key and fail with "Permission denied"
+# (verified 2026-06-09). IdentitiesOnly + a dedicated `-i` forced-command key
+# is for the drafts-mcp *bridge service* only, never this operator path.
+# (Spec §10.3 specified IdentitiesOnly=yes for this file — that is a bug; this
+# corrected form is the verified-working command.)
+#
+# Requires drafts-mcp-server at /etc/profiles/per-user/johnw/bin/ ON HERA,
+# which lands after a `darwin-rebuild switch` on hera (package committed in
+# ~/src/nix as 585dbe7 but not yet activated). Until that switch, this entry
+# is deployed but the MCP server will fail to launch.
+only:
+  - claude-vulcan

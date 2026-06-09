@@ -14,8 +14,14 @@ enabled: true
 # Because of that, this server MUST stay scoped to Mac-resident profiles only.
 #   Safe to add (all macOS): claude-git-ai-local, opencode-hera, opencode-clio,
 #     droid. (opencode-hera / opencode-clio are the "OpenClaw"-on-Mac profiles.)
-#   NEVER add (Linux — no Drafts.app, no osascript): claude-vulcan, claude-vps,
+#   NEVER add (Linux — no Drafts.app, no osascript): claude-vps,
 #     claude-positron, claude-andoria, claude-git-ai-remote, opencode-vulcan.
+#   NOTE: claude-vulcan now reaches Drafts via mcp/drafts-hera.yaml
+#     (SSH-stdio to johnw@hera.lan running drafts-mcp-server over the LAN —
+#     a remote Mac, not a local osascript binary). The prohibition above is
+#     specifically against a *local* drafts-mcp-server on Linux, which still
+#     holds: this `drafts` entry (command = the local bin) must never target a
+#     Linux profile. drafts-hera.yaml is the correct vehicle for vulcan.
 #
 # Runtime prerequisites on the Mac: Drafts v50.0.3+ installed and running, and
 # macOS Automation permission granted to the MCP host
