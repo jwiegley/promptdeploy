@@ -3,6 +3,10 @@ description: Drafts.app on hera (macOS) via SSH-stdio to drafts-mcp-server — h
 command: ssh
 args:
   - "-T"
+  - "-i"
+  - "/run/secrets/drafts/hera-ssh-private-key"
+  - "-o"
+  - "IdentitiesOnly=yes"
   - "-o"
   - "BatchMode=yes"
   - "-o"
@@ -20,18 +24,19 @@ enabled: true
 # Host Claude Code on the vulcan HOST reaching Drafts.app on hera via SSH-stdio
 # (the microVMs can't do this — they use the write-gated SSE bridge instead).
 #
-# Operator context: authenticates as johnw using johnw's normal ssh identity
-# (agent / default key authorized on hera). Do NOT set `IdentitiesOnly=yes`
-# here: vulcan's `Host *` pins id_vulcan, which hera does NOT authorize, so
-# IdentitiesOnly would force that key and fail with "Permission denied"
-# (verified 2026-06-09). IdentitiesOnly + a dedicated `-i` forced-command key
-# is for the drafts-mcp *bridge service* only, never this operator path.
-# (Spec §10.3 specified IdentitiesOnly=yes for this file — that is a bug; this
-# corrected form is the verified-working command.)
+# Operator context, UNATTENDED: vulcan has no local YubiKey, so this path
+# authenticates with the DEDICATED ed25519 key (the SAME forced-command key the
+# drafts-mcp bridge service uses), decrypted by sops to
+# /run/secrets/drafts/hera-ssh-private-key (owner johnw, mode 0400).
+# `-i <key> -o IdentitiesOnly=yes` forces that key (NOT the agent / id_vulcan,
+# which hera rejects). hera's authorized_keys forced-command pins the
+# connection to drafts-mcp-server (full operator toolset — so the remote-command
+# arg below is ignored). No touch, no forwarded agent required.
 #
-# Requires drafts-mcp-server at /etc/profiles/per-user/johnw/bin/ ON HERA,
-# which lands after a `darwin-rebuild switch` on hera (package committed in
-# ~/src/nix as 585dbe7 but not yet activated). Until that switch, this entry
-# is deployed but the MCP server will fail to launch.
+# Requires BOTH: drafts-mcp-server at /etc/profiles/per-user/johnw/bin/ on hera
+# (darwin switch — done 2026-06-09), AND the sops secret
+# drafts/hera-ssh-private-key present on vulcan (nixos switch — Phase 2). Until
+# the nixos switch the -i key file is absent and this entry will fail to launch;
+# redeploy this file only after that switch.
 only:
   - claude-vulcan
