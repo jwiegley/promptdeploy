@@ -3,8 +3,8 @@ name: forge
 description: >
   Multi-phase, multi-model deep analysis workflow for complex problems. This
   skill should be used when the user wants rigorous, multi-model collaborative
-  analysis: deep research with Opus and PAL MCP consensus (GPT-5.5-Pro + Gemini 3
-  Pro), strategic planning, Opus execution with tests, comprehensive review,
+  analysis: deep research with Fable/Opus and PAL MCP consensus (GPT-5.5-Pro + Gemini 3
+  Pro), strategic planning, Fable/Opus execution with tests, comprehensive review,
   and adversarial devil's advocate critique. Invoke explicitly with /forge.
 ---
 
@@ -16,17 +16,17 @@ Forge applies maximum analytical rigor to complex problems by orchestrating mult
 
 | Phase | Model(s) | Purpose |
 |-------|----------|---------|
-| 1. Research | Opus + GPT-5.5-Pro + Gemini 3 Pro | Deep analysis and consensus |
-| 2. Planning | Opus + GPT-5.5-Pro + Gemini 3 Pro | Strategic plan with validation |
-| 3. Execution | Opus | Code changes + test execution |
-| 4. Review | Opus + GPT-5.5-Pro + Gemini 3 Pro | Comprehensive change review |
-| 5. Critique | Opus + GPT-5.5-Pro + Gemini 3 Pro | Devil's advocate analysis |
+| 1. Research | Fable/Opus + GPT-5.5-Pro + Gemini 3 Pro | Deep analysis and consensus |
+| 2. Planning | Fable/Opus + GPT-5.5-Pro + Gemini 3 Pro | Strategic plan with validation |
+| 3. Execution | Fable/Opus | Code changes + test execution |
+| 4. Review | Fable/Opus + GPT-5.5-Pro + Gemini 3 Pro | Comprehensive change review |
+| 5. Critique | Fable/Opus + GPT-5.5-Pro + Gemini 3 Pro | Devil's advocate analysis |
 
-Each analytical phase (1, 2, 4, 5) uses Opus as orchestrator and builds multi-model consensus via PAL MCP with GPT-5.5-Pro and Gemini 3 Pro. Phase 3 uses Opus for execution.
+Each analytical phase (1, 2, 4, 5) uses Fable/Opus as orchestrator and builds multi-model consensus via PAL MCP with GPT-5.5-Pro and Gemini 3 Pro. Phase 3 uses Fable/Opus for execution.
 
 ## Prerequisites
 
-- The current session must be running on Opus (`claude-opus-4-6`)
+- The current session must be running on Fable or Opus
 - PAL MCP server must be running with access to `gpt-5.5-pro` and `gemini-3.1-pro-preview`
 - To verify model availability, call `mcp__pal__listmodels` before starting
 
@@ -63,7 +63,7 @@ The consensus step 1 prompt must present:
 - Specific questions: what aspects were missed, alternative root causes or approaches, additional constraints or risks
 
 **Step 1.4 -- Synthesize the research brief:**
-Combine Opus analysis with consensus output into a research brief containing:
+Combine analysis with consensus output into a research brief containing:
 - Problem statement and context
 - Root cause analysis or requirements analysis
 - Key constraints and risks
@@ -110,18 +110,17 @@ Display the final plan clearly and wait for explicit user approval before procee
 
 ### Phase 3: Execution
 
-Spawn a Opus agent to execute the approved plan.
+Spawn a agent to execute the approved plan.
 
 **Step 3.1 -- Capture pre-execution state:**
 Run `git stash list && git status && git log --oneline -5` to record the
 baseline state before execution begins.
 
-**Step 3.2 -- Spawn the Opus executor:**
+**Step 3.2 -- Spawn the executor:**
 Use the Task tool:
 
 ```
 subagent_type: "general-purpose"
-model: "opus"
 mode: "bypassPermissions"
 ```
 
@@ -136,7 +135,7 @@ The Task prompt must include:
    - Any issues, warnings, or concerns encountered during execution
 
 **Step 3.3 -- Collect results:**
-When the Opus agent completes, capture its full report. Run `git diff` to independently verify what changed. Hold both the agent report and the diff in context for Phase 4.
+When the agent completes, capture its full report. Run `git diff` to independently verify what changed. Hold both the agent report and the diff in context for Phase 4.
 
 ---
 
@@ -166,7 +165,7 @@ models: [
 
 The consensus step 1 prompt must include:
 - The full diff of changes
-- The Opus executor's report (deviations, test results)
+- The executor's report (deviations, test results)
 - The Phase 2 plan for comparison
 - Ask each model to evaluate:
   - Correctness of the implementation
@@ -177,7 +176,7 @@ The consensus step 1 prompt must include:
   - Test coverage adequacy
 
 **Step 4.4 -- Compile review report:**
-Synthesize Opus analysis with codereview output and consensus into a review report organized by category (correctness, security, performance, architecture, test coverage). Note severity for each finding.
+Synthesize analysis with codereview output and consensus into a review report organized by category (correctness, security, performance, architecture, test coverage). Note severity for each finding.
 
 Hold the review report in context for Phase 5.
 
@@ -187,7 +186,7 @@ Hold the review report in context for Phase 5.
 
 Apply aggressive critical analysis to find problems the review missed.
 
-**Step 5.1 -- Adversarial self-analysis (Opus):**
+**Step 5.1 -- Adversarial self-analysis:**
 Deliberately adopt a hostile critic's perspective. Assume the code has hidden bugs, the review was too lenient, and important edge cases were missed.
 
 Examine:
@@ -253,7 +252,7 @@ Present a concise report covering:
 If Phase 5 produced critical findings:
 - Present them clearly with specific remediation recommendations
 - Ask the user whether to fix now or defer
-- If the user requests fixes: create a targeted remediation plan, loop back to Phase 3 (Opus execution) with only the fixes, then repeat Phases 4-5 on the remediation changes only
+- If the user requests fixes: create a targeted remediation plan, loop back to Phase 3 (execution) with only the fixes, then repeat Phases 4-5 on the remediation changes only
 
 **Step 6.3 -- Completion:**
 If no critical issues remain, confirm the implementation is ready and note any medium/low concerns for the user's awareness.
@@ -262,17 +261,17 @@ If no critical issues remain, confirm the implementation is ready and note any m
 
 | Role | PAL Model Name | Used In |
 |------|---------------|---------|
-| Orchestrator | (native Opus) | All phases |
+| Orchestrator | (native Opus or Fable) | All phases |
 | Partner 1 | `gpt-5.5-pro` | Consensus in Phases 1, 2, 4, 5 |
 | Partner 2 | `gemini-3.1-pro-preview` | Consensus + codereview in Phases 1, 2, 4, 5 |
-| Executor | `opus` (Task tool model param) | Phase 3 only |
+| Executor | `fable` or `opus` (Task tool model param) | Phase 3 only |
 
 ## Constraints
 
 - Never skip phases. The pipeline's value comes from the full sequence.
 - Never proceed from Phase 2 to Phase 3 without explicit user plan approval.
-- Phase 3 must use only Opus.
-- Phases 1, 2, 4, and 5 must use Opus with PAL consensus (analytical rigor).
+- Phase 3 must use only the strongest model.
+- Phases 1, 2, 4, and 5 must use the strongest model with PAL consensus (analytical rigor).
 - Keep intermediate artifacts in context; do not write temporary files unless context size demands it.
 - Present only the Phase 6 summary to the user; do not expose raw consensus outputs or intermediate phase artifacts unless the user asks for them.
 - If any phase encounters an unrecoverable error, halt and report to the user with context about what succeeded and what failed.

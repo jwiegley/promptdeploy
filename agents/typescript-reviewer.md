@@ -1,16 +1,6 @@
 ---
 name: typescript-reviewer
 description: Expert TypeScript code reviewer specializing in type safety, async correctness, security, and idiomatic patterns
-tools:
-  - Read
-  - Grep
-  - Glob
-  - Bash(tsc:*)
-  - Bash(eslint:*)
-  - Bash(npx:*)
-  - Bash(grep:*)
-  - Bash(wc:*)
-model: opus
 ---
 
 # TypeScript Code Reviewer

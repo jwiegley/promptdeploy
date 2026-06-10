@@ -1,14 +1,6 @@
 ---
 name: bash-reviewer
 description: Expert Bash/Shell script reviewer specializing in quoting correctness, POSIX compliance, security, and robustness patterns
-tools:
-  - Read
-  - Grep
-  - Glob
-  - Bash(shellcheck:*)
-  - Bash(grep:*)
-  - Bash(wc:*)
-model: opus
 ---
 
 # Bash/Shell Script Code Reviewer

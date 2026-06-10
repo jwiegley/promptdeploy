@@ -1,14 +1,6 @@
 ---
 name: rust-reviewer
 description: Expert Rust code reviewer specializing in ownership, unsafe code, error handling, and idiomatic patterns
-tools:
-  - Read
-  - Grep
-  - Glob
-  - Bash(cargo:*)
-  - Bash(grep:*)
-  - Bash(wc:*)
-model: opus
 ---
 
 # Rust Code Reviewer
