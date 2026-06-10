@@ -182,6 +182,69 @@ class ClaudeTarget(Target):
 
         self._save_json(self._settings_path(), settings)
 
+    @staticmethod
+    def _strip_marketplace(settings: dict, name: str) -> None:
+        """Remove a marketplace's ownership from a settings dict in place.
+
+        Pops ``extraKnownMarketplaces[name]`` and every ``enabledPlugins`` key
+        whose marketplace part equals ``name``. Marketplace ownership is
+        self-tagged in the ``<plugin>@<marketplace>`` key, so match the part
+        after the final ``@`` exactly -- a marketplace named ``official`` must
+        not claim a plugin keyed ``x@plugins-official``.
+        """
+        markets = settings.get("extraKnownMarketplaces")
+        if isinstance(markets, dict):
+            markets.pop(name, None)
+        plugins = settings.get("enabledPlugins")
+        if isinstance(plugins, dict):
+            for key in [k for k in plugins if k.rsplit("@", 1)[-1] == name]:
+                del plugins[key]
+        if isinstance(markets, dict) and not markets:
+            settings.pop("extraKnownMarketplaces", None)
+        if isinstance(plugins, dict) and not plugins:
+            settings.pop("enabledPlugins", None)
+
+    @staticmethod
+    def _ensure_dict(settings: dict, key: str) -> dict:
+        """Return ``settings[key]`` as a dict, replacing a non-dict value.
+
+        ``dict.setdefault`` leaves an existing non-dict value (e.g. a string
+        written by a hand-edit or a TUI) untouched, so a subsequent item
+        assignment would raise. Coerce such values to a fresh dict instead.
+        """
+        value = settings.get(key)
+        if not isinstance(value, dict):
+            value = {}
+            settings[key] = value
+        return value
+
+    def deploy_marketplace(self, name: str, config: dict) -> None:
+        path = self._settings_path()
+        settings = self._load_json(path)
+        self._strip_marketplace(settings, name)
+        if config.get("enabled", True):
+            source = config.get("source")
+            if isinstance(source, dict):
+                entry: dict = {"source": dict(source)}
+                if "autoUpdate" in config:
+                    entry["autoUpdate"] = bool(config["autoUpdate"])
+                self._ensure_dict(settings, "extraKnownMarketplaces")[name] = entry
+            plugins = config.get("plugins")
+            if isinstance(plugins, dict):
+                for plugin, val in plugins.items():
+                    self._ensure_dict(settings, "enabledPlugins")[
+                        f"{plugin}@{name}"
+                    ] = bool(val)
+        self._save_json(path, settings)
+
+    def remove_marketplace(self, name: str) -> None:
+        path = self._settings_path()
+        if not path.exists():
+            return
+        settings = self._load_json(path)
+        self._strip_marketplace(settings, name)
+        self._save_json(path, settings)
+
     def deploy_settings(self, rendered: dict, previous_keys: list[str]) -> None:
         path = self._settings_path()
         settings = self._load_json(path)
@@ -281,6 +344,14 @@ class ClaudeTarget(Target):
         if item_type == "mcp":
             settings = self._load_json(self._settings_path())
             return name in settings.get("mcpServers", {})
+        if item_type == "marketplace":
+            settings = self._load_json(self._settings_path())
+            if name in settings.get("extraKnownMarketplaces", {}):
+                return True
+            return any(
+                key.rsplit("@", 1)[-1] == name
+                for key in settings.get("enabledPlugins", {})
+            )
         return False
 
     def would_deploy_bytes(

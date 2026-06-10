@@ -876,6 +876,10 @@ class TestShouldSkip:
         target = _make_target(tmp_path)
         assert target.should_skip("hook", "my-hook") is True
 
+    def test_skips_marketplaces(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("marketplace", "acme") is True
+
     def test_skips_plain_command(self, tmp_path: Path):
         target = _make_target(tmp_path)
         content = b"---\nname: fix\n---\nFix things.\n"

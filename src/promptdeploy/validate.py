@@ -43,6 +43,7 @@ def validate_all(config: Config) -> List[ValidationIssue]:
         (discovery.discover_mcp_servers, "mcp"),
         (discovery.discover_models, "models"),
         (discovery.discover_hooks, "hooks"),
+        (discovery.discover_marketplaces, "marketplaces"),
         (discovery.discover_prompts, "prompts"),
     ]:
         try:
@@ -262,7 +263,7 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
 
     # Parse metadata
     try:
-        if item.item_type in ("mcp", "models", "hook"):
+        if item.item_type in ("mcp", "models", "hook", "marketplace"):
             metadata = yaml.safe_load(item.content.decode("utf-8"))
             if not isinstance(metadata, dict):
                 metadata = None
@@ -411,6 +412,109 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                             file_path=item.path,
                         )
                     )
+
+    # Marketplace-specific validations
+    if item.item_type == "marketplace":
+        _known_source_types = {"github", "git", "directory"}
+        allowed_keys = {
+            "name",
+            "description",
+            "source",
+            "autoUpdate",
+            "plugins",
+            "enabled",
+            "only",
+            "except",
+        }
+        for key in metadata:
+            if key not in allowed_keys:
+                issues.append(
+                    ValidationIssue(
+                        level="warning",
+                        message=f"Marketplace has unknown key '{key}'",
+                        file_path=item.path,
+                    )
+                )
+        name = metadata.get("name", item.name)
+        if not isinstance(name, str) or not name:
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message="Marketplace 'name' must be a non-empty string",
+                    file_path=item.path,
+                )
+            )
+        elif "@" in name or any(c.isspace() for c in name):
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message="Marketplace 'name' must not contain '@' or whitespace",
+                    file_path=item.path,
+                )
+            )
+        enabled = metadata.get("enabled")
+        if enabled is not None and not isinstance(enabled, bool):
+            # A truthy non-bool (e.g. the string "false") would silently
+            # deploy a marketplace the author meant to disable.
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message="Marketplace 'enabled' must be a boolean",
+                    file_path=item.path,
+                )
+            )
+        source = metadata.get("source")
+        if source is not None:
+            if not isinstance(source, dict):
+                issues.append(
+                    ValidationIssue(
+                        level="error",
+                        message="Marketplace 'source' must be a mapping",
+                        file_path=item.path,
+                    )
+                )
+            else:
+                source_type = source.get("source")
+                if source_type not in _known_source_types:
+                    issues.append(
+                        ValidationIssue(
+                            level="warning",
+                            message=f"Marketplace 'source.source' value "
+                            f"'{source_type}' is not a known type "
+                            f"({', '.join(sorted(_known_source_types))})",
+                            file_path=item.path,
+                        )
+                    )
+        plugins = metadata.get("plugins")
+        if plugins is not None:
+            if not isinstance(plugins, dict):
+                issues.append(
+                    ValidationIssue(
+                        level="error",
+                        message="Marketplace 'plugins' must be a mapping",
+                        file_path=item.path,
+                    )
+                )
+            else:
+                for plugin_name in plugins:
+                    if not isinstance(plugin_name, str) or not plugin_name:
+                        issues.append(
+                            ValidationIssue(
+                                level="error",
+                                message="Marketplace plugin name must be a "
+                                "non-empty string",
+                                file_path=item.path,
+                            )
+                        )
+                    elif "@" in plugin_name:
+                        issues.append(
+                            ValidationIssue(
+                                level="error",
+                                message=f"Marketplace plugin name "
+                                f"'{plugin_name}' must not contain '@'",
+                                file_path=item.path,
+                            )
+                        )
 
     # Models-specific validations
     if item.item_type == "models":

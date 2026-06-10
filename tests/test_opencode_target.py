@@ -912,6 +912,10 @@ class TestShouldSkip:
         target = _make_target(tmp_path)
         assert target.should_skip("hook", "my-hook") is True
 
+    def test_skips_marketplaces(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.should_skip("marketplace", "acme") is True
+
     def test_does_not_skip_agents(self, tmp_path: Path):
         target = _make_target(tmp_path)
         assert target.should_skip("agent", "helper") is False

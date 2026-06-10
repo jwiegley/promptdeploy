@@ -48,7 +48,15 @@ class TestProperties:
 class TestShouldSkip:
     def test_skips_non_prompts(self, tmp_path: Path):
         target = _make_target(tmp_path)
-        for item_type in ("agent", "command", "skill", "mcp", "models", "hook"):
+        for item_type in (
+            "agent",
+            "command",
+            "skill",
+            "mcp",
+            "models",
+            "hook",
+            "marketplace",
+        ):
             assert target.should_skip(item_type, "x") is True
 
     def test_does_not_skip_prompts(self, tmp_path: Path):

@@ -339,6 +339,32 @@ class TestRunDeploy:
         captured = capsys.readouterr()
         assert "settings" in captured.out
 
+    def test_deploy_with_only_type_marketplaces(self, tmp_path, monkeypatch, capsys):
+        """--only-type marketplaces is a valid choice."""
+        src = tmp_path / "source"
+        src.mkdir()
+        mk = src / "marketplaces"
+        mk.mkdir()
+        (mk / "acme.yaml").write_bytes(
+            b"name: acme\nsource:\n  source: github\n  repo: a/b\n"
+        )
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=True,
+            target=None,
+            only_type=["marketplaces"],
+            target_root=None,
+            force=False,
+        )
+        _run_deploy(args)
+        captured = capsys.readouterr()
+        assert "marketplace" in captured.out
+
     def test_deploy_surfaces_poet_warnings(self, tmp_path, monkeypatch, capsys):
         """A .poet prompt with an undefined Jinja variable should produce a
         warning visible on stderr during deploy (not just validate)."""

@@ -5,8 +5,12 @@ from pathlib import Path
 
 
 from promptdeploy.config import Config, TargetConfig
-from promptdeploy.deploy import deploy
-from promptdeploy.manifest import MANIFEST_FILENAME, load_manifest
+from promptdeploy.deploy import (
+    _CLI_TYPE_TO_ITEM_TYPE,
+    _TYPE_TO_CATEGORY,
+    deploy,
+)
+from promptdeploy.manifest import MANIFEST_FILENAME, ManifestItem, load_manifest
 
 
 def _make_source(tmp_path: Path) -> Path:
@@ -1319,6 +1323,177 @@ class TestCacheInvalidation:
         actions = deploy(config)
         non_skips = [a for a in actions if a.action != "skip"]
         assert non_skips == []
+
+
+class TestTypeMappings:
+    def test_marketplace_maps_to_category(self) -> None:
+        assert _TYPE_TO_CATEGORY["marketplace"] == "marketplaces"
+
+    def test_cli_marketplaces_maps_to_item_type(self) -> None:
+        assert _CLI_TYPE_TO_ITEM_TYPE["marketplaces"] == "marketplace"
+
+
+class TestMarketplaceDeploy:
+    """Deploy marketplace items through the deploy orchestration."""
+
+    def _src(self, tmp_path: Path, body: bytes) -> Path:
+        src = tmp_path / "source"
+        src.mkdir()
+        mk = src / "marketplaces"
+        mk.mkdir()
+        (mk / "acme.yaml").write_bytes(body)
+        return src
+
+    def test_deploys_marketplace(self, tmp_path: Path):
+        src = self._src(
+            tmp_path,
+            b"name: acme\nsource:\n  source: github\n  repo: acme/plugins\n"
+            b"plugins:\n  formatter: true\n",
+        )
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        actions = deploy(config)
+
+        creates = [a for a in actions if a.action == "create"]
+        assert any(a.name == "acme" and a.item_type == "marketplace" for a in creates)
+        s = json.loads((tc.path / "settings.json").read_text())
+        assert "acme" in s["extraKnownMarketplaces"]
+        assert s["enabledPlugins"]["formatter@acme"] is True
+
+    def test_second_deploy_skips(self, tmp_path: Path):
+        src = self._src(
+            tmp_path, b"name: acme\nsource:\n  source: github\n  repo: a/b\n"
+        )
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        deploy(config)
+        actions = deploy(config)
+        market = [a for a in actions if a.item_type == "marketplace"]
+        assert len(market) == 1
+        assert market[0].action == "skip"
+
+    def test_removes_stale_marketplace(self, tmp_path: Path):
+        src = self._src(
+            tmp_path, b"name: acme\nsource:\n  source: github\n  repo: a/b\n"
+        )
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        deploy(config)
+
+        (src / "marketplaces" / "acme.yaml").unlink()
+        actions = deploy(config)
+        removes = [a for a in actions if a.action == "remove"]
+        assert any(a.name == "acme" and a.item_type == "marketplace" for a in removes)
+        s = json.loads((tc.path / "settings.json").read_text())
+        assert "extraKnownMarketplaces" not in s
+
+    def test_droid_skips_marketplaces(self, tmp_path: Path):
+        src = self._src(tmp_path, b"name: acme\nplugins:\n  p: true\n")
+        target_dir = tmp_path / "droid-target"
+        target_dir.mkdir()
+        tc = TargetConfig(id="droid-t", type="droid", path=target_dir)
+        config = _make_config(src, {tc.id: tc})
+        actions = deploy(config)
+        assert all(a.item_type != "marketplace" for a in actions)
+
+    def test_stale_removal_preserves_surviving_marketplace(self, tmp_path: Path):
+        # Two co-resident marketplace files; deleting one must strip exactly
+        # its entries via deploy()'s stale-detection branch, leaving the other.
+        src = self._src(
+            tmp_path,
+            b"name: acme\nsource:\n  source: github\n  repo: acme/plugins\n"
+            b"plugins:\n  formatter: true\n",
+        )
+        (src / "marketplaces" / "beta.yaml").write_bytes(
+            b"name: beta\nsource:\n  source: git\n  url: https://b\n"
+            b"plugins:\n  linter: true\n"
+        )
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        deploy(config)
+
+        (src / "marketplaces" / "acme.yaml").unlink()
+        actions = deploy(config)
+        removes = [a for a in actions if a.action == "remove"]
+        assert any(a.name == "acme" and a.item_type == "marketplace" for a in removes)
+        assert not any(a.name == "beta" for a in removes)
+        s = json.loads((tc.path / "settings.json").read_text())
+        assert set(s["extraKnownMarketplaces"]) == {"beta"}
+        assert "formatter@acme" not in s["enabledPlugins"]
+        assert s["enabledPlugins"]["linter@beta"] is True
+
+
+class TestMarketplaceMigration:
+    """Migration invariant: when settings.yaml previously managed
+    extraKnownMarketplaces/enabledPlugins (recorded in the settings manifest's
+    managed_keys), and the keys now move to marketplaces/*.yaml, the settings
+    item must run first to pop the stale keys before the marketplace item
+    re-adds its own entries in the same deploy run."""
+
+    def test_settings_pop_precedes_marketplace_readd(self, tmp_path: Path):
+        from promptdeploy.manifest import Manifest, save_manifest
+
+        src = tmp_path / "source"
+        src.mkdir()
+        # New world: settings.yaml no longer carries the marketplace keys.
+        (src / "settings.yaml").write_text("base:\n  effortLevel: low\n")
+        mk = src / "marketplaces"
+        mk.mkdir()
+        (mk / "acme.yaml").write_bytes(
+            b"name: acme\nsource:\n  source: github\n  repo: acme/plugins\n"
+            b"plugins:\n  formatter: true\n"
+        )
+
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        # Old world on the target: settings.json AND a manifest in which the
+        # settings item previously managed the two marketplace keys.
+        (tc.path / "settings.json").write_text(
+            json.dumps(
+                {
+                    "effortLevel": "low",
+                    "extraKnownMarketplaces": {
+                        "stale": {"source": {"source": "git", "url": "https://old"}}
+                    },
+                    "enabledPlugins": {"old@stale": True},
+                }
+            )
+        )
+        prior = Manifest()
+        prior.items["settings"] = {
+            "settings": ManifestItem(
+                source_hash="sha256:old",
+                managed_keys=[
+                    "effortLevel",
+                    "extraKnownMarketplaces",
+                    "enabledPlugins",
+                ],
+            )
+        }
+        save_manifest(prior, tc.path / MANIFEST_FILENAME)
+
+        deploy(config)
+
+        expected_markets = {
+            "acme": {"source": {"source": "github", "repo": "acme/plugins"}}
+        }
+        s = json.loads((tc.path / "settings.json").read_text())
+        # The stale settings.yaml-managed entries are gone; only the
+        # marketplace-file entries remain.
+        assert s["extraKnownMarketplaces"] == expected_markets
+        assert s["enabledPlugins"] == {"formatter@acme": True}
+        assert s["effortLevel"] == "low"
+
+        # Steady state: a second deploy must converge, not re-strip the
+        # marketplace-owned keys. The new manifest recorded settings
+        # managed_keys = ['effortLevel'], so deploy_settings no longer treats
+        # extraKnownMarketplaces/enabledPlugins as previously-managed.
+        deploy(config)
+        s2 = json.loads((tc.path / "settings.json").read_text())
+        assert s2["extraKnownMarketplaces"] == expected_markets
+        assert s2["enabledPlugins"] == {"formatter@acme": True}
+        assert s2["effortLevel"] == "low"
 
 
 class TestDeploySettingsItem:

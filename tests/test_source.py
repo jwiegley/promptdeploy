@@ -691,6 +691,109 @@ class TestDiscoverHooks:
         assert hooks[0].metadata is None
 
 
+class TestDiscoverMarketplaces:
+    def test_missing_marketplaces_dir(self, tmp_path):
+        d = SourceDiscovery(tmp_path)
+        assert list(d.discover_marketplaces()) == []
+
+    def test_discovers_marketplace(self, tmp_path):
+        mk = tmp_path / "marketplaces"
+        mk.mkdir()
+        (mk / "acme.yaml").write_bytes(
+            b"name: acme\ndescription: Acme\nsource:\n"
+            b"  source: github\n  repo: acme/plugins\n"
+        )
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_marketplaces())
+        assert len(items) == 1
+        it = items[0]
+        assert it.item_type == "marketplace"
+        assert it.name == "acme"
+        assert it.path.suffix == ".yaml"
+        assert it.metadata is not None
+        assert it.metadata["source"]["repo"] == "acme/plugins"
+
+    def test_name_from_metadata_overrides_stem(self, tmp_path):
+        mk = tmp_path / "marketplaces"
+        mk.mkdir()
+        (mk / "file-stem.yaml").write_bytes(b"name: chosen\nplugins:\n  p: true\n")
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_marketplaces())
+        assert items[0].name == "chosen"
+
+    def test_name_fallback_to_stem(self, tmp_path):
+        mk = tmp_path / "marketplaces"
+        mk.mkdir()
+        (mk / "official.yaml").write_bytes(b"plugins:\n  p: true\n")
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_marketplaces())
+        assert items[0].name == "official"
+
+    def test_filetags_parsed(self, tmp_path):
+        mk = tmp_path / "marketplaces"
+        mk.mkdir()
+        (mk / "acme -- personal.yaml").write_bytes(b"name: acme\nplugins: {}\n")
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_marketplaces())
+        assert items[0].name == "acme"
+        assert items[0].filetags == ["personal"]
+
+    def test_skips_dotfiles_and_non_yaml(self, tmp_path):
+        mk = tmp_path / "marketplaces"
+        mk.mkdir()
+        (mk / ".hidden.yaml").write_bytes(b"name: hidden\n")
+        (mk / "schema.md").write_bytes(b"# doc")
+        (mk / "real.yaml").write_bytes(b"name: real\nplugins: {}\n")
+        d = SourceDiscovery(tmp_path)
+        names = [m.name for m in d.discover_marketplaces()]
+        assert names == ["real"]
+
+    def test_invalid_yaml_metadata_none(self, tmp_path):
+        mk = tmp_path / "marketplaces"
+        mk.mkdir()
+        (mk / "broken.yaml").write_bytes(b"not: valid: yaml: [broken\n")
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_marketplaces())
+        assert len(items) == 1
+        assert items[0].name == "broken"
+        assert items[0].metadata is None
+
+    def test_non_dict_yaml_metadata_none(self, tmp_path):
+        mk = tmp_path / "marketplaces"
+        mk.mkdir()
+        (mk / "scalar.yaml").write_bytes(b"just a string\n")
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_marketplaces())
+        assert len(items) == 1
+        assert items[0].name == "scalar"
+        assert items[0].metadata is None
+
+    def test_non_string_name_falls_back_to_stem(self, tmp_path):
+        # A non-string name would corrupt the settings.json/manifest key; the
+        # filename stem is used instead and validate.py reports the bad name.
+        mk = tmp_path / "marketplaces"
+        mk.mkdir()
+        (mk / "numeric.yaml").write_bytes(b"name: 123\nplugins:\n  p: true\n")
+        d = SourceDiscovery(tmp_path)
+        items = list(d.discover_marketplaces())
+        assert items[0].name == "numeric"
+
+
+def test_discover_all_marketplaces_after_settings(tmp_path):
+    """Migration invariant: the settings item must be yielded before any
+    marketplace item so settings can pop the formerly-managed keys first."""
+    (tmp_path / "settings.yaml").write_text("base:\n  effortLevel: low\n")
+    mk = tmp_path / "marketplaces"
+    mk.mkdir()
+    (mk / "acme.yaml").write_bytes(b"name: acme\nplugins:\n  p: true\n")
+
+    items = list(SourceDiscovery(tmp_path).discover_all())
+    types = [it.item_type for it in items]
+    assert "settings" in types
+    assert "marketplace" in types
+    assert types.index("settings") < types.index("marketplace")
+
+
 def test_discover_settings_yields_singleton(tmp_path):
     from promptdeploy.source import SourceDiscovery
 

@@ -161,7 +161,7 @@ class OpenCodeTarget(Target):
         content: Optional[bytes] = None,
         metadata: Optional[dict] = None,
     ) -> bool:
-        return item_type in ("hook", "settings")
+        return item_type in ("hook", "settings", "marketplace")
 
     # ------------------------------------------------------------------
     # Deploy

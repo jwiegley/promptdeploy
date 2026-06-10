@@ -61,6 +61,8 @@ class DroidTarget(Target):
             return True
         if item_type == "hook":
             return True
+        if item_type == "marketplace":
+            return True
         if item_type == "command":
             if content is not None:
                 fm, _ = parse_frontmatter(content)

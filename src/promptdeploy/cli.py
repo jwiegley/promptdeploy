@@ -32,6 +32,7 @@ def main():
             "mcp",
             "models",
             "hooks",
+            "marketplaces",
             "prompts",
             "settings",
         ],
@@ -277,6 +278,7 @@ def _run_list(args):
                 "mcp_servers": "MCP Servers",
                 "models": "Models",
                 "hooks": "Hooks",
+                "marketplaces": "Marketplaces",
                 "prompts": "Prompts",
                 "settings": "Settings",
             }
@@ -287,6 +289,7 @@ def _run_list(args):
                 "mcp_servers",
                 "models",
                 "hooks",
+                "marketplaces",
                 "prompts",
                 "settings",
             ):

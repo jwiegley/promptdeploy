@@ -976,6 +976,152 @@ class TestValidateItemHook:
         assert any("missing or invalid 'hooks'" in i.message for i in issues)
 
 
+class TestValidateItemMarketplace:
+    def _item(self, content_dict: dict) -> SourceItem:
+        import yaml
+
+        content = yaml.dump(content_dict).encode("utf-8")
+        return SourceItem(
+            "marketplace",
+            content_dict.get("name", "acme"),
+            Path("/tmp/marketplaces/acme.yaml"),
+            content_dict,
+            content,
+        )
+
+    def test_valid_github_source(self, config: Config) -> None:
+        item = self._item(
+            {
+                "name": "acme",
+                "description": "Acme",
+                "source": {"source": "github", "repo": "acme/plugins"},
+                "autoUpdate": True,
+                "plugins": {"formatter": True, "linter": False},
+            }
+        )
+        assert validate_item(item, config) == []
+
+    def test_valid_source_less_builtin(self, config: Config) -> None:
+        item = self._item({"name": "official", "plugins": {"p": True}})
+        assert validate_item(item, config) == []
+
+    def test_name_with_at_is_error(self, config: Config) -> None:
+        item = self._item({"name": "bad@name", "plugins": {}})
+        assert any(
+            "must not contain '@' or whitespace" in i.message
+            for i in validate_item(item, config)
+        )
+
+    def test_name_with_whitespace_is_error(self, config: Config) -> None:
+        item = self._item({"name": "bad name", "plugins": {}})
+        assert any(
+            i.level == "error" and "whitespace" in i.message
+            for i in validate_item(item, config)
+        )
+
+    def test_empty_name_is_error(self, config: Config) -> None:
+        item = self._item({"name": "", "plugins": {}})
+        assert any(
+            i.level == "error" and "non-empty string" in i.message
+            for i in validate_item(item, config)
+        )
+
+    def test_non_string_name_is_error(self, config: Config) -> None:
+        item = self._item({"name": 123, "plugins": {}})
+        assert any(
+            i.level == "error" and "non-empty string" in i.message
+            for i in validate_item(item, config)
+        )
+
+    def test_source_not_a_mapping_is_error(self, config: Config) -> None:
+        item = self._item({"name": "acme", "source": "github"})
+        assert any(
+            i.level == "error" and "'source' must be a mapping" in i.message
+            for i in validate_item(item, config)
+        )
+
+    def test_unknown_source_type_warns(self, config: Config) -> None:
+        item = self._item({"name": "acme", "source": {"source": "svn"}})
+        assert any(
+            i.level == "warning" and "not a known type" in i.message
+            for i in validate_item(item, config)
+        )
+
+    def test_known_git_and_directory_sources_ok(self, config: Config) -> None:
+        git = self._item({"name": "a", "source": {"source": "git", "url": "x"}})
+        directory = self._item(
+            {"name": "b", "source": {"source": "directory", "path": "/p"}}
+        )
+        assert validate_item(git, config) == []
+        assert validate_item(directory, config) == []
+
+    def test_extra_source_keys_pass_through(self, config: Config) -> None:
+        item = self._item(
+            {
+                "name": "acme",
+                "source": {"source": "github", "repo": "a/b", "ref": "main"},
+            }
+        )
+        assert validate_item(item, config) == []
+
+    def test_plugins_not_a_mapping_is_error(self, config: Config) -> None:
+        item = self._item({"name": "acme", "plugins": ["p"]})
+        assert any(
+            i.level == "error" and "'plugins' must be a mapping" in i.message
+            for i in validate_item(item, config)
+        )
+
+    def test_plugin_name_with_at_is_error(self, config: Config) -> None:
+        item = self._item({"name": "acme", "plugins": {"bad@x": True}})
+        assert any(
+            i.level == "error" and "must not contain '@'" in i.message
+            for i in validate_item(item, config)
+        )
+
+    def test_empty_plugin_name_is_error(self, config: Config) -> None:
+        item = self._item({"name": "acme", "plugins": {"": True}})
+        assert any(
+            i.level == "error" and "non-empty string" in i.message
+            for i in validate_item(item, config)
+        )
+
+    def test_unknown_top_level_key_warns(self, config: Config) -> None:
+        item = self._item({"name": "acme", "bogus": 1})
+        assert any(
+            i.level == "warning" and "unknown key 'bogus'" in i.message
+            for i in validate_item(item, config)
+        )
+
+    def test_only_filter_accepted(self, config: Config) -> None:
+        item = self._item({"name": "acme", "only": ["claude"], "plugins": {}})
+        assert validate_item(item, config) == []
+
+    def test_enabled_bool_accepted(self, config: Config) -> None:
+        item = self._item({"name": "acme", "enabled": False, "plugins": {}})
+        assert validate_item(item, config) == []
+
+    def test_enabled_non_bool_is_error(self, config: Config) -> None:
+        # A quoted YAML "false" parses to a truthy string; flag it so an
+        # intended disable is not silently deployed as enabled.
+        item = self._item({"name": "acme", "enabled": "false", "plugins": {}})
+        assert any(
+            i.level == "error" and "'enabled' must be a boolean" in i.message
+            for i in validate_item(item, config)
+        )
+
+    def test_validate_all_includes_marketplaces(self, tmp_path: Path) -> None:
+        mk = tmp_path / "marketplaces"
+        mk.mkdir()
+        (mk / "bad.yaml").write_bytes(b"name: bad@name\nplugins: {}\n")
+        config = Config(
+            source_root=tmp_path,
+            targets={"t": TargetConfig(id="t", type="claude", path=tmp_path)},
+            groups={},
+        )
+        issues = validate_all(config)
+        assert any("'@' or whitespace" in i.message for i in issues)
+
+
 class TestValidateFiletags:
     def test_valid_filetags(self, config: Config) -> None:
         item = SourceItem(

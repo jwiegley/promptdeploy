@@ -23,7 +23,7 @@ PROMPT_EXTENSIONS = POET_EXTENSIONS | PLAIN_EXTENSIONS | {".json"}
 class SourceItem:
     """A discovered source item ready for deployment."""
 
-    item_type: str  # 'agent', 'command', 'skill', 'mcp', 'models', 'hook', 'prompt'
+    item_type: str  # 'agent', 'command', 'skill', 'mcp', 'models', 'hook', 'marketplace', 'prompt', 'settings'
     name: str
     path: Path
     metadata: Optional[dict]
@@ -47,6 +47,12 @@ class SourceDiscovery:
         yield from self.discover_hooks()
         yield from self.discover_prompts()
         yield from self.discover_settings()
+        # Marketplaces deploy AFTER settings: during migration the settings
+        # item runs first so it pops the formerly settings.yaml-managed
+        # extraKnownMarketplaces/enabledPlugins keys (recorded in the settings
+        # manifest's managed_keys) before marketplace items re-add their own
+        # entries in the same run.
+        yield from self.discover_marketplaces()
 
     def discover_prompts(self) -> Iterator[SourceItem]:
         """Discover prompts from prompts/*.{poet,j2,jinja,jinja2,txt,md,org,json}."""
@@ -141,6 +147,37 @@ class SourceDiscovery:
             name = (metadata or {}).get("name", base_name)
             yield SourceItem(
                 item_type="mcp",
+                name=name,
+                path=path,
+                metadata=metadata,
+                content=content,
+                filetags=tags,
+            )
+
+    def discover_marketplaces(self) -> Iterator[SourceItem]:
+        """Discover Claude marketplace configs from marketplaces/*.yaml."""
+        marketplaces_dir = self.source_root / "marketplaces"
+        if not marketplaces_dir.is_dir():
+            return
+        for path in sorted(marketplaces_dir.iterdir()):
+            if path.name.startswith(".") or path.suffix != ".yaml":
+                continue
+            base_name, tags = parse_filetags(path.stem)
+            content = path.read_bytes()
+            try:
+                metadata = yaml.safe_load(content)
+            except yaml.YAMLError:
+                metadata = None
+            if not isinstance(metadata, dict):
+                metadata = None
+            name_value = (metadata or {}).get("name", base_name)
+            # A non-string name would corrupt settings.json (int keys coerce to
+            # str on json.dump while the manifest keeps the int, so reclamation
+            # never matches) or crash on an unhashable list/dict; fall back to
+            # the filename stem and let validate.py report the malformed name.
+            name = name_value if isinstance(name_value, str) else base_name
+            yield SourceItem(
+                item_type="marketplace",
                 name=name,
                 path=path,
                 metadata=metadata,

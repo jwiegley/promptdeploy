@@ -196,6 +196,33 @@ class TestRunListIntegration:
         assert "Settings:" in captured.out
         assert "settings" in captured.out
 
+    def test_cli_list_shows_marketplaces(
+        self, tmp_path: Path, capsys, monkeypatch
+    ) -> None:
+        """A deployed marketplace item appears under a Marketplaces label."""
+        src = tmp_path / "source"
+        src.mkdir()
+        mk = src / "marketplaces"
+        mk.mkdir()
+        (mk / "acme.yaml").write_bytes(
+            b"name: acme\nsource:\n  source: github\n  repo: a/b\n"
+        )
+        tc = _make_claude_target(tmp_path, "market-target")
+        config = _make_config(src, {tc.id: tc})
+        deploy(config)
+
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        import argparse
+        from promptdeploy.cli import _run_list
+
+        args = argparse.Namespace(target=None, target_root=None)
+        _run_list(args)
+
+        captured = capsys.readouterr()
+        assert "Marketplaces:" in captured.out
+        assert "acme" in captured.out
+
     def test_cli_list_not_installed(self, tmp_path: Path, capsys, monkeypatch) -> None:
         src = _make_source(tmp_path)
         tc = TargetConfig(id="ghost", type="claude", path=tmp_path / "nope")

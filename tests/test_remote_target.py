@@ -352,3 +352,22 @@ def test_remove_settings_delegates_to_inner():
     remote = _make_remote(inner)
     remote.remove_settings(["model", "env"])
     inner.remove_settings.assert_called_once_with(["model", "env"])
+
+
+def test_deploy_marketplace_delegates_to_inner():
+    from unittest.mock import MagicMock
+
+    inner = MagicMock()
+    remote = _make_remote(inner)
+    cfg = {"source": {"source": "github", "repo": "a/b"}}
+    remote.deploy_marketplace("acme", cfg)
+    inner.deploy_marketplace.assert_called_once_with("acme", cfg)
+
+
+def test_remove_marketplace_delegates_to_inner():
+    from unittest.mock import MagicMock
+
+    inner = MagicMock()
+    remote = _make_remote(inner)
+    remote.remove_marketplace("acme")
+    inner.remove_marketplace.assert_called_once_with("acme")

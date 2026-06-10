@@ -31,6 +31,15 @@ class Target(ABC):
     def remove_settings(self, previous_keys: list[str]) -> None:
         """Remove previously-managed settings keys. No-op by default."""
 
+    def deploy_marketplace(self, name: str, config: dict) -> None:
+        """Merge a Claude marketplace + its enabled plugins into settings.json.
+
+        Default no-op so non-Claude targets need no changes.
+        """
+
+    def remove_marketplace(self, name: str) -> None:
+        """Remove a marketplace and its enabled plugins. No-op by default."""
+
     def read_settings_json(self) -> dict:
         """Return the target's current settings.json as a dict.
 

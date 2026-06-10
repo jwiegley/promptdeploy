@@ -34,6 +34,7 @@ _TYPE_TO_CATEGORY = {
     "mcp": "mcp_servers",
     "models": "models",
     "hook": "hooks",
+    "marketplace": "marketplaces",
     "prompt": "prompts",
     "settings": "settings",
 }

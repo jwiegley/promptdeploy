@@ -32,6 +32,7 @@ _TYPE_TO_CATEGORY = {
     "mcp": "mcp_servers",
     "models": "models",
     "hook": "hooks",
+    "marketplace": "marketplaces",
     "prompt": "prompts",
     "settings": "settings",
 }
@@ -44,6 +45,7 @@ _CLI_TYPE_TO_ITEM_TYPE = {
     "mcp": "mcp",
     "models": "models",
     "hooks": "hook",
+    "marketplaces": "marketplace",
     "prompts": "prompt",
     "settings": "settings",
 }
@@ -157,6 +159,8 @@ def _deploy_item(
         target.deploy_models(filtered_models_config or {})
     elif item.item_type == "hook":
         target.deploy_hook(item.name, item.metadata or {})
+    elif item.item_type == "marketplace":
+        target.deploy_marketplace(item.name, item.metadata or {})
     elif item.item_type == "prompt":
         target.deploy_prompt(item.name, item.content, item.path)
 
@@ -214,6 +218,8 @@ def _remove_item(
         target.remove_models()
     elif category == "hooks":
         target.remove_hook(name)
+    elif category == "marketplaces":
+        target.remove_marketplace(name)
     elif category == "prompts":
         target.remove_prompt(name, target_path=target_path)
     elif category == "settings":

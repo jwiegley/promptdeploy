@@ -55,6 +55,7 @@ class TestMappings:
         assert _TYPE_TO_CATEGORY["skill"] == "skills"
         assert _TYPE_TO_CATEGORY["mcp"] == "mcp_servers"
         assert _TYPE_TO_CATEGORY["hook"] == "hooks"
+        assert _TYPE_TO_CATEGORY["marketplace"] == "marketplaces"
 
     def test_category_to_type(self) -> None:
         assert _CATEGORY_TO_TYPE["agents"] == "agent"
@@ -62,6 +63,7 @@ class TestMappings:
         assert _CATEGORY_TO_TYPE["skills"] == "skill"
         assert _CATEGORY_TO_TYPE["mcp_servers"] == "mcp"
         assert _CATEGORY_TO_TYPE["hooks"] == "hook"
+        assert _CATEGORY_TO_TYPE["marketplaces"] == "marketplace"
 
 
 class TestGetStatusNoManifest:

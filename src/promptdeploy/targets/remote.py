@@ -121,6 +121,12 @@ class RemoteTarget(Target):
     def remove_hook(self, name: str) -> None:
         self._inner.remove_hook(name)
 
+    def deploy_marketplace(self, name: str, config: dict) -> None:
+        self._inner.deploy_marketplace(name, config)
+
+    def remove_marketplace(self, name: str) -> None:
+        self._inner.remove_marketplace(name)
+
     def remove_prompt(self, name: str, target_path: Optional[Path] = None) -> None:
         self._inner.remove_prompt(name, target_path)
 
