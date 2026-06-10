@@ -37,7 +37,7 @@ promptdeploy settings reconcile [--target TARGET] [--apply]
 
 - `--dry-run` -- Show what would happen without making changes.
 - `--target TARGET` -- Limit to specific targets. Repeatable. Accepts group names (e.g., `claude`).
-- `--only-type TYPE` -- Limit to `agents`, `commands`, `skills`, `mcp`, `models`, `hooks`, `prompts`, or `settings`. Repeatable.
+- `--only-type TYPE` -- Limit to `agents`, `commands`, `skills`, `mcp`, `models`, `hooks`, `marketplaces`, `prompts`, or `settings`. Repeatable.
 - `--verbose` -- Show diffs and timing.
 - `--quiet` -- Suppress output except errors and change counts.
 
@@ -129,7 +129,7 @@ For each claude target, `promptdeploy` renders the effective settings by startin
 
 - A value of `null` deletes that key; nested objects merge deeply.
 - Group/label overrides apply first, in file order; the exact target id override applies last, so an exact match always wins over a group.
-- `hooks` and `mcpServers` are stripped from the rendered result (they are managed by the hook/MCP deploy paths, not here), along with any leftover `null` values.
+- `hooks`, `mcpServers`, `extraKnownMarketplaces`, and `enabledPlugins` are stripped from the rendered result (they are managed by the `hooks/`, `mcp/`, and `marketplaces/` deploy paths, not here), along with any leftover `null` values.
 
 ### Gentle merge into settings.json
 
@@ -137,7 +137,7 @@ Deploy merges only the rendered top-level keys into the target's `settings.json`
 
 - Keys you add under `settings.yaml` are written.
 - Keys you later remove from `settings.yaml` are removed from `settings.json` on the next deploy.
-- `hooks`, `mcpServers`, and any keys you never put under `settings.yaml` are left untouched.
+- `hooks`, `mcpServers`, `extraKnownMarketplaces`, `enabledPlugins`, and any keys you never put under `settings.yaml` are left untouched.
 
 Removing `settings.yaml` (or filtering a target out) removes exactly the previously-managed keys. Droid and OpenCode targets skip settings entirely. Remote claude targets are covered: the rendered settings are written into the staging tree and synced over rsync like everything else.
 
@@ -152,6 +152,30 @@ promptdeploy settings reconcile [--target TARGET] [--apply]
 ```
 
 `settings init` reads live `settings.json` from each selected target, factors the values shared across all of them into `base`, and records per-target differences as `overrides` (use `--from` to pick which target seeds the base, `--force` to overwrite an existing file). `settings reconcile` compares each host against the rendered settings and reports drift; with `--apply` it writes that drift back into `overrides`. Write-back uses ruamel.yaml, so existing comments and formatting in `settings.yaml` are preserved.
+
+## Marketplaces (Claude targets)
+
+Each `marketplaces/*.yaml` file declares one Claude Code plugin marketplace and the plugins enabled from it. Marketplaces are Claude-only; Droid, OpenCode, and gptel skip them. A marketplace file drives two top-level `settings.json` keys: `extraKnownMarketplaces` (map of marketplace name to `{source, autoUpdate?}`) and `enabledPlugins` (map of `"<plugin>@<marketplace>"` to a boolean).
+
+```yaml
+# marketplaces/acme.yaml
+name: acme                     # defaults to filename stem; no @ or whitespace
+description: Acme's plugins
+source:                        # optional; omit for built-in marketplaces
+  source: github
+  repo: acme/claude-plugins
+autoUpdate: true               # optional; copied into the marketplace entry
+plugins:                       # optional; each becomes "<plugin>@acme"
+  formatter: true
+  linter: false
+enabled: true                  # false removes this marketplace's entries
+```
+
+- **Source-less (built-in) marketplaces** -- Omit `source` for marketplaces that ship with Claude Code (e.g. `claude-plugins-official`); only `enabledPlugins` entries are written, never an `extraKnownMarketplaces` entry.
+- **Ownership** -- Each `enabledPlugins` key is self-tagged with `@<marketplace>`, so no extra metadata is needed. On redeploy or removal, `promptdeploy` reclaims exactly the keys whose part after the final `@` equals this marketplace's name, plus `extraKnownMarketplaces[name]`. Unrelated entries from other marketplaces are never touched.
+- **Migration** -- Marketplaces deploy after settings in the same run, so keys formerly managed via `settings.yaml` are popped before the marketplace files re-add their own entries.
+
+See `marketplaces/schema.md` for the full field reference.
 
 ## Development
 
@@ -219,6 +243,8 @@ tests/               # 312 tests, 99.78% coverage
 deploy.yaml          # Target environment definitions
 mcp/                 # MCP server YAML definitions
   schema.md          # MCP YAML schema documentation
+marketplaces/        # Claude plugin marketplace YAML definitions
+  schema.md          # Marketplace YAML schema documentation
 ```
 
 ## System Installation

@@ -15,6 +15,7 @@ The repository holds these types of content, all defined in simple Markdown or Y
 | Skills | `skills/*/SKILL.md` | Multi-file skill directories with a `SKILL.md` entry point |
 | MCP Servers | `mcp/*.yaml` | Model Context Protocol server definitions |
 | Hooks | `hooks/*.yaml` | Claude Code hook groups for tool events |
+| Marketplaces | `marketplaces/*.yaml` | Claude Code plugin marketplaces + enabled plugins (Claude-only) |
 | Models | `models.yaml` | Custom model providers and their models |
 | Settings | `settings.yaml` | Claude Code `settings.json`, single-sourced with `base:` + per-target `overrides:` |
 
