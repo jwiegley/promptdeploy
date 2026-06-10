@@ -1,0 +1,7 @@
+name: thedotmack
+description: thedotmack marketplace providing the claude-mem persistent memory plugin
+source:
+  source: github
+  repo: thedotmack/claude-mem
+plugins:
+  claude-mem: true

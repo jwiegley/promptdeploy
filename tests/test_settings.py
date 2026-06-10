@@ -166,6 +166,18 @@ class TestRenderSettings:
         doc = {"base": {"hooks": {"X": 1}, "mcpServers": {"Y": 2}, "model": "a"}}
         assert render_settings(doc, "t", _cfg("t")) == {"model": "a"}
 
+    def test_strips_marketplace_keys(self):
+        # extraKnownMarketplaces/enabledPlugins are managed by marketplaces/*.yaml
+        # and must never reach the deploy layer through settings.yaml.
+        doc = {
+            "base": {
+                "extraKnownMarketplaces": {"acme": {}},
+                "enabledPlugins": {"p@acme": True},
+                "model": "a",
+            }
+        }
+        assert render_settings(doc, "t", _cfg("t")) == {"model": "a"}
+
     def test_strips_literal_null_in_base(self):
         doc = {"base": {"a": 1, "b": None}}
         assert render_settings(doc, "t", _cfg("t")) == {"a": 1}

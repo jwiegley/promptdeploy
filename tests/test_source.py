@@ -199,6 +199,7 @@ class TestDiscoverAll:
             "mcp",
             "models",
             "hook",
+            "marketplace",
             "prompt",
             "settings",
         }
@@ -209,7 +210,10 @@ class TestDiscoverAll:
 
     def test_order(self, discovery):
         """Items appear in order: agents, commands, skills, mcp, models, hooks,
-        prompts, settings (settings is discovered last in ``discover_all``)."""
+        prompts, settings, marketplaces. Marketplaces are discovered last in
+        ``discover_all`` (after settings) so the settings item pops the
+        formerly settings.yaml-managed extraKnownMarketplaces/enabledPlugins
+        keys before marketplace items re-add their own entries."""
         items = list(discovery.discover_all())
         types_seen = []
         for item in items:
@@ -224,6 +228,7 @@ class TestDiscoverAll:
             "hook",
             "prompt",
             "settings",
+            "marketplace",
         ]
 
 

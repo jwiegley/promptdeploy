@@ -87,10 +87,14 @@ def test_read_live_settings_strips_hooks_and_mcp(tmp_path):
                 "effortLevel": "low",
                 "hooks": {"Stop": [1]},
                 "mcpServers": {"pal": {}},
+                "extraKnownMarketplaces": {"acme": {}},
+                "enabledPlugins": {"p@acme": True},
             }
         )
     )
     tc = TargetConfig(id="claude-x", type="claude", path=tgt)
+    # hooks/mcpServers AND the marketplace keys are managed elsewhere and must
+    # be stripped from live settings before reconcile compares them.
     assert read_live_settings(tc) == {"effortLevel": "low"}
 
 

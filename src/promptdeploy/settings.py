@@ -12,6 +12,15 @@ from typing import Any, Dict, Iterable
 
 from .config import Config
 
+# Top-level settings.json keys that promptdeploy manages through dedicated
+# item types rather than through settings.yaml: hooks/mcpServers from
+# hooks/*.yaml and mcp/*.yaml, extraKnownMarketplaces/enabledPlugins from
+# marketplaces/*.yaml. They are stripped from rendered settings so settings.yaml
+# never fights those item types over the same keys. settings_sync reuses this set.
+MANAGED_ELSEWHERE = frozenset(
+    {"hooks", "mcpServers", "extraKnownMarketplaces", "enabledPlugins"}
+)
+
 
 def apply_merge_patch(base: Any, patch: Any) -> Any:
     """Apply an RFC 7386 JSON Merge Patch. Pure; inputs are never mutated."""
@@ -79,9 +88,10 @@ def render_settings(
 
     Starts from ``doc['base']`` and applies every matching ``overrides`` entry as
     a merge patch: group/label overrides first (in file order), then the exact
-    ``target_id`` override last (most specific wins). Finally strips
-    ``hooks``/``mcpServers`` and any remaining ``null`` values. Returns plain
-    dicts only — no ``null`` reaches the caller.
+    ``target_id`` override last (most specific wins). Finally strips the
+    :data:`MANAGED_ELSEWHERE` keys (``hooks``/``mcpServers``/
+    ``extraKnownMarketplaces``/``enabledPlugins``) and any remaining ``null``
+    values. Returns plain dicts only — no ``null`` reaches the caller.
     """
     base = doc.get("base") or {}
     result: Dict[str, Any] = copy.deepcopy(dict(base))
@@ -99,5 +109,5 @@ def render_settings(
     if exact is not None:
         result = apply_merge_patch(result, exact)
 
-    result = strip_keys(result, {"hooks", "mcpServers"})
+    result = strip_keys(result, MANAGED_ELSEWHERE)
     return strip_nulls(result)

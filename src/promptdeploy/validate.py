@@ -151,14 +151,21 @@ def validate_settings(config: Config) -> List[ValidationIssue]:
         )
         base = None
 
+    _managed_by = {
+        "hooks": "hooks/",
+        "mcpServers": "mcp/",
+        "extraKnownMarketplaces": "marketplaces/",
+        "enabledPlugins": "marketplaces/",
+    }
+
     def _check_section(section: dict, where: str) -> None:
-        for key in ("hooks", "mcpServers"):
+        for key, source_dir in _managed_by.items():
             if key in section:
                 issues.append(
                     ValidationIssue(
                         "warning",
                         f"settings.yaml: '{key}' in {where} is ignored "
-                        f"(managed by {'hooks/' if key == 'hooks' else 'mcp/'})",
+                        f"(managed by {source_dir})",
                         path,
                     )
                 )

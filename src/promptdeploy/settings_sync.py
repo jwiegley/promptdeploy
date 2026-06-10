@@ -18,10 +18,15 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 
 from .config import Config
-from .settings import generate_merge_patch, render_settings, strip_keys
+from .settings import (
+    MANAGED_ELSEWHERE,
+    generate_merge_patch,
+    render_settings,
+    strip_keys,
+)
 from .targets import create_target
 
-_MANAGED_ELSEWHERE = {"hooks", "mcpServers"}
+_MANAGED_ELSEWHERE = MANAGED_ELSEWHERE
 
 
 def _yaml() -> YAML:

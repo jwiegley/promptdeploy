@@ -1,0 +1,12 @@
+name: claude-plugins-official
+description: Plugins from the marketplace bundled with Claude Code
+# No `source`: claude-plugins-official ships built in to Claude Code, so it must
+# not be re-registered in extraKnownMarketplaces. The positron and git-ai
+# profiles prove these plugins resolve without declaring a source; the
+# git@github.com SSH-URL variant seen only on the personal profile is a TUI
+# artifact deliberately dropped for portability. Only enabledPlugins is written.
+plugins:
+  superpowers: true
+  clangd-lsp: true
+  pyright-lsp: true
+  rust-analyzer-lsp: true

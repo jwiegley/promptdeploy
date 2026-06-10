@@ -1122,6 +1122,19 @@ class TestValidateItemMarketplace:
         assert any("'@' or whitespace" in i.message for i in issues)
 
 
+def test_validate_settings_marketplace_keys_warn(tmp_path):
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(
+        tmp_path,
+        "base:\n  extraKnownMarketplaces:\n    acme: {}\n"
+        "  enabledPlugins:\n    p@acme: true\n",
+    )
+    warns = [i.message for i in validate_all(cfg) if i.level == "warning"]
+    assert any("extraKnownMarketplaces" in m and "marketplaces/" in m for m in warns)
+    assert any("enabledPlugins" in m and "marketplaces/" in m for m in warns)
+
+
 class TestValidateFiletags:
     def test_valid_filetags(self, config: Config) -> None:
         item = SourceItem(

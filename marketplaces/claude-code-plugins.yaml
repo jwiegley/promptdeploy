@@ -1,0 +1,12 @@
+name: claude-code-plugins
+description: Plugin marketplace in the anthropics/claude-code repository (frontend-design and more)
+# Unlike claude-plugins-official, this marketplace is NOT built in to Claude
+# Code: before this file existed, frontend-design@claude-code-plugins was
+# enabled in every profile but the marketplace was registered nowhere and the
+# plugin never actually installed (no clone in any plugins/cache). Declaring
+# the source here is what makes the plugin resolve.
+source:
+  source: github
+  repo: anthropics/claude-code
+plugins:
+  frontend-design: true
