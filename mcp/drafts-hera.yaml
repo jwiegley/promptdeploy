@@ -1,5 +1,5 @@
 name: drafts-hera
-description: Drafts.app on hera (macOS) via SSH-stdio to drafts-mcp-server — host Claude Code (claude-vulcan, operator context, FULL toolset incl. drafts_run_action). Bypasses the SSE bridge; the autonomous OpenClaw/Hermes microVMs use the write-gated SSE endpoint instead.
+description: Drafts.app on hera (macOS) via SSH-stdio to drafts-mcp-server — host Claude Code (claude-vulcan, operator context, FULL toolset incl. drafts_run_action). Bypasses the SSE bridge; the autonomous OpenClaw/Hermes microVMs use the SSE bridge endpoint instead (full read/write draft surface since 2026-06-10, gated only against drafts_run_action).
 command: ssh
 args:
   - "-T"
