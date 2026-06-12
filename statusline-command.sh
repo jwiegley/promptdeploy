@@ -6,15 +6,18 @@ JSON=$(cat)
 # Debug: save JSON to file for inspection (optional)
 # echo "$JSON" > /tmp/statusline-debug.json 2>/dev/null || true
 
-# Extract project directory and get basename
+# Extract project directory and get basename (truncate to 12 chars)
 PROJECT_DIR=$(echo "$JSON" | jq -r '.workspace.project_dir // .cwd // "unknown"')
-SHORT_PROJECT=$(basename "$PROJECT_DIR")
+_BASENAME=$(basename "$PROJECT_DIR")
+if [ "${#_BASENAME}" -gt 12 ]; then
+    SHORT_PROJECT="${_BASENAME:0:12}…"
+else
+    SHORT_PROJECT="$_BASENAME"
+fi
 
-# Get git branch and dirty status if in a git repo
-BRANCH="main"
+# Check dirty status if in a git repo
 DIRTY=""
 if git -C "$PROJECT_DIR" rev-parse --git-dir > /dev/null 2>&1; then
-    BRANCH=$(git -C "$PROJECT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
     if ! git -C "$PROJECT_DIR" diff-index --quiet HEAD -- 2>/dev/null; then
         DIRTY="*"
     fi
@@ -23,25 +26,21 @@ fi
 # Extract model name
 MODEL=$(echo "$JSON" | jq -r '.model.display_name // "Opus"')
 
-# Extract context window info
-USED_PCT=$(echo "$JSON" | jq -r '.context_window.used_percentage // 0')
-REMAINING_PCT=$(echo "$JSON" | jq -r '.context_window.remaining_percentage // 100')
+# Extract context window info (round to integer to avoid floating-point artifacts)
+USED_PCT=$(echo "$JSON" | jq -r '.context_window.used_percentage // 0' | awk '{printf "%.0f", $1}')
 
-# Generate context bar (11 blocks total) - show remaining percentage
-FILLED=$(awk "BEGIN {printf \"%.0f\", ($REMAINING_PCT / 100) * 11}")
+# Rate limit allocations
+FIVE_HOUR_PCT=$(echo "$JSON" | jq -r '.rate_limits.five_hour.used_percentage // 0' | awk '{printf "%.0f", $1}')
+SEVEN_DAY_PCT=$(echo "$JSON" | jq -r '.rate_limits.seven_day.used_percentage // 0' | awk '{printf "%.0f", $1}')
+
+# Generate context bar (11 blocks total) - show used percentage
+FILLED=$(awk "BEGIN {printf \"%.0f\", ($USED_PCT / 100) * 11}")
 EMPTY=$((11 - FILLED))
 CONTEXT_BAR=""
 for ((i=0; i<FILLED; i++)); do CONTEXT_BAR="${CONTEXT_BAR}█"; done
 for ((i=0; i<EMPTY; i++)); do CONTEXT_BAR="${CONTEXT_BAR}░"; done
 
-# Context display (show remaining percentage like in example: 69%)
-CONTEXT_DISPLAY="$CONTEXT_BAR ${REMAINING_PCT}%"
-
-# TODO: Track compactions separately if needed
-# COMPACTIONS=0
-# if [ "$COMPACTIONS" -gt 0 ]; then
-#     CONTEXT_DISPLAY="$CONTEXT_DISPLAY ⟳$COMPACTIONS"
-# fi
+CONTEXT_DISPLAY="$CONTEXT_BAR ctx:${USED_PCT}% 5h:${FIVE_HOUR_PCT}% 7d:${SEVEN_DAY_PCT}%"
 
 # Extract token totals
 INPUT_TOKENS=$(echo "$JSON" | jq -r '.context_window.total_input_tokens // 0')
@@ -62,13 +61,7 @@ format_tokens() {
 INPUT_FMT=$(format_tokens $INPUT_TOKENS)
 OUTPUT_FMT=$(format_tokens $OUTPUT_TOKENS)
 
-# Calculate output ratio (output / input)
-OUTPUT_RATIO=0
-if [ "$INPUT_TOKENS" -gt 0 ]; then
-    OUTPUT_RATIO=$(awk "BEGIN {printf \"%.1f\", ($OUTPUT_TOKENS / $INPUT_TOKENS) * 100}")
-fi
-
-TOKENS_DISPLAY="↓$INPUT_FMT ↑$OUTPUT_FMT ($OUTPUT_RATIO%)"
+TOKENS_DISPLAY="↓$INPUT_FMT ↑$OUTPUT_FMT"
 
 # Lines changed
 LINES_ADDED=$(echo "$JSON" | jq -r '.cost.total_lines_added // 0')
@@ -127,28 +120,5 @@ if [ "$API_TIME_SEC" -gt 0 ]; then
     HOURLY_RATE=$(awk "BEGIN {printf \"%.0f\", ($COST / $API_TIME_SEC) * 3600}")
 fi
 
-COST_DISPLAY="\$${COST_FORMATTED} (\$${HOURLY_RATE}/hr)"
-
-# Calculate efficiency grade
-calculate_grade() {
-    local cache=$1
-    local output_ratio=$2
-
-    # Simple grading: A+ if cache >= 95 and output >= 60
-    if [ "$(awk "BEGIN {print ($cache >= 95 && $output_ratio >= 60)}")" = "1" ]; then
-        echo "A+"
-    elif [ "$(awk "BEGIN {print ($cache >= 90 && $output_ratio >= 50)}")" = "1" ]; then
-        echo "A"
-    elif [ "$(awk "BEGIN {print ($cache >= 80 && $output_ratio >= 40)}")" = "1" ]; then
-        echo "B+"
-    elif [ "$(awk "BEGIN {print ($cache >= 70 || $output_ratio >= 30)}")" = "1" ]; then
-        echo "B"
-    else
-        echo "C"
-    fi
-}
-
-GRADE=$(calculate_grade $CACHE_HIT_RATE $OUTPUT_RATIO)
-
 # Output the status line
-echo "$SHORT_PROJECT $BRANCH$DIRTY | $MODEL | $CONTEXT_DISPLAY | $TOKENS_DISPLAY | $LINES_DISPLAY | $CACHE_DISPLAY | $THROUGHPUT_DISPLAY | $API_TIME_DISPLAY | $COST_DISPLAY | $GRADE"
+echo "$SHORT_PROJECT$DIRTY | $MODEL | $CONTEXT_DISPLAY | $TOKENS_DISPLAY | $LINES_DISPLAY | $CACHE_DISPLAY | $API_TIME_DISPLAY"
