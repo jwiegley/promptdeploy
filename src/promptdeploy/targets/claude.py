@@ -7,7 +7,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from ..frontmatter import transform_for_target
 from ..manifest import MANIFEST_FILENAME
@@ -128,7 +128,7 @@ class ClaudeTarget(Target):
         item_type: str,
         name: str,
         content: Optional[bytes] = None,
-        metadata: Optional[dict] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> bool:
         return item_type == "models"
 
@@ -137,10 +137,10 @@ class ClaudeTarget(Target):
             return f"model={self._model}"
         return None
 
-    def deploy_models(self, config: dict) -> None:
+    def deploy_models(self, config: dict[str, Any]) -> None:
         pass  # Claude Code does not support custom models
 
-    def deploy_hook(self, name: str, config: dict) -> None:
+    def deploy_hook(self, name: str, config: dict[str, Any]) -> None:
         settings = self._load_json(self._settings_path())
         hooks_config = config.get("hooks", {})
         settings_hooks = self._ensure_dict(settings, "hooks")
@@ -197,7 +197,7 @@ class ClaudeTarget(Target):
 
         self._save_json(self._settings_path(), settings)
 
-    def deploy_mcp_server(self, name: str, config: dict) -> None:
+    def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:
         settings = self._load_json(self._settings_path())
 
         if not config.get("enabled", True):
@@ -211,7 +211,7 @@ class ClaudeTarget(Target):
         self._save_json(self._settings_path(), settings)
 
     @staticmethod
-    def _strip_marketplace(settings: dict, name: str) -> None:
+    def _strip_marketplace(settings: dict[str, Any], name: str) -> None:
         """Remove a marketplace's ownership from a settings dict in place.
 
         Pops ``extraKnownMarketplaces[name]`` and every ``enabledPlugins`` key
@@ -233,7 +233,7 @@ class ClaudeTarget(Target):
             settings.pop("enabledPlugins", None)
 
     @staticmethod
-    def _ensure_dict(settings: dict, key: str) -> dict:
+    def _ensure_dict(settings: dict[str, Any], key: str) -> dict[str, Any]:
         """Return ``settings[key]`` as a dict, replacing a non-dict value.
 
         ``dict.setdefault`` leaves an existing non-dict value (e.g. a string
@@ -246,14 +246,14 @@ class ClaudeTarget(Target):
             settings[key] = value
         return value
 
-    def deploy_marketplace(self, name: str, config: dict) -> None:
+    def deploy_marketplace(self, name: str, config: dict[str, Any]) -> None:
         path = self._settings_path()
         settings = self._load_json(path)
         self._strip_marketplace(settings, name)
         if config.get("enabled", True):
             source = config.get("source")
             if isinstance(source, dict):
-                entry: dict = {"source": dict(source)}
+                entry: dict[str, Any] = {"source": dict(source)}
                 if "autoUpdate" in config:
                     entry["autoUpdate"] = bool(config["autoUpdate"])
                 self._ensure_dict(settings, "extraKnownMarketplaces")[name] = entry
@@ -273,7 +273,9 @@ class ClaudeTarget(Target):
         self._strip_marketplace(settings, name)
         self._save_json(path, settings)
 
-    def deploy_settings(self, rendered: dict, previous_keys: list[str]) -> None:
+    def deploy_settings(
+        self, rendered: dict[str, Any], previous_keys: list[str]
+    ) -> None:
         path = self._settings_path()
         settings = self._load_json(path)
         for key in previous_keys:
@@ -346,7 +348,7 @@ class ClaudeTarget(Target):
             settings.pop(key, None)
         self._save_json(path, settings)
 
-    def read_settings_json(self) -> dict:
+    def read_settings_json(self) -> dict[str, Any]:
         return self._load_json(self._settings_path())
 
     # ------------------------------------------------------------------
@@ -451,11 +453,12 @@ class ClaudeTarget(Target):
             raise
 
     @staticmethod
-    def _load_json(path: Path) -> dict:
+    def _load_json(path: Path) -> dict[str, Any]:
         if not path.exists():
             return {}
         try:
-            return json.loads(path.read_text("utf-8"))
+            data: dict[str, Any] = json.loads(path.read_text("utf-8"))
+            return data
         except json.JSONDecodeError as exc:
             raise JsonConfigError(
                 f"Cannot parse JSON in {path}: {exc}. "
@@ -463,7 +466,7 @@ class ClaudeTarget(Target):
             ) from exc
 
     @staticmethod
-    def _save_json(path: Path, data: dict) -> None:
+    def _save_json(path: Path, data: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
         try:

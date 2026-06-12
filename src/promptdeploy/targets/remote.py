@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from ..ssh import ssh_exists, ssh_pull, ssh_push
 from .base import Target
@@ -75,7 +75,7 @@ class RemoteTarget(Target):
         item_type: str,
         name: str,
         content: Optional[bytes] = None,
-        metadata: Optional[dict] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> bool:
         return self._inner.should_skip(item_type, name, content, metadata)
 
@@ -91,13 +91,13 @@ class RemoteTarget(Target):
     def deploy_skill(self, name: str, source_dir: Path) -> None:
         self._inner.deploy_skill(name, source_dir)
 
-    def deploy_mcp_server(self, name: str, config: dict) -> None:
+    def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:
         self._inner.deploy_mcp_server(name, config)
 
-    def deploy_models(self, config: dict) -> None:
+    def deploy_models(self, config: dict[str, Any]) -> None:
         self._inner.deploy_models(config)
 
-    def deploy_hook(self, name: str, config: dict) -> None:
+    def deploy_hook(self, name: str, config: dict[str, Any]) -> None:
         self._inner.deploy_hook(name, config)
 
     def deploy_prompt(self, name: str, content: bytes, source_path: Path) -> None:
@@ -121,7 +121,7 @@ class RemoteTarget(Target):
     def remove_hook(self, name: str) -> None:
         self._inner.remove_hook(name)
 
-    def deploy_marketplace(self, name: str, config: dict) -> None:
+    def deploy_marketplace(self, name: str, config: dict[str, Any]) -> None:
         self._inner.deploy_marketplace(name, config)
 
     def remove_marketplace(self, name: str) -> None:
@@ -151,13 +151,15 @@ class RemoteTarget(Target):
     def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
         return self._inner.read_deployed_bytes(item_type, name)
 
-    def deploy_settings(self, rendered: dict, previous_keys: list[str]) -> None:
+    def deploy_settings(
+        self, rendered: dict[str, Any], previous_keys: list[str]
+    ) -> None:
         self._inner.deploy_settings(rendered, previous_keys)
 
     def remove_settings(self, previous_keys: list[str]) -> None:
         self._inner.remove_settings(previous_keys)
 
-    def read_settings_json(self) -> dict:
+    def read_settings_json(self) -> dict[str, Any]:
         return self._inner.read_settings_json()
 
     def manifest_path(self) -> Path:

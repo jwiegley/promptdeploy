@@ -8,7 +8,7 @@ import re
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from ..frontmatter import (
     parse_frontmatter,
@@ -200,7 +200,7 @@ class OpenCodeTarget(Target):
         item_type: str,
         name: str,
         content: Optional[bytes] = None,
-        metadata: Optional[dict] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> bool:
         return item_type in ("hook", "settings", "marketplace")
 
@@ -258,19 +258,19 @@ class OpenCodeTarget(Target):
                 self._transform_collecting_warnings(name, skill_md.read_bytes())
             )
 
-    def deploy_hook(self, name: str, config: dict) -> None:
+    def deploy_hook(self, name: str, config: dict[str, Any]) -> None:
         pass
 
     def remove_hook(self, name: str) -> None:
         pass
 
-    def deploy_models(self, config: dict) -> None:
+    def deploy_models(self, config: dict[str, Any]) -> None:
         from ..envsubst import expand_env_vars_strict
 
         oc_path = self._opencode_path()
         data = self._load_json(oc_path)
 
-        providers: dict = {}
+        providers: dict[str, Any] = {}
 
         for prov_key, prov in config.get("providers", {}).items():
             oc_cfg = prov.get("opencode", {})
@@ -283,7 +283,7 @@ class OpenCodeTarget(Target):
             )
             base_url = prov.get("base_url", "")
 
-            provider_entry: dict = {
+            provider_entry: dict[str, Any] = {
                 "npm": oc_cfg.get("npm", "@ai-sdk/openai-compatible"),
                 "name": oc_cfg.get("name", prov.get("display_name", prov_key)),
                 "options": {
@@ -296,18 +296,18 @@ class OpenCodeTarget(Target):
             if timeout is not None:
                 provider_entry["options"]["timeout"] = timeout
 
-            models_dict: dict = {}
+            models_dict: dict[str, Any] = {}
             for model_id, model in prov.get("models", {}).items():
                 if model is None:
                     model = {}
-                model_entry: dict = {
+                model_entry: dict[str, Any] = {
                     "name": model.get("display_name", model_id),
                 }
                 # Add limits if specified
                 context_limit = model.get("context_limit")
                 output_limit = model.get("output_limit")
                 if context_limit is not None or output_limit is not None:
-                    limit: dict = {}
+                    limit: dict[str, Any] = {}
                     if context_limit is not None:
                         limit["context"] = context_limit
                     if output_limit is not None:
@@ -322,7 +322,7 @@ class OpenCodeTarget(Target):
         data["provider"] = providers
         self._save_json(oc_path, data)
 
-    def deploy_mcp_server(self, name: str, config: dict) -> None:
+    def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:
         from ..envsubst import expand_env_vars_strict
 
         oc_path = self._opencode_path()
@@ -332,7 +332,7 @@ class OpenCodeTarget(Target):
         if not config.get("enabled", True):
             data.get("mcp", {}).pop(name, None)
         else:
-            oc_config: dict = {}
+            oc_config: dict[str, Any] = {}
             # Determine type based on presence of url vs command.
             cmd = config.get("command")
             args = config.get("args", [])
@@ -491,13 +491,14 @@ class OpenCodeTarget(Target):
             pass
 
     @staticmethod
-    def _load_json(path: Path) -> dict:
+    def _load_json(path: Path) -> dict[str, Any]:
         if not path.exists():
             return {}
-        return json.loads(path.read_text("utf-8"))
+        data: dict[str, Any] = json.loads(path.read_text("utf-8"))
+        return data
 
     @staticmethod
-    def _save_json(path: Path, data: dict) -> None:
+    def _save_json(path: Path, data: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
         try:

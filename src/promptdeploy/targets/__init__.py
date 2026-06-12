@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING, Callable, Optional
 
 from .base import Target
 from .claude import ClaudeTarget
@@ -8,8 +11,13 @@ from .gptel import GptelTarget
 from .opencode import OpenCodeTarget
 from .remote import RemoteTarget
 
+if TYPE_CHECKING:
+    from ..config import TargetConfig
 
-def create_target(target_config, *, global_model=None):
+
+def create_target(
+    target_config: TargetConfig, *, global_model: Optional[str] = None
+) -> Target:
     """Create a Target instance from a TargetConfig.
 
     When the config has a ``host`` field that does not match the current
@@ -36,7 +44,7 @@ def create_target(target_config, *, global_model=None):
 
     effective_model = target_config.model or global_model
 
-    factories = {
+    factories: dict[str, Callable[[TargetConfig, Path], Target]] = {
         "claude": lambda tc, p: ClaudeTarget(tc.id, p, model=effective_model),
         "droid": lambda tc, p: DroidTarget(tc.id, p),
         "opencode": lambda tc, p: OpenCodeTarget(tc.id, p),

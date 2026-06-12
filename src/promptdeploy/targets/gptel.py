@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from ..manifest import MANIFEST_FILENAME
 from ..poet import POET_EXTENSIONS, parse_poet, render_for_gptel
@@ -50,7 +50,7 @@ class GptelTarget(Target):
         item_type: str,
         name: str,
         content: Optional[bytes] = None,
-        metadata: Optional[dict] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> bool:
         return item_type != "prompt"
 
@@ -125,13 +125,13 @@ class GptelTarget(Target):
     def deploy_skill(self, name: str, source_dir: Path) -> None:
         pass
 
-    def deploy_mcp_server(self, name: str, config: dict) -> None:
+    def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:
         pass
 
-    def deploy_models(self, config: dict) -> None:
+    def deploy_models(self, config: dict[str, Any]) -> None:
         pass
 
-    def deploy_hook(self, name: str, config: dict) -> None:
+    def deploy_hook(self, name: str, config: dict[str, Any]) -> None:
         pass
 
     # ------------------------------------------------------------------

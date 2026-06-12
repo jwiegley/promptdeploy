@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 
 class Target(ABC):
@@ -22,7 +22,9 @@ class Target(ABC):
     def cleanup(self) -> None:
         """Called to release resources (e.g. temp dirs) without pushing changes."""
 
-    def deploy_settings(self, rendered: dict, previous_keys: list[str]) -> None:
+    def deploy_settings(
+        self, rendered: dict[str, Any], previous_keys: list[str]
+    ) -> None:
         """Merge rendered Claude settings into the target's settings.json.
 
         Default no-op so non-Claude targets need no changes.
@@ -31,7 +33,7 @@ class Target(ABC):
     def remove_settings(self, previous_keys: list[str]) -> None:
         """Remove previously-managed settings keys. No-op by default."""
 
-    def deploy_marketplace(self, name: str, config: dict) -> None:
+    def deploy_marketplace(self, name: str, config: dict[str, Any]) -> None:
         """Merge a Claude marketplace + its enabled plugins into settings.json.
 
         Default no-op so non-Claude targets need no changes.
@@ -40,7 +42,7 @@ class Target(ABC):
     def remove_marketplace(self, name: str) -> None:
         """Remove a marketplace and its enabled plugins. No-op by default."""
 
-    def read_settings_json(self) -> dict:
+    def read_settings_json(self) -> dict[str, Any]:
         """Return the target's current settings.json as a dict.
 
         Returns ``{}`` when the target has no Claude settings file (the default
@@ -61,7 +63,7 @@ class Target(ABC):
         item_type: str,
         name: str,
         content: Optional[bytes] = None,
-        metadata: Optional[dict] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> bool:
         """Return True if this target would no-op the deploy for this item.
 
@@ -91,13 +93,13 @@ class Target(ABC):
     def deploy_skill(self, name: str, source_dir: Path) -> None: ...
 
     @abstractmethod
-    def deploy_mcp_server(self, name: str, config: dict) -> None: ...
+    def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None: ...
 
     @abstractmethod
-    def deploy_models(self, config: dict) -> None: ...
+    def deploy_models(self, config: dict[str, Any]) -> None: ...
 
     @abstractmethod
-    def deploy_hook(self, name: str, config: dict) -> None: ...
+    def deploy_hook(self, name: str, config: dict[str, Any]) -> None: ...
 
     @abstractmethod
     def deploy_prompt(self, name: str, content: bytes, source_path: Path) -> None: ...

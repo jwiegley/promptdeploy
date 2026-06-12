@@ -7,7 +7,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from ..frontmatter import (
     parse_frontmatter,
@@ -60,7 +60,7 @@ class DroidTarget(Target):
         item_type: str,
         name: str,
         content: Optional[bytes] = None,
-        metadata: Optional[dict] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> bool:
         if item_type == "settings":
             return True
@@ -139,13 +139,13 @@ class DroidTarget(Target):
         if skill_md.exists():
             skill_md.write_bytes(transform_for_target(skill_md.read_bytes()))
 
-    def deploy_hook(self, name: str, config: dict) -> None:
+    def deploy_hook(self, name: str, config: dict[str, Any]) -> None:
         pass
 
     def remove_hook(self, name: str) -> None:
         pass
 
-    def deploy_models(self, config: dict) -> None:
+    def deploy_models(self, config: dict[str, Any]) -> None:
         from ..envsubst import expand_env_vars
 
         settings_path = self._config_path / "settings.json"
@@ -173,7 +173,7 @@ class DroidTarget(Target):
                     f"[{display_prefix}] {model.get('display_name', model_id)}"
                 )
                 slug = display_name.replace(" ", "-")
-                entry: dict = {
+                entry: dict[str, Any] = {
                     "apiKey": api_key,
                     "baseUrl": base_url,
                     "displayName": display_name,
@@ -197,14 +197,14 @@ class DroidTarget(Target):
         data["customModels"] = custom_models
         self._save_json(settings_path, data)
 
-    def deploy_mcp_server(self, name: str, config: dict) -> None:
+    def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:
         mcp_path = self._mcp_path()
         data = self._load_json(mcp_path)
 
         if not config.get("enabled", True):
             data.get("mcpServers", {}).pop(name, None)
         else:
-            droid_config: dict = {}
+            droid_config: dict[str, Any] = {}
             # Determine type based on presence of url vs command.
             if "url" in config:
                 droid_config["type"] = "http"
@@ -328,13 +328,14 @@ class DroidTarget(Target):
             pass
 
     @staticmethod
-    def _load_json(path: Path) -> dict:
+    def _load_json(path: Path) -> dict[str, Any]:
         if not path.exists():
             return {}
-        return json.loads(path.read_text("utf-8"))
+        data: dict[str, Any] = json.loads(path.read_text("utf-8"))
+        return data
 
     @staticmethod
-    def _save_json(path: Path, data: dict) -> None:
+    def _save_json(path: Path, data: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
         try:
