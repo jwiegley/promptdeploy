@@ -21,6 +21,7 @@
             pytest
             pytest-cov
             mypy
+            types-pyyaml
           ]);
 
         src = ./.;

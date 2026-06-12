@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 dependencies = ["PyYAML>=6.0", "Jinja2>=3.1", "ruamel.yaml>=0.18"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov"]
+dev = ["pytest>=8.0", "pytest-cov", "types-PyYAML"]
 
 [project.scripts]
 promptdeploy = "promptdeploy.cli:main"
@@ -26,9 +26,20 @@ testpaths = ["tests"]
 # flake's src (flakes omit submodule contents), so CI never lints it.
 extend-exclude = ["translate-tool"]
 
+[tool.mypy]
+# Strict typing for the promptdeploy package (src/). `strict` cannot be set
+# in per-module overrides, so it is enabled globally here and the noisy
+# definition/call checks are relaxed for tests.* below.
+strict = true
+
 [[tool.mypy.overrides]]
-module = "yaml"
-ignore_missing_imports = true
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+disallow_untyped_calls = false
+disallow_untyped_decorators = false
+disallow_any_generics = false
+warn_return_any = false
 
 [[tool.mypy.overrides]]
 module = "ruamel.*"
