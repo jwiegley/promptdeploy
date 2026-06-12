@@ -1,5 +1,20 @@
 providers:
 
+  # Claude-only provider: claude targets read claude.default_model to inject
+  # `model:` frontmatter into deployed agents and skills.  It carries no
+  # base_url/api_key because Claude Code does not read credentials from
+  # models.yaml.  The only: [claude] guard keeps droid/opencode -- the
+  # targets that actually consume provider/model entries -- from gaining a
+  # bogus Anthropic provider (claude targets skip models items entirely).
+  anthropic:
+    display_name: "Anthropic"
+    only: [claude]
+    claude:
+      default_model: claude-fable-5
+    models:
+      claude-fable-5:
+        display_name: "Claude Fable 5"
+
   positron-anthropic:
     display_name: "Positron"
     base_url: "https://api.anthropic.com"
