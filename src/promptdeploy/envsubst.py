@@ -6,7 +6,6 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any
 
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -101,21 +100,4 @@ def expand_env_vars_strict(value: str, *, context: str = "") -> str:
             f"Environment variable(s) not set: {names}{where}. "
             f"Export them in your shell or add to .env before deploying."
         )
-    return result
-
-
-def expand_env_in_dict(data: dict) -> dict:
-    """Recursively expand ${VAR} references in all string values of a dict."""
-    result: dict[str, Any] = {}
-    for key, value in data.items():
-        if isinstance(value, str):
-            result[key] = expand_env_vars(value)
-        elif isinstance(value, dict):
-            result[key] = expand_env_in_dict(value)
-        elif isinstance(value, list):
-            result[key] = [
-                expand_env_vars(v) if isinstance(v, str) else v for v in value
-            ]
-        else:
-            result[key] = value
     return result

@@ -6,7 +6,6 @@ import pytest
 
 from promptdeploy.envsubst import (
     EnvVarError,
-    expand_env_in_dict,
     expand_env_vars,
     expand_env_vars_strict,
     load_dotenv,
@@ -55,57 +54,6 @@ class TestExpandEnvVars:
         monkeypatch.setenv("SET_WARN_VAR", "v")
         expand_env_vars("${SET_WARN_VAR}")
         assert capsys.readouterr().err == ""
-
-
-class TestExpandEnvInDict:
-    def test_string_values_expanded(self, monkeypatch):
-        monkeypatch.setenv("VAL", "expanded")
-        result = expand_env_in_dict({"key": "${VAL}"})
-        assert result == {"key": "expanded"}
-
-    def test_nested_dicts_expanded(self, monkeypatch):
-        monkeypatch.setenv("INNER", "deep")
-        result = expand_env_in_dict({"outer": {"inner": "${INNER}"}})
-        assert result == {"outer": {"inner": "deep"}}
-
-    def test_lists_with_strings_expanded(self, monkeypatch):
-        monkeypatch.setenv("ITEM", "value")
-        result = expand_env_in_dict({"items": ["${ITEM}", "literal"]})
-        assert result == {"items": ["value", "literal"]}
-
-    def test_non_string_values_passed_through(self):
-        data = {"count": 42, "flag": True, "empty": None}
-        result = expand_env_in_dict(data)
-        assert result == {"count": 42, "flag": True, "empty": None}
-
-    def test_mixed_dict_with_all_types(self, monkeypatch):
-        monkeypatch.setenv("NAME", "test")
-        data = {
-            "name": "${NAME}",
-            "count": 5,
-            "enabled": False,
-            "tags": ["${NAME}", "fixed"],
-            "nested": {"ref": "${NAME}"},
-            "nothing": None,
-        }
-        result = expand_env_in_dict(data)
-        assert result == {
-            "name": "test",
-            "count": 5,
-            "enabled": False,
-            "tags": ["test", "fixed"],
-            "nested": {"ref": "test"},
-            "nothing": None,
-        }
-
-    def test_list_with_non_string_elements(self, monkeypatch):
-        monkeypatch.setenv("X", "val")
-        data = {"items": ["${X}", 123, True, None]}
-        result = expand_env_in_dict(data)
-        assert result == {"items": ["val", 123, True, None]}
-
-    def test_empty_dict(self):
-        assert expand_env_in_dict({}) == {}
 
 
 class TestLoadDotenv:
