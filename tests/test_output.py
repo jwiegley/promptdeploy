@@ -8,9 +8,9 @@ class TestVerbosity:
         assert Verbosity.QUIET < Verbosity.NORMAL < Verbosity.VERBOSE
 
     def test_enum_values(self) -> None:
-        assert Verbosity.QUIET == 0
-        assert Verbosity.NORMAL == 1
-        assert Verbosity.VERBOSE == 2
+        assert Verbosity.QUIET.value == 0
+        assert Verbosity.NORMAL.value == 1
+        assert Verbosity.VERBOSE.value == 2
 
 
 class TestOutputAction:

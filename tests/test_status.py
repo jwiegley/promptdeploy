@@ -7,10 +7,10 @@ import pytest
 
 from promptdeploy.config import Config, TargetConfig
 from promptdeploy.manifest import MANIFEST_FILENAME, compute_file_hash
+from promptdeploy.deploy import _TYPE_TO_CATEGORY
 from promptdeploy.status import (
     StatusEntry,
     get_status,
-    _TYPE_TO_CATEGORY,
     _CATEGORY_TO_TYPE,
 )
 

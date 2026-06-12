@@ -215,7 +215,7 @@ class TestDiscoverAll:
         formerly settings.yaml-managed extraKnownMarketplaces/enabledPlugins
         keys before marketplace items re-add their own entries."""
         items = list(discovery.discover_all())
-        types_seen = []
+        types_seen: list[str] = []
         for item in items:
             if not types_seen or types_seen[-1] != item.item_type:
                 types_seen.append(item.item_type)
@@ -810,6 +810,7 @@ def test_discover_settings_yields_singleton(tmp_path):
     it = items[0]
     assert it.item_type == "settings"
     assert it.name == "settings"
+    assert it.metadata is not None
     assert it.metadata["base"]["effortLevel"] == "low"
 
 

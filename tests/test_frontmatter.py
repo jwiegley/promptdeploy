@@ -33,6 +33,7 @@ class TestParseFrontmatter:
     def test_multiline_yaml_values(self):
         content = b"---\ndescription: |\n  This is a\n  multi-line value.\ntags:\n  - one\n  - two\n---\nBody.\n"
         metadata, body = parse_frontmatter(content)
+        assert metadata is not None
         assert metadata["description"] == "This is a\nmulti-line value.\n"
         assert metadata["tags"] == ["one", "two"]
         assert body == b"Body.\n"
@@ -42,6 +43,7 @@ class TestParseFrontmatter:
             "utf-8"
         )
         metadata, body = parse_frontmatter(content)
+        assert metadata is not None
         assert metadata["title"] == "\u6d4b\u8bd5"
         assert metadata["author"] == "\u00e9l\u00e8ve"
         assert "Body with \u00fcnicode.".encode("utf-8") in body
@@ -54,6 +56,7 @@ class TestParseFrontmatter:
     def test_frontmatter_with_boolean_and_numeric(self):
         content = b"---\nenabled: true\ncount: 42\nratio: 3.14\n---\nBody.\n"
         metadata, body = parse_frontmatter(content)
+        assert metadata is not None
         assert metadata["enabled"] is True
         assert metadata["count"] == 42
         assert metadata["ratio"] == 3.14
@@ -152,6 +155,7 @@ class TestTransformForTarget:
         content = b"---\nname: test\nonly:\n  - target-a\n---\nBody.\n"
         result = transform_for_target(content)
         meta, body = parse_frontmatter(result)
+        assert meta is not None
         assert "only" not in meta
         assert meta["name"] == "test"
         assert body == b"Body.\n"
@@ -171,6 +175,7 @@ class TestTransformForTarget:
         content = b"---\nname: test\nonly:\n  - a\nexcept:\n  - b\n---\nBody.\n"
         result = transform_for_target(content)
         meta, _ = parse_frontmatter(result)
+        assert meta is not None
         assert "only" not in meta
         assert "except" not in meta
         assert meta == {"name": "test"}
@@ -205,12 +210,14 @@ class TestTransformForTargetInjection:
         content = b"---\nname: test\nmodel: sonnet\n---\nBody.\n"
         result = transform_for_target(content, inject={"model": "claude-opus-4-7"})
         meta, _ = parse_frontmatter(result)
+        assert meta is not None
         assert meta["model"] == "claude-opus-4-7"
 
     def test_inject_adds_new_key_when_absent(self):
         content = b"---\nname: test\n---\nBody.\n"
         result = transform_for_target(content, inject={"model": "claude-opus-4-7"})
         meta, _ = parse_frontmatter(result)
+        assert meta is not None
         assert meta["model"] == "claude-opus-4-7"
         assert meta["name"] == "test"
 
@@ -218,6 +225,7 @@ class TestTransformForTargetInjection:
         content = b"---\nname: test\nmodel: sonnet\n---\nBody.\n"
         result = transform_for_target(content, inject={"model": None})
         meta, _ = parse_frontmatter(result)
+        assert meta is not None
         # None-valued inject key is a no-op for that key: existing value preserved.
         assert meta["model"] == "sonnet"
 
@@ -229,6 +237,7 @@ class TestTransformForTargetInjection:
         # Confirm order: name, then model, then description.
         assert text.index("name:") < text.index("model:") < text.index("description:")
         meta, _ = parse_frontmatter(result)
+        assert meta is not None
         assert meta["model"] == "new"
 
     def test_inject_new_key_appended_last(self):
@@ -246,6 +255,7 @@ class TestTransformForTargetInjection:
             inject={"model": "claude-opus-4-7", "tools": None, "priority": 1},
         )
         meta, _ = parse_frontmatter(result)
+        assert meta is not None
         assert meta["model"] == "claude-opus-4-7"
         assert meta["priority"] == 1
         assert "tools" not in meta
