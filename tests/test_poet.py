@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from promptdeploy.poet import (
-    BUILTIN_VARS,
     PLAIN_EXTENSIONS,
     POET_EXTENSIONS,
     PoetDocument,
@@ -456,5 +455,136 @@ class TestModuleConstants:
     def test_extension_sets_disjoint(self):
         assert POET_EXTENSIONS.isdisjoint(PLAIN_EXTENSIONS)
 
-    def test_builtin_vars_present(self):
-        assert "current_time" in BUILTIN_VARS
+
+class TestUndefinedDegradation:
+    """Undefined Jinja variables degrade (recording a warning) for the
+    operations the docstring promises, instead of raising UndefinedError."""
+
+    def test_equality_comparison_degrades(self):
+        content = b"- role: system\n  content: \"{% if foo == 'x' %}eq{% endif %}ok\"\n"
+        doc = parse_poet(content)
+        assert doc.turns[0].content == "ok"
+        assert any("foo" in w for w in doc.warnings)
+
+    def test_inequality_comparison_degrades(self):
+        content = b"- role: system\n  content: \"{% if foo != 'x' %}ne{% endif %}ok\"\n"
+        doc = parse_poet(content)
+        assert doc.turns[0].content == "neok"
+        assert any("foo" in w for w in doc.warnings)
+
+    def test_ordering_comparison_degrades(self):
+        content = b'- role: system\n  content: "{% if foo > 1 %}gt{% endif %}ok"\n'
+        doc = parse_poet(content)
+        assert doc.turns[0].content == "ok"
+        assert any("foo" in w for w in doc.warnings)
+
+    def test_length_filter_degrades(self):
+        content = b'- role: system\n  content: "len {{ foo | length }}"\n'
+        doc = parse_poet(content)
+        assert doc.turns[0].content == "len 0"
+        assert any("foo" in w for w in doc.warnings)
+
+    def test_call_degrades_to_placeholder(self):
+        content = b'- role: system\n  content: "x {{ foo() }} y"\n'
+        doc = parse_poet(content)
+        assert doc.turns[0].content == "x {{ foo }} y"
+        assert any("foo" in w for w in doc.warnings)
+
+    def test_subscript_degrades_to_chained_placeholder(self):
+        content = b"- role: system\n  content: \"a {{ foo['bar'] }} b\"\n"
+        doc = parse_poet(content)
+        assert doc.turns[0].content == "a {{ foo['bar'] }} b"
+        assert any("foo['bar']" in w for w in doc.warnings)
+
+    def test_arithmetic_degrades_to_placeholder(self):
+        content = b'- role: system\n  content: "n {{ foo + 1 }} m"\n'
+        doc = parse_poet(content)
+        assert doc.turns[0].content == "n {{ foo }} m"
+        assert any("foo" in w for w in doc.warnings)
+
+    def test_containment_degrades(self):
+        content = b"- role: system\n  content: \"{% if 'x' in foo %}in{% endif %}ok\"\n"
+        doc = parse_poet(content)
+        assert doc.turns[0].content == "ok"
+        assert any("foo" in w for w in doc.warnings)
+
+    def test_int_coercion_degrades_to_zero(self):
+        content = b'- role: system\n  content: "i {{ foo | int }}"\n'
+        doc = parse_poet(content)
+        assert doc.turns[0].content == "i 0"
+        assert any("foo" in w for w in doc.warnings)
+
+    def test_float_coercion_degrades_to_zero(self):
+        content = b'- role: system\n  content: "f {{ foo | float }}"\n'
+        doc = parse_poet(content)
+        assert doc.turns[0].content == "f 0.0"
+        assert any("foo" in w for w in doc.warnings)
+
+    def test_undefined_is_hashable(self):
+        from promptdeploy.poet import _make_undefined_class
+
+        cls = _make_undefined_class([])
+        assert isinstance(hash(cls(name="foo")), int)
+
+
+class TestRenderTimeErrors:
+    def test_include_missing_template_raises_poet_error(self, tmp_path: Path):
+        child = tmp_path / "child.poet"
+        child.write_bytes(b"{% include 'missing.j2' %}\n")
+        with pytest.raises(PoetError, match="Jinja render error"):
+            parse_poet(child.read_bytes(), source_path=child)
+
+    def test_syntax_error_in_included_template_raises_poet_error(self, tmp_path: Path):
+        (tmp_path / "broken.j2").write_bytes(b"{% bad %}\n")
+        child = tmp_path / "child.poet"
+        child.write_bytes(b"{% include 'broken.j2' %}\n")
+        with pytest.raises(PoetError, match="Jinja render error"):
+            parse_poet(child.read_bytes(), source_path=child)
+
+
+class TestColonInCommentFrontmatterValue:
+    def test_inline_value_with_colon_kept_as_string(self):
+        # "Review code: thoroughly" YAML-parses to a mapping; the raw string
+        # must be preserved instead of silently dropping the description.
+        result = extract_comment_frontmatter(
+            b"# description: Review code: thoroughly\n"
+        )
+        assert result == {"description": "Review code: thoroughly"}
+
+    def test_colon_description_survives_render_for_command(self):
+        content = (
+            b"# description: Review code: thoroughly\n- role: system\n  content: x\n"
+        )
+        doc = parse_poet(content)
+        out = render_for_command(doc).decode("utf-8")
+        assert "Review code: thoroughly" in out
+
+
+class TestNonUtf8Prompts:
+    def test_parse_poet_non_utf8_raises_poet_error(self):
+        with pytest.raises(PoetError, match="not valid UTF-8"):
+            parse_poet(b"- role: system\n  content: \xff\xfe\n")
+
+    def test_parse_poet_non_utf8_names_source_path(self, tmp_path: Path):
+        path = tmp_path / "bad.poet"
+        with pytest.raises(PoetError, match="bad.poet"):
+            parse_poet(b"\xff\xfe", source_path=path)
+
+    def test_parse_plain_non_utf8_raises_poet_error(self):
+        with pytest.raises(PoetError, match="not valid UTF-8"):
+            parse_plain(b"plain \xff\xfe text\n")
+
+
+class TestYamlErrorUndefinedHint:
+    def test_yaml_error_names_undefined_variables(self):
+        # `content: {{ foo }}` with foo undefined renders to a literal
+        # placeholder that YAML reads as a flow mapping with a dict key;
+        # the error must name the undefined variable as the likely cause.
+        content = b"- role: system\n  content: {{ foo }}\n"
+        with pytest.raises(PoetError, match="foo"):
+            parse_poet(content)
+
+    def test_yaml_error_without_undefined_vars_has_no_hint(self):
+        with pytest.raises(PoetError) as exc_info:
+            parse_poet(b"- role: system\n  content: [broken\n")
+        assert "undefined Jinja variable" not in str(exc_info.value)

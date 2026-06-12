@@ -552,6 +552,108 @@ class TestSaveJsonError:
                     target.deploy_mcp_server("srv", {"command": "echo"})
 
 
+class TestAtomicArtifactWrites:
+    """Agent/command/prompt .md files and skill directories are written via
+    temp + os.replace so a failure never leaves a partial artifact."""
+
+    def test_agent_write_failure_leaves_no_temp_or_partial_file(self, tmp_path: Path):
+        from unittest.mock import patch
+
+        target = _make_target(tmp_path)
+        with patch("os.replace", side_effect=OSError("disk full")):
+            with pytest.raises(OSError, match="disk full"):
+                target.deploy_agent("helper", b"---\nname: helper\n---\nBody.\n")
+
+        agents_dir = tmp_path / ".claude" / "agents"
+        assert list(agents_dir.glob("*.tmp")) == []
+        assert not (agents_dir / "helper.md").exists()
+
+    def test_agent_write_failure_unlink_also_fails(self, tmp_path: Path):
+        import os
+        from unittest.mock import patch
+
+        target = _make_target(tmp_path)
+        original_unlink = os.unlink
+
+        def failing_unlink(p):
+            if str(p).endswith(".tmp"):
+                raise OSError("unlink failed")
+            return original_unlink(p)
+
+        with patch("os.replace", side_effect=OSError("replace failed")):
+            with patch("os.unlink", side_effect=failing_unlink):
+                with pytest.raises(OSError, match="replace failed"):
+                    target.deploy_agent("helper", b"Body.\n")
+
+    def test_agent_write_replaces_symlink(self, tmp_path: Path):
+        """An existing symlink at the destination is replaced by the rename,
+        never written through."""
+        target = _make_target(tmp_path)
+        real = tmp_path / "real.md"
+        real.write_bytes(b"original")
+        dest = tmp_path / ".claude" / "agents" / "helper.md"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.symlink_to(real)
+
+        target.deploy_agent("helper", b"---\nname: helper\n---\nBody.\n")
+
+        assert not dest.is_symlink()
+        assert real.read_bytes() == b"original"
+
+    def test_command_write_is_atomic(self, tmp_path: Path):
+        from unittest.mock import patch
+
+        target = _make_target(tmp_path)
+        with patch("os.replace", side_effect=OSError("disk full")):
+            with pytest.raises(OSError, match="disk full"):
+                target.deploy_command("fix", b"Body.\n")
+        commands_dir = tmp_path / ".claude" / "commands"
+        assert list(commands_dir.glob("*.tmp")) == []
+
+    def test_prompt_write_is_atomic(self, tmp_path: Path):
+        from unittest.mock import patch
+
+        target = _make_target(tmp_path)
+        src = tmp_path / "demo.md"
+        src.write_bytes(b"Prompt body.\n")
+        with patch("os.replace", side_effect=OSError("disk full")):
+            with pytest.raises(OSError, match="disk full"):
+                target.deploy_prompt("demo", b"Prompt body.\n", src)
+        commands_dir = tmp_path / ".claude" / "commands"
+        assert list(commands_dir.glob("*.tmp")) == []
+
+    def test_skill_deploy_leaves_no_staging_dir(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "src-skill"
+        src.mkdir()
+        (src / "SKILL.md").write_bytes(b"---\nname: s\n---\nBody.\n")
+
+        target.deploy_skill("s", src)
+
+        skills_dir = tmp_path / ".claude" / "skills"
+        assert sorted(p.name for p in skills_dir.iterdir()) == ["s"]
+
+    def test_skill_copy_failure_keeps_previous_deploy(self, tmp_path: Path):
+        """If staging fails, the previously deployed skill is untouched and
+        no staging leftovers remain."""
+        from unittest.mock import patch
+
+        target = _make_target(tmp_path)
+        src = tmp_path / "src-skill"
+        src.mkdir()
+        (src / "SKILL.md").write_bytes(b"v1")
+        target.deploy_skill("s", src)
+
+        (src / "SKILL.md").write_bytes(b"v2")
+        with patch("shutil.copytree", side_effect=OSError("copy failed")):
+            with pytest.raises(OSError, match="copy failed"):
+                target.deploy_skill("s", src)
+
+        skills_dir = tmp_path / ".claude" / "skills"
+        assert sorted(p.name for p in skills_dir.iterdir()) == ["s"]
+        assert (skills_dir / "s" / "SKILL.md").read_bytes() != b"v2"
+
+
 class TestItemExists:
     def test_agent_exists(self, tmp_path: Path):
         target = _make_target(tmp_path)
@@ -829,3 +931,19 @@ class TestRemoveAndReadSettings:
         assert target.read_settings_json() == {}
         (tmp_path / ".claude" / "settings.json").write_text(json.dumps({"model": "x"}))
         assert target.read_settings_json() == {"model": "x"}
+
+
+class TestLoadJsonError:
+    def test_corrupt_settings_json_raises_clear_error(self, tmp_path: Path):
+        """A corrupt settings.json raises JsonConfigError naming the file."""
+        from promptdeploy.targets.claude import JsonConfigError
+
+        target = _make_target(tmp_path)
+        (tmp_path / ".claude" / "settings.json").write_text("{not json")
+        with pytest.raises(JsonConfigError, match="settings.json"):
+            target.read_settings_json()
+
+    def test_json_config_error_is_value_error(self):
+        from promptdeploy.targets.claude import JsonConfigError
+
+        assert issubclass(JsonConfigError, ValueError)

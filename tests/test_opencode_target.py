@@ -8,6 +8,7 @@ import pytest
 from promptdeploy.frontmatter import parse_frontmatter
 from promptdeploy.manifest import MANIFEST_FILENAME
 from promptdeploy.targets.opencode import (
+    _OPENCODE_TOOL_NAMES,
     OpenCodeTarget,
     _convert_claude_tools,
     _transform_for_opencode,
@@ -934,34 +935,67 @@ class TestShouldSkip:
 # ------------------------------------------------------------------
 
 
+def _enabled(result: dict) -> set:
+    return {name for name, on in result.items() if on}
+
+
+def _disabled(result: dict) -> set:
+    return {name for name, on in result.items() if not on}
+
+
 class TestConvertClaudeTools:
+    """A Claude ``tools`` field is an allowlist; the conversion must emit
+    ``true`` for listed tools and ``false`` for every unlisted OpenCode
+    built-in (OpenCode enables all tools by default)."""
+
     def test_basic_tool_names(self):
         result = _convert_claude_tools("Read, Grep, Glob")
-        assert result == {"read": True, "grep": True, "glob": True}
+        assert _enabled(result) == {"read", "grep", "glob"}
+        # Unlisted built-ins are explicitly disabled.
+        assert _disabled(result) == _OPENCODE_TOOL_NAMES - {"read", "grep", "glob"}
 
     def test_list_input_basic(self):
         result = _convert_claude_tools(["Read", "Grep", "Glob"])
-        assert result == {"read": True, "grep": True, "glob": True}
+        assert _enabled(result) == {"read", "grep", "glob"}
+        assert _disabled(result) == _OPENCODE_TOOL_NAMES - {"read", "grep", "glob"}
 
     def test_list_input_with_bash_qualifiers(self):
         result = _convert_claude_tools(["Read", "Bash(grep:*)", "Bash(wc:*)"])
-        assert result == {"read": True, "bash": True}
+        assert _enabled(result) == {"read", "bash"}
 
-    def test_list_input_all_mcp_dropped(self):
+    def test_bash_qualifier_records_warning(self):
+        warnings: list[str] = []
+        _convert_claude_tools(["Bash(grep:*)"], warnings)
+        assert any("Bash(grep:*)" in w for w in warnings)
+
+    def test_mcp_tools_translated(self):
+        # MCP tools translate to OpenCode's flattened <server>_<tool> names
+        # so the allowlist survives the format change.
         result = _convert_claude_tools(
             [
                 "mcp__perplexity__perplexity_search_web",
                 "mcp__perplexity__perplexity_fetch_web",
             ]
         )
-        assert result == {}
+        assert _enabled(result) == {
+            "perplexity_perplexity_search_web",
+            "perplexity_perplexity_fetch_web",
+        }
+        # Every built-in remains disabled to preserve the allowlist.
+        assert _disabled(result) == set(_OPENCODE_TOOL_NAMES)
+
+    def test_mcp_server_name_with_underscores(self):
+        # The first ``__`` separates server from tool; single underscores in
+        # the server name are preserved.
+        result = _convert_claude_tools(["mcp__claude_hub__create_draft"])
+        assert "claude_hub_create_draft" in _enabled(result)
 
     def test_list_input_empty(self):
         assert _convert_claude_tools([]) == {}
 
     def test_list_input_with_whitespace(self):
         result = _convert_claude_tools(["  Read  ", " Grep "])
-        assert result == {"read": True, "grep": True}
+        assert _enabled(result) == {"read", "grep"}
 
     def test_dict_input_returns_empty(self):
         # dict-valued tools should pass through untouched at the caller; the
@@ -973,17 +1007,22 @@ class TestConvertClaudeTools:
 
     def test_bash_with_qualifiers(self):
         result = _convert_claude_tools("Read, Grep, Glob, Bash(grep:*), Bash(wc:*)")
-        assert result == {"read": True, "grep": True, "glob": True, "bash": True}
+        assert _enabled(result) == {"read", "grep", "glob", "bash"}
 
-    def test_unknown_tools_dropped(self):
-        result = _convert_claude_tools(
-            "mcp__perplexity__perplexity_search_web, mcp__perplexity__perplexity_fetch_web"
-        )
-        assert result == {}
+    def test_unknown_tool_dropped_with_warning(self):
+        warnings: list[str] = []
+        result = _convert_claude_tools("Read, Frobnicate", warnings)
+        assert _enabled(result) == {"read"}
+        assert any("Frobnicate" in w for w in warnings)
 
-    def test_mixed_known_and_unknown(self):
+    def test_no_warnings_sink_is_safe(self):
+        # Without a warnings list, untranslatable entries are still dropped.
+        result = _convert_claude_tools("Read, Frobnicate")
+        assert _enabled(result) == {"read"}
+
+    def test_mixed_known_and_mcp(self):
         result = _convert_claude_tools("Read, mcp__foo__bar, Bash(git:*)")
-        assert result == {"read": True, "bash": True}
+        assert _enabled(result) == {"read", "foo_bar", "bash"}
 
     def test_empty_string(self):
         result = _convert_claude_tools("")
@@ -991,7 +1030,7 @@ class TestConvertClaudeTools:
 
     def test_whitespace_handling(self):
         result = _convert_claude_tools("  Read ,  Grep  ,  Glob  ")
-        assert result == {"read": True, "grep": True, "glob": True}
+        assert _enabled(result) == {"read", "grep", "glob"}
 
     def test_all_known_tools(self):
         result = _convert_claude_tools(
@@ -999,25 +1038,14 @@ class TestConvertClaudeTools:
             "todoread, todowrite, webfetch, websearch, write, task, question"
         )
         assert len(result) == 16
-        for tool in [
-            "bash",
-            "edit",
-            "glob",
-            "grep",
-            "list",
-            "lsp",
-            "patch",
-            "read",
-            "skill",
-            "todoread",
-            "todowrite",
-            "webfetch",
-            "websearch",
-            "write",
-            "task",
-            "question",
-        ]:
-            assert result[tool] is True
+        assert _enabled(result) == set(_OPENCODE_TOOL_NAMES)
+
+    def test_deterministic_output_order(self):
+        # The false-fill is sorted so repeated conversions are byte-stable
+        # (the deploy loop compares would-deploy bytes against disk).
+        a = list(_convert_claude_tools("Read").items())
+        b = list(_convert_claude_tools("Read").items())
+        assert a == b
 
 
 class TestTransformForOpencode:
@@ -1026,17 +1054,23 @@ class TestTransformForOpencode:
             b"---\nname: reviewer\ntools: Read, Grep, Glob, Bash(grep:*)\n"
             b"model: sonnet\n---\nBody.\n"
         )
-        result = _transform_for_opencode(content, "opencode")
+        result = _transform_for_opencode(content)
         meta, body = parse_frontmatter(result)
         assert meta is not None
-        assert meta["tools"] == {"read": True, "grep": True, "glob": True, "bash": True}
+        assert _enabled(meta["tools"]) == {"read", "grep", "glob", "bash"}
+        assert _disabled(meta["tools"]) == _OPENCODE_TOOL_NAMES - {
+            "read",
+            "grep",
+            "glob",
+            "bash",
+        }
         assert "model" not in meta
         assert meta["name"] == "reviewer"
         assert body == b"Body.\n"
 
     def test_strips_model_field(self):
         content = b"---\nname: agent\nmodel: sonnet\n---\nBody.\n"
-        result = _transform_for_opencode(content, "opencode")
+        result = _transform_for_opencode(content)
         meta, body = parse_frontmatter(result)
         assert meta is not None
         assert "model" not in meta
@@ -1044,39 +1078,38 @@ class TestTransformForOpencode:
 
     def test_strips_deployment_fields(self):
         content = b"---\nname: agent\nonly:\n  - opencode\n---\nBody.\n"
-        result = _transform_for_opencode(content, "opencode")
+        result = _transform_for_opencode(content)
         meta, body = parse_frontmatter(result)
         assert meta is not None
         assert "only" not in meta
 
     def test_tools_already_object_preserved(self):
         content = b"---\nname: agent\ntools:\n  bash: false\n  read: true\n---\nBody.\n"
-        result = _transform_for_opencode(content, "opencode")
+        result = _transform_for_opencode(content)
         meta, body = parse_frontmatter(result)
         assert meta is not None
         # Object-valued tools should pass through unchanged.
         assert meta["tools"] == {"bash": False, "read": True}
 
-    def test_tools_string_all_unknown_removed(self):
-        content = b"---\nname: agent\ntools: mcp__foo__bar, mcp__baz__qux\n---\nBody.\n"
-        result = _transform_for_opencode(content, "opencode")
-        meta, body = parse_frontmatter(result)
-        assert meta is not None
-        assert "tools" not in meta
-
-    def test_tools_list_all_mcp_removed(self):
-        # Regression: YAML list of MCP-only tools must be removed so OpenCode
-        # does not see ``tools: [..]`` and reject it as the wrong shape.
+    def test_tools_list_mcp_translated(self):
+        # The web-searcher live case: a two-tool MCP allowlist must survive
+        # as OpenCode tool booleans (translated names enabled, every
+        # built-in disabled) instead of being discarded -- discarding it
+        # silently granted the agent the full toolset on OpenCode.
         content = (
             b"---\nname: web-searcher\ntools:\n"
             b"  - mcp__perplexity__perplexity_search_web\n"
-            b"  - mcp__perplexity__perplexity_fetch_web\n"
+            b"  - WebFetch\n"
             b"---\nBody.\n"
         )
-        result = _transform_for_opencode(content, "opencode")
+        result = _transform_for_opencode(content)
         meta, body = parse_frontmatter(result)
         assert meta is not None
-        assert "tools" not in meta
+        assert _enabled(meta["tools"]) == {
+            "perplexity_perplexity_search_web",
+            "webfetch",
+        }
+        assert _disabled(meta["tools"]) == _OPENCODE_TOOL_NAMES - {"webfetch"}
 
     def test_tools_list_mixed_converted(self):
         content = (
@@ -1086,19 +1119,34 @@ class TestTransformForOpencode:
             b"  - mcp__foo__bar\n"
             b"---\nBody.\n"
         )
-        result = _transform_for_opencode(content, "opencode")
+        result = _transform_for_opencode(content)
         meta, body = parse_frontmatter(result)
         assert meta is not None
-        assert meta["tools"] == {"read": True, "bash": True}
+        assert _enabled(meta["tools"]) == {"read", "bash", "foo_bar"}
+
+    def test_tools_empty_list_removed(self):
+        # An empty tools list converts to nothing; the field is removed so
+        # OpenCode's schema validator does not reject it.
+        content = b"---\nname: agent\ntools: []\n---\nBody.\n"
+        result = _transform_for_opencode(content)
+        meta, body = parse_frontmatter(result)
+        assert meta is not None
+        assert "tools" not in meta
+
+    def test_untranslatable_restriction_warns(self):
+        warnings: list[str] = []
+        content = b"---\nname: agent\ntools: Read, Bash(git:*)\n---\nBody.\n"
+        _transform_for_opencode(content, warnings)
+        assert any("Bash(git:*)" in w for w in warnings)
 
     def test_no_frontmatter_unchanged(self):
         content = b"No frontmatter here.\n"
-        result = _transform_for_opencode(content, "opencode")
+        result = _transform_for_opencode(content)
         assert result == content
 
     def test_no_tools_or_model_unchanged(self):
         content = b"---\nname: agent\ndescription: test\n---\nBody.\n"
-        result = _transform_for_opencode(content, "opencode")
+        result = _transform_for_opencode(content)
         meta, body = parse_frontmatter(result)
         assert meta is not None
         assert meta == {"name": "agent", "description": "test"}
@@ -1151,8 +1199,28 @@ class TestDeployAgentTransformation:
         meta, body = parse_frontmatter(dest.read_bytes())
         assert meta is not None
         assert isinstance(meta["tools"], dict)
-        assert meta["tools"] == {"read": True, "grep": True}
+        assert _enabled(meta["tools"]) == {"read", "grep"}
         assert "model" not in meta
+
+    def test_untranslatable_tools_surface_as_warnings(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        content = (
+            b"---\nname: reviewer\ntools: Read, Bash(grep:*), Frobnicate\n---\nBody.\n"
+        )
+        target.deploy_agent("reviewer", content)
+        warnings = dict(target.consume_warnings())
+        assert "reviewer" in warnings
+        joined = "\n".join(warnings["reviewer"])
+        assert "Bash(grep:*)" in joined
+        assert "Frobnicate" in joined
+        # Drained: a second call returns nothing.
+        assert target.consume_warnings() == []
+
+    def test_clean_tools_produce_no_warnings(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        content = b"---\nname: agent\ntools: Read, Grep\n---\nBody.\n"
+        target.deploy_agent("agent", content)
+        assert target.consume_warnings() == []
 
 
 # ------------------------------------------------------------------

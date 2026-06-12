@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import subprocess
 import sys
@@ -38,6 +39,23 @@ def _check_tools() -> None:
             )
 
 
+def _quote_remote_path(remote_path: Path) -> str:
+    """Quote a remote path for use on an ssh command line.
+
+    ssh joins its arguments with spaces and hands the result to the remote
+    shell, so paths containing spaces or shell metacharacters must be
+    quoted. A leading ``~`` or ``~/`` is kept outside the quotes so the
+    remote shell still performs home-directory expansion (deploy.yaml
+    remote paths rely on this).
+    """
+    s = str(remote_path)
+    if s == "~":
+        return s
+    if s.startswith("~/"):
+        return "~/" + shlex.quote(s[2:])
+    return shlex.quote(s)
+
+
 def ssh_exists(host: str, remote_path: Path) -> bool:
     """Check if a directory exists on a remote host.
 
@@ -47,7 +65,7 @@ def ssh_exists(host: str, remote_path: Path) -> bool:
     """
     _check_tools()
     result = subprocess.run(
-        ["ssh", *_SSH_OPTS, host, "test", "-d", str(remote_path)],
+        ["ssh", *_SSH_OPTS, host, "test", "-d", _quote_remote_path(remote_path)],
         capture_output=True,
     )
     if result.returncode == 255:
@@ -125,12 +143,20 @@ def ssh_push(
     """
     _check_tools()
     # Ensure remote parent directory exists
-    parent = str(remote_path.parent)
-    subprocess.run(
-        ["ssh", *_SSH_OPTS, host, "mkdir", "-p", parent],
+    parent = remote_path.parent
+    mkdir_result = subprocess.run(
+        ["ssh", *_SSH_OPTS, host, "mkdir", "-p", _quote_remote_path(parent)],
         capture_output=True,
-        check=False,
     )
+    if mkdir_result.returncode != 0:
+        stderr = (
+            mkdir_result.stderr.decode(errors="replace").strip()
+            if mkdir_result.stderr
+            else ""
+        )
+        raise SSHError(
+            f"Failed to create remote directory {parent} on {host}: {stderr}"
+        )
 
     src = str(local_path) + "/"
     dst = f"{host}:{remote_path}/"

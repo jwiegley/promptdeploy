@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import pytest
 
 from promptdeploy.config import Config, TargetConfig
 from promptdeploy.deploy import (
@@ -10,7 +11,12 @@ from promptdeploy.deploy import (
     _TYPE_TO_CATEGORY,
     deploy,
 )
-from promptdeploy.manifest import MANIFEST_FILENAME, ManifestItem, load_manifest
+from promptdeploy.manifest import (
+    MANIFEST_FILENAME,
+    ManifestItem,
+    load_manifest,
+    save_manifest,
+)
 
 
 def _make_source(tmp_path: Path) -> Path:
@@ -652,6 +658,70 @@ class TestPromptDeploy:
 
         manifest = load_manifest(target_dir / MANIFEST_FILENAME)
         assert manifest.items["prompts"]["foo"].target_path == "foo.md"
+
+    def test_gptel_extension_change_removes_old_artifact(self, tmp_path: Path):
+        """Changing a prompt's source extension moves the deployed artifact;
+        the previous artifact (recorded in the manifest) must be unlinked
+        instead of lingering as an orphan (B28)."""
+        src = tmp_path / "source"
+        src.mkdir()
+        prompts = src / "prompts"
+        prompts.mkdir()
+        (prompts / "foo.poet").write_bytes(b"- role: system\n  content: hi\n")
+        target_dir = tmp_path / "gptel"
+        target_dir.mkdir()
+        tc = TargetConfig(id="g", type="gptel", path=target_dir)
+        config = _make_config(src, {"g": tc})
+        deploy(config)
+        assert (target_dir / "foo.json").exists()
+
+        # A user-authored stem-sibling must survive both transitions.
+        unrelated = target_dir / "foo.org"
+        unrelated.write_text("user authored")
+
+        # foo.poet -> foo.md: foo.md is written, the old foo.json removed.
+        (prompts / "foo.poet").unlink()
+        (prompts / "foo.md").write_bytes(b"# heading\n")
+        deploy(config)
+        assert (target_dir / "foo.md").exists()
+        assert not (target_dir / "foo.json").exists()
+        assert unrelated.read_text() == "user authored"
+        manifest = load_manifest(target_dir / MANIFEST_FILENAME)
+        assert manifest.items["prompts"]["foo"].target_path == "foo.md"
+
+        # And the reverse: foo.md -> foo.poet removes the old foo.md.
+        (prompts / "foo.md").unlink()
+        (prompts / "foo.poet").write_bytes(b"- role: system\n  content: hi\n")
+        deploy(config)
+        assert (target_dir / "foo.json").exists()
+        assert not (target_dir / "foo.md").exists()
+        assert unrelated.read_text() == "user authored"
+        manifest = load_manifest(target_dir / MANIFEST_FILENAME)
+        assert manifest.items["prompts"]["foo"].target_path == "foo.json"
+
+    def test_gptel_stem_sibling_does_not_cause_churn(self, tmp_path: Path):
+        """A user-authored stem-sibling must not shadow the deployed
+        artifact in drift detection (B29): the follow-up deploy skips
+        instead of reporting a phantom update forever."""
+        src = tmp_path / "source"
+        src.mkdir()
+        prompts = src / "prompts"
+        prompts.mkdir()
+        (prompts / "foo.md").write_bytes(b"hello\n")
+        target_dir = tmp_path / "gptel"
+        target_dir.mkdir()
+        tc = TargetConfig(id="g", type="gptel", path=target_dir)
+        config = _make_config(src, {"g": tc})
+        deploy(config)
+
+        # User authors an unrelated file earlier in the probe order.
+        sibling = target_dir / "foo.json"
+        sibling.write_text("user data")
+
+        actions = deploy(config)
+        prompt_actions = [a for a in actions if a.name == "foo"]
+        assert [a.action for a in prompt_actions] == ["skip"]
+        assert sibling.read_text() == "user data"
 
     def test_target_path_none_when_target_does_not_track(self, tmp_path: Path) -> None:
         # claude target does not implement deployed_artifact_path, so
@@ -1333,6 +1403,54 @@ class TestTypeMappings:
         assert _CLI_TYPE_TO_ITEM_TYPE["marketplaces"] == "marketplace"
 
 
+class TestActionType:
+    def test_literal_covers_all_emitted_values(self) -> None:
+        """DeployAction.action is a Literal including 'pre-existing' (SC2)."""
+        from typing import get_args
+
+        from promptdeploy.deploy import ActionType
+
+        assert set(get_args(ActionType)) == {
+            "create",
+            "update",
+            "remove",
+            "skip",
+            "pre-existing",
+        }
+
+
+class TestItemSelected:
+    """item_selected() is the single selection predicate shared with status."""
+
+    def test_rejects_on_filters_and_target_skip(self, tmp_path: Path):
+        from promptdeploy.deploy import item_selected
+        from promptdeploy.source import SourceDiscovery
+        from promptdeploy.targets import create_target
+
+        src = tmp_path / "source"
+        (src / "commands").mkdir(parents=True)
+        # Filetagged for positron only; also a plain command, which droid skips.
+        (src / "commands" / "heavy -- positron.md").write_bytes(b"Heavy.\n")
+        (src / "agents").mkdir()
+        (src / "agents" / "helper.md").write_bytes(b"---\nname: helper\n---\nAgent.\n")
+
+        target_dir = tmp_path / "droid-target"
+        target_dir.mkdir()
+        tc = TargetConfig(id="droid-t", type="droid", path=target_dir, labels=[])
+        config = Config(
+            source_root=src,
+            targets={tc.id: tc},
+            groups={"positron": []},
+        )
+        target = create_target(tc)
+
+        items = {i.name: i for i in SourceDiscovery(src).discover_all()}
+        # 'heavy' fails the filetag filter (droid-t is not in positron).
+        assert not item_selected(items["heavy"], target, tc.id, config)
+        # 'helper' passes filters and droid deploys agents.
+        assert item_selected(items["helper"], target, tc.id, config)
+
+
 class TestMarketplaceDeploy:
     """Deploy marketplace items through the deploy orchestration."""
 
@@ -1598,3 +1716,195 @@ class TestDeploySettingsItem:
         deploy(config, dry_run=True)
         assert not (tc.path / "settings.json").exists()
         assert not (tc.path / MANIFEST_FILENAME).exists()
+
+    def test_group_override_change_triggers_redeploy(self, tmp_path: Path):
+        """A deploy.yaml change that alters the rendered settings must
+        redeploy even though settings.yaml bytes are unchanged (B5): the
+        manifest hash covers the rendered output, not the source bytes."""
+        src = self._src_with_settings(
+            tmp_path,
+            "base:\n  effortLevel: low\noverrides:\n  fast:\n    effortLevel: high\n",
+        )
+        tc = _make_claude_target(tmp_path)
+        grouped = Config(source_root=src, targets={tc.id: tc}, groups={"fast": [tc.id]})
+        deploy(grouped)
+        data = json.loads((tc.path / "settings.json").read_text())
+        assert data["effortLevel"] == "high"
+
+        # Same settings.yaml, but the target has left the 'fast' group.
+        ungrouped = Config(source_root=src, targets={tc.id: tc}, groups={})
+        actions = deploy(ungrouped)
+        s = [a for a in actions if a.item_type == "settings"][0]
+        assert s.action == "update"
+        data = json.loads((tc.path / "settings.json").read_text())
+        assert data["effortLevel"] == "low"
+
+    def test_group_change_removes_previously_managed_keys(self, tmp_path: Path):
+        """A key managed only via a group override is removed when the
+        target leaves the group (B5): the redeploy passes the previous
+        managed_keys so deploy_settings can drop the stale key."""
+        src = self._src_with_settings(
+            tmp_path,
+            "base:\n  effortLevel: low\noverrides:\n  fast:\n    extraKey: enabled\n",
+        )
+        tc = _make_claude_target(tmp_path)
+        grouped = Config(source_root=src, targets={tc.id: tc}, groups={"fast": [tc.id]})
+        deploy(grouped)
+        assert json.loads((tc.path / "settings.json").read_text())["extraKey"] == (
+            "enabled"
+        )
+
+        ungrouped = Config(source_root=src, targets={tc.id: tc}, groups={})
+        deploy(ungrouped)
+        data = json.loads((tc.path / "settings.json").read_text())
+        assert "extraKey" not in data
+        assert data["effortLevel"] == "low"
+        manifest = load_manifest(tc.path / MANIFEST_FILENAME)
+        assert manifest.items["settings"]["settings"].managed_keys == ["effortLevel"]
+
+    def test_skip_preserves_recorded_managed_keys(self, tmp_path: Path):
+        """A skipping deploy must carry the previous deploy's managed_keys
+        forward (B5), not record keys from a render that never deployed."""
+        src = self._src_with_settings(tmp_path, "base:\n  effortLevel: low\n")
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        deploy(config)
+
+        # Simulate an earlier deploy that managed an extra key.
+        mp = tc.path / MANIFEST_FILENAME
+        manifest = load_manifest(mp)
+        manifest.items["settings"]["settings"].managed_keys = [
+            "effortLevel",
+            "ghostKey",
+        ]
+        save_manifest(manifest, mp)
+
+        actions = deploy(config)
+        assert [a for a in actions if a.item_type == "settings"][0].action == "skip"
+        m2 = load_manifest(mp)
+        assert set(m2.items["settings"]["settings"].managed_keys or []) == {
+            "effortLevel",
+            "ghostKey",
+        }
+
+
+class TestRemoteDeployIntegration:
+    """deploy() with a host: target drives the RemoteTarget lifecycle:
+    prepare (ssh_pull) -> deploy into staging -> manifest write ->
+    finalize (ssh_push), with cleanup-only on dry-run and staging cleanup
+    when an SSH operation fails."""
+
+    def _remote_config(self, tmp_path: Path) -> Config:
+        src = _make_source(tmp_path)
+        tc = TargetConfig(
+            id="remote-claude",
+            type="claude",
+            path=tmp_path / "remote-claude",
+            host="user@fakehost",
+        )
+        return _make_config(src, {tc.id: tc})
+
+    def test_pull_deploy_manifest_push_ordering(self, tmp_path: Path, monkeypatch):
+        config = self._remote_config(tmp_path)
+        events: list[str] = []
+        seen: dict = {}
+
+        def fake_pull(host, remote_path, local_path, *, verbose=False, includes=None):
+            events.append("pull")
+            seen["staging"] = local_path
+
+        def fake_push(host, remote_path, local_path, *, verbose=False, includes=None):
+            events.append("push")
+            # By push time the staging dir must already contain the deployed
+            # artifacts AND the saved manifest (manifest before finalize).
+            seen["artifact_present"] = (local_path / "agents" / "helper.md").exists()
+            seen["manifest_present"] = (local_path / MANIFEST_FILENAME).exists()
+            seen["host"] = host
+            seen["remote"] = remote_path
+
+        monkeypatch.setattr("promptdeploy.targets.remote.ssh_pull", fake_pull)
+        monkeypatch.setattr("promptdeploy.targets.remote.ssh_push", fake_push)
+
+        actions = deploy(config)
+
+        assert events == ["pull", "push"]
+        assert seen["artifact_present"] is True
+        assert seen["manifest_present"] is True
+        assert seen["host"] == "user@fakehost"
+        assert seen["remote"] == tmp_path / "remote-claude"
+        creates = {a.name for a in actions if a.action == "create"}
+        assert creates == {"helper", "fix", "my-skill"}
+        # finalize() removed the staging dir after pushing.
+        assert not seen["staging"].exists()
+
+    def test_dry_run_pulls_but_never_pushes(self, tmp_path: Path, monkeypatch):
+        config = self._remote_config(tmp_path)
+        pulls: list = []
+        pushes: list = []
+        seen: dict = {}
+
+        def fake_pull(host, remote_path, local_path, *, verbose=False, includes=None):
+            pulls.append(host)
+            seen["staging"] = local_path
+
+        monkeypatch.setattr("promptdeploy.targets.remote.ssh_pull", fake_pull)
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_push",
+            lambda *a, **kw: pushes.append(a),
+        )
+
+        actions = deploy(config, dry_run=True)
+
+        assert pulls == ["user@fakehost"]
+        assert pushes == []
+        # Nothing was written and the staging dir was cleaned up.
+        assert not seen["staging"].exists()
+        assert {a.action for a in actions} == {"create"}
+
+    def test_push_failure_propagates_and_cleans_staging(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from promptdeploy.ssh import SSHError
+
+        config = self._remote_config(tmp_path)
+        seen: dict = {}
+
+        def fake_pull(host, remote_path, local_path, *, verbose=False, includes=None):
+            seen["staging"] = local_path
+
+        def fake_push(host, remote_path, local_path, *, verbose=False, includes=None):
+            raise SSHError("rsync push failed")
+
+        monkeypatch.setattr("promptdeploy.targets.remote.ssh_pull", fake_pull)
+        monkeypatch.setattr("promptdeploy.targets.remote.ssh_push", fake_push)
+
+        with pytest.raises(SSHError, match="rsync push failed"):
+            deploy(config)
+
+        # The deploy loop's cleanup() removed the staging dir.
+        assert not seen["staging"].exists()
+
+    def test_pull_failure_propagates_and_cleans_staging(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from promptdeploy.ssh import SSHError
+
+        config = self._remote_config(tmp_path)
+        seen: dict = {}
+        pushes: list = []
+
+        def fake_pull(host, remote_path, local_path, *, verbose=False, includes=None):
+            seen["staging"] = local_path
+            raise SSHError("host unreachable")
+
+        monkeypatch.setattr("promptdeploy.targets.remote.ssh_pull", fake_pull)
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_push",
+            lambda *a, **kw: pushes.append(a),
+        )
+
+        with pytest.raises(SSHError, match="host unreachable"):
+            deploy(config)
+
+        assert pushes == []
+        assert not seen["staging"].exists()

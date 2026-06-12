@@ -2,7 +2,16 @@ import argparse
 import sys
 from pathlib import Path
 
-from .config import load_config, expand_target_arg
+from .config import Config, load_config, expand_target_arg
+
+
+def _load_config_or_exit() -> Config:
+    """Load deploy.yaml, exiting with a clean error if it is invalid."""
+    try:
+        return load_config()
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 def main():
@@ -136,7 +145,7 @@ def _run_deploy(args):
     out = Output(verbosity)
     out.start_timer()
 
-    config = load_config()
+    config = _load_config_or_exit()
 
     from .envsubst import load_dotenv
 
@@ -146,9 +155,16 @@ def _run_deploy(args):
         from .config import remap_targets_to_root
 
         config = remap_targets_to_root(config, args.target_root.resolve())
-    target_ids = expand_target_arg(args.target, config)
+    try:
+        target_ids = expand_target_arg(args.target, config)
+    except ValueError as exc:
+        out.error(str(exc))
+        sys.exit(1)
 
     from .envsubst import EnvVarError
+    from .frontmatter import FrontmatterError
+    from .poet import PoetError
+    from .targets.claude import JsonConfigError
 
     try:
         actions = deploy(
@@ -156,14 +172,16 @@ def _run_deploy(args):
             target_ids=target_ids,
             dry_run=args.dry_run,
             verbose=args.verbose,
-            quiet=args.quiet,
             item_types=args.only_type,
             force=args.force,
         )
-    except FilterError as exc:
-        out.error(str(exc))
-        sys.exit(1)
-    except EnvVarError as exc:
+    except (
+        FilterError,
+        EnvVarError,
+        FrontmatterError,
+        JsonConfigError,
+        PoetError,
+    ) as exc:
         out.error(str(exc))
         sys.exit(1)
 
@@ -199,7 +217,7 @@ def _run_deploy(args):
 def _run_validate():
     from .validate import validate_all
 
-    config = load_config()
+    config = _load_config_or_exit()
     issues = validate_all(config)
     if not issues:
         print("All items valid.")
@@ -208,8 +226,7 @@ def _run_validate():
     warnings = 0
     for issue in issues:
         prefix = "ERROR" if issue.level == "error" else "WARNING"
-        line_info = f":{issue.line}" if issue.line else ""
-        print(f"{prefix}: {issue.file_path}{line_info}: {issue.message}")
+        print(f"{prefix}: {issue.file_path}: {issue.message}")
         if issue.level == "error":
             errors += 1
         else:
@@ -220,15 +237,24 @@ def _run_validate():
 
 
 def _run_status(args):
+    from .frontmatter import FrontmatterError
     from .status import get_status
 
-    config = load_config()
+    config = _load_config_or_exit()
     if args.target_root:
         from .config import remap_targets_to_root
 
         config = remap_targets_to_root(config, args.target_root.resolve())
-    target_ids = expand_target_arg(args.target, config)
-    entries = get_status(config, target_ids)
+    try:
+        target_ids = expand_target_arg(args.target, config)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    try:
+        entries = get_status(config, target_ids)
+    except FrontmatterError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
     if not entries:
         print("No items to report.")
         return
@@ -246,12 +272,16 @@ def _run_list(args):
     from .manifest import load_manifest
     from .targets import create_target
 
-    config = load_config()
+    config = _load_config_or_exit()
     if args.target_root:
         from .config import remap_targets_to_root
 
         config = remap_targets_to_root(config, args.target_root.resolve())
-    target_ids = expand_target_arg(args.target, config)
+    try:
+        target_ids = expand_target_arg(args.target, config)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     for target_id in target_ids:
         target_config = config.targets[target_id]
@@ -307,7 +337,7 @@ def _run_list(args):
 def _run_settings_init(args):
     from .settings_sync import init_settings
 
-    config = load_config()
+    config = _load_config_or_exit()
     out_path = config.source_root / "settings.yaml"
     try:
         target_ids = expand_target_arg(args.target, config)
@@ -327,7 +357,7 @@ def _run_settings_init(args):
 def _run_settings_reconcile(args):
     from .settings_sync import reconcile_settings
 
-    config = load_config()
+    config = _load_config_or_exit()
     settings_path = config.source_root / "settings.yaml"
     try:
         target_ids = expand_target_arg(args.target, config)

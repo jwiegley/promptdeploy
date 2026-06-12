@@ -19,6 +19,14 @@ _MCP_STRIP_KEYS = frozenset(
 )
 
 
+class JsonConfigError(ValueError):
+    """Raised when an existing target JSON config file cannot be parsed.
+
+    Subclasses ``ValueError`` so callers that already handle config-shaped
+    errors (e.g. the ``settings`` subcommands) catch it without changes.
+    """
+
+
 class ClaudeTarget(Target):
     """Deploy prompts and MCP servers into a Claude Code configuration directory."""
 
@@ -65,13 +73,11 @@ class ClaudeTarget(Target):
 
     def deploy_agent(self, name: str, content: bytes) -> None:
         dest = self._config_path / "agents" / f"{name}.md"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(transform_for_target(content, self._id, inject=self._injected))
+        self._write_bytes(dest, transform_for_target(content, inject=self._injected))
 
     def deploy_command(self, name: str, content: bytes) -> None:
         dest = self._config_path / "commands" / f"{name}.md"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(transform_for_target(content, self._id))
+        self._write_bytes(dest, transform_for_target(content))
 
     def deploy_prompt(self, name: str, content: bytes, source_path: Path) -> None:
         from ..poet import POET_EXTENSIONS, parse_plain, parse_poet, render_for_command
@@ -84,8 +90,7 @@ class ClaudeTarget(Target):
             doc = parse_plain(content)
         rendered = render_for_command(doc)
         dest = self._config_path / "commands" / f"{name}.md"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(rendered)
+        self._write_bytes(dest, rendered)
 
     def consume_warnings(self) -> list[tuple[str, list[str]]]:
         warnings = self._warnings
@@ -94,20 +99,29 @@ class ClaudeTarget(Target):
 
     def deploy_skill(self, name: str, source_dir: Path) -> None:
         dest = self._config_path / "skills" / name
-        if dest.is_symlink():
-            dest.unlink()
-        elif dest.exists():
-            shutil.rmtree(dest)
-        # Resolve symlinks so the deployed copy is self-contained.
-        shutil.copytree(source_dir.resolve(), dest, symlinks=False)
-        # Transform the SKILL.md inside the deployed copy.
-        skill_md = dest / "SKILL.md"
-        if skill_md.exists():
-            skill_md.write_bytes(
-                transform_for_target(
-                    skill_md.read_bytes(), self._id, inject=self._injected
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        # Stage the full copy (including the SKILL.md transform) in a temp
+        # directory next to the destination, then swap it into place so a
+        # failure mid-copy never leaves a partially-written skill behind.
+        tmp_dir = Path(tempfile.mkdtemp(dir=dest.parent, prefix=".promptdeploy-"))
+        try:
+            staged = tmp_dir / "skill"
+            # Resolve symlinks so the deployed copy is self-contained.
+            shutil.copytree(source_dir.resolve(), staged, symlinks=False)
+            # Transform the SKILL.md inside the staged copy.
+            skill_md = staged / "SKILL.md"
+            if skill_md.exists():
+                self._write_bytes(
+                    skill_md,
+                    transform_for_target(skill_md.read_bytes(), inject=self._injected),
                 )
-            )
+            if dest.is_symlink():
+                dest.unlink()
+            elif dest.exists():
+                shutil.rmtree(dest)
+            os.replace(staged, dest)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def should_skip(
         self,
@@ -129,15 +143,22 @@ class ClaudeTarget(Target):
     def deploy_hook(self, name: str, config: dict) -> None:
         settings = self._load_json(self._settings_path())
         hooks_config = config.get("hooks", {})
-        settings_hooks = settings.setdefault("hooks", {})
+        settings_hooks = self._ensure_dict(settings, "hooks")
 
         # Remove ALL existing entries from this hook group across every
         # event type -- not just the ones in the new config.  This handles
         # the case where a hook group previously contributed to an event
-        # type that is no longer present in the updated YAML.
+        # type that is no longer present in the updated YAML.  Non-dict
+        # entries (hand-edits) cannot carry a _source tag and are kept.
         empty_event_types = []
         for event_type, entries in settings_hooks.items():
-            filtered = [e for e in entries if e.get("_source") != name]
+            if not isinstance(entries, list):
+                continue
+            filtered = [
+                e
+                for e in entries
+                if not (isinstance(e, dict) and e.get("_source") == name)
+            ]
             if filtered:
                 settings_hooks[event_type] = filtered
             else:
@@ -145,10 +166,17 @@ class ClaudeTarget(Target):
         for event_type in empty_event_types:
             del settings_hooks[event_type]
 
-        # Add new entries with _source tag, removing any pre-existing
-        # duplicates that match ignoring the _source field.
+        # Add new entries with _source tag.  De-duplicate only against
+        # entries this group may own: untagged entries (e.g. installed by
+        # hand) and entries tagged with this group's own name.  Entries
+        # owned by OTHER groups are never touched, even when their content
+        # is identical -- otherwise deploying group B would steal group A's
+        # entry and a later removal of B would delete a hook A still claims.
         for event_type, matchers in hooks_config.items():
-            event_list = settings_hooks.setdefault(event_type, [])
+            event_list = settings_hooks.get(event_type)
+            if not isinstance(event_list, list):
+                event_list = []
+                settings_hooks[event_type] = event_list
             for entry in matchers:
                 new_entry = dict(entry)
                 new_entry["_source"] = name
@@ -156,7 +184,11 @@ class ClaudeTarget(Target):
                 event_list[:] = [
                     e
                     for e in event_list
-                    if {k: v for k, v in e.items() if k != "_source"} != content
+                    if not (
+                        isinstance(e, dict)
+                        and e.get("_source") in (None, name)
+                        and {k: v for k, v in e.items() if k != "_source"} == content
+                    )
                 ]
                 event_list.append(new_entry)
 
@@ -362,9 +394,9 @@ class ClaudeTarget(Target):
         source_path: Optional[Path] = None,
     ) -> Optional[bytes]:
         if item_type == "agent":
-            return transform_for_target(content, self._id, inject=self._injected)
+            return transform_for_target(content, inject=self._injected)
         if item_type == "command":
-            return transform_for_target(content, self._id)
+            return transform_for_target(content)
         if item_type == "prompt":
             from ..poet import (
                 POET_EXTENSIONS,
@@ -407,10 +439,32 @@ class ClaudeTarget(Target):
             pass
 
     @staticmethod
+    def _write_bytes(path: Path, data: bytes) -> None:
+        """Atomically write ``data`` to ``path`` via temp file + os.replace."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+    @staticmethod
     def _load_json(path: Path) -> dict:
         if not path.exists():
             return {}
-        return json.loads(path.read_text("utf-8"))
+        try:
+            return json.loads(path.read_text("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise JsonConfigError(
+                f"Cannot parse JSON in {path}: {exc}. "
+                f"Fix or remove the file, then re-run."
+            ) from exc
 
     @staticmethod
     def _save_json(path: Path, data: dict) -> None:

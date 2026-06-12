@@ -43,6 +43,19 @@ class TestExpandEnvVars:
         monkeypatch.setenv("KEY", "secret")
         assert expand_env_vars("prefix-${KEY}-suffix") == "prefix-secret-suffix"
 
+    def test_unset_var_warns_on_stderr(self, monkeypatch, capsys):
+        """Lenient expansion warns about unresolved ${VAR} references."""
+        monkeypatch.delenv("UNSET_WARN_XYZ", raising=False)
+        assert expand_env_vars("${UNSET_WARN_XYZ}") == "${UNSET_WARN_XYZ}"
+        err = capsys.readouterr().err
+        assert "WARNING" in err
+        assert "UNSET_WARN_XYZ" in err
+
+    def test_set_var_emits_no_warning(self, monkeypatch, capsys):
+        monkeypatch.setenv("SET_WARN_VAR", "v")
+        expand_env_vars("${SET_WARN_VAR}")
+        assert capsys.readouterr().err == ""
+
 
 class TestExpandEnvInDict:
     def test_string_values_expanded(self, monkeypatch):
@@ -151,6 +164,17 @@ class TestLoadDotenv:
     def test_empty_key_skipped(self, tmp_path: Path):
         (tmp_path / ".env").write_text("=value\n")
         load_dotenv(tmp_path / ".env")  # should not raise or set empty key
+
+    def test_export_prefix_stripped(self, tmp_path: Path, monkeypatch):
+        """Shell-style 'export KEY=value' lines set KEY, not 'export KEY'."""
+        monkeypatch.delenv("DOTENV_EXPORTED", raising=False)
+        (tmp_path / ".env").write_text("export DOTENV_EXPORTED=val\n")
+        load_dotenv(tmp_path / ".env")
+        import os
+
+        assert os.environ.get("DOTENV_EXPORTED") == "val"
+        assert "export DOTENV_EXPORTED" not in os.environ
+        monkeypatch.delenv("DOTENV_EXPORTED")
 
 
 class TestExpandEnvVarsStrict:

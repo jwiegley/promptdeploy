@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,9 @@ def load_dotenv(path: Path) -> None:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
+        # Accept shell-style ``export KEY=value`` lines.
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
         if "=" not in line:
             continue
         key, _, value = line.partition("=")
@@ -38,14 +42,29 @@ def load_dotenv(path: Path) -> None:
 def expand_env_vars(value: str) -> str:
     """Replace ${VAR} references with values from os.environ.
 
-    Returns the original string if the variable is not set.
+    Unset variables are left as literal ``${VAR}`` text, but a warning is
+    printed to stderr so a typo'd or missing variable does not silently
+    ship a broken config.
     """
+    missing: list[str] = []
 
     def _replace(match: re.Match) -> str:
         var_name = match.group(1)
-        return os.environ.get(var_name, match.group(0))
+        resolved = os.environ.get(var_name)
+        if resolved is None:
+            missing.append(var_name)
+            return match.group(0)
+        return resolved
 
-    return _ENV_PATTERN.sub(_replace, value)
+    result = _ENV_PATTERN.sub(_replace, value)
+    if missing:
+        names = ", ".join(sorted(set(missing)))
+        print(
+            f"WARNING: environment variable(s) not set: {names}; "
+            f"leaving ${{VAR}} reference(s) unexpanded",
+            file=sys.stderr,
+        )
+    return result
 
 
 class EnvVarError(Exception):

@@ -349,6 +349,28 @@ class TestReadDeployedBytes:
         assert target.read_deployed_bytes("command", "x") is None
         assert target.read_deployed_bytes("skill", "x") is None
 
+    def test_prefers_artifact_from_would_deploy_bytes(self, tmp_path: Path):
+        """A user-authored stem-sibling earlier in the probe order must not
+        shadow the artifact deploy owns (B29): after would_deploy_bytes()
+        establishes the expected extension, the reader uses exactly that."""
+        target = _make_target(tmp_path)
+        (tmp_path / "prompts" / "doc.json").write_bytes(b"user file")
+        (tmp_path / "prompts" / "doc.md").write_bytes(b"deployed")
+        src = tmp_path / "doc.md"
+        src.write_bytes(b"deployed")
+        target.would_deploy_bytes("prompt", "doc", b"deployed", src)
+        assert target.read_deployed_bytes("prompt", "doc") == b"deployed"
+
+    def test_expected_artifact_missing_returns_none(self, tmp_path: Path):
+        """When the expected artifact is absent, a stem-sibling at another
+        extension must not be reported in its place."""
+        target = _make_target(tmp_path)
+        (tmp_path / "prompts" / "doc.json").write_bytes(b"user file")
+        src = tmp_path / "doc.md"
+        src.write_bytes(b"# new\n")
+        target.would_deploy_bytes("prompt", "doc", b"# new\n", src)
+        assert target.read_deployed_bytes("prompt", "doc") is None
+
 
 def test_base_settings_methods_are_noops(tmp_path):
     from promptdeploy.targets.gptel import GptelTarget

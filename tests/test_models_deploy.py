@@ -554,6 +554,100 @@ class TestModelsDeployIntegration:
         types = {a.item_type for a in actions}
         assert types == {"models"}
 
+    def test_group_membership_change_triggers_redeploy(self, tmp_path: Path):
+        """A deploy.yaml group edit that changes the filtered models config
+        must redeploy even though models.yaml bytes are unchanged (B6)."""
+        src = tmp_path / "source"
+        src.mkdir()
+        self._write_models_yaml(
+            src,
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://api.acme.com/v1",
+                        "api_key": "sk-test",
+                        "only": ["fast"],
+                        "models": {"gpt-4": {"display_name": "GPT-4"}},
+                    },
+                },
+            },
+        )
+        tc = _make_droid_target(tmp_path)
+        grouped = _make_config(src, {tc.id: tc}, groups={"fast": [tc.id]})
+        deploy(grouped)
+        settings = json.loads((tc.path / "settings.json").read_text())
+        assert len(settings["customModels"]) == 1
+
+        # Same models.yaml, but the target has left the 'fast' group, so
+        # the provider no longer applies.
+        ungrouped = _make_config(src, {tc.id: tc}, groups={"fast": []})
+        actions = deploy(ungrouped)
+        models_actions = [a for a in actions if a.item_type == "models"]
+        assert [a.action for a in models_actions] == ["update"]
+        settings = json.loads((tc.path / "settings.json").read_text())
+        assert settings["customModels"] == []
+
+    def test_rotated_env_var_triggers_redeploy(self, tmp_path: Path, monkeypatch):
+        """Droid/opencode bake expanded env values into their configs, so a
+        rotated key must invalidate the manifest cache (B6)."""
+        src = tmp_path / "source"
+        src.mkdir()
+        self._write_models_yaml(
+            src,
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://api.acme.com/v1",
+                        "api_key": "${ACME_API_KEY}",
+                        "models": {"gpt-4": {}},
+                    },
+                },
+            },
+        )
+        tc = _make_droid_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        monkeypatch.setenv("ACME_API_KEY", "key-one")
+        deploy(config)
+        settings = json.loads((tc.path / "settings.json").read_text())
+        assert settings["customModels"][0]["apiKey"] == "key-one"
+
+        monkeypatch.setenv("ACME_API_KEY", "key-two")
+        actions = deploy(config)
+        models_actions = [a for a in actions if a.item_type == "models"]
+        assert [a.action for a in models_actions] == ["update"]
+        settings = json.loads((tc.path / "settings.json").read_text())
+        assert settings["customModels"][0]["apiKey"] == "key-two"
+
+    def test_unset_env_var_hash_is_stable(self, tmp_path: Path, monkeypatch):
+        """An unset ${VAR} hashes as its literal text, so repeat deploys
+        with the variable still unset skip instead of churning."""
+        src = tmp_path / "source"
+        src.mkdir()
+        self._write_models_yaml(
+            src,
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://api.acme.com/v1",
+                        "api_key": "${PD_TEST_UNSET_KEY}",
+                        "models": {"gpt-4": {}},
+                    },
+                },
+            },
+        )
+        monkeypatch.delenv("PD_TEST_UNSET_KEY", raising=False)
+        tc = _make_droid_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        deploy(config)
+        actions = deploy(config)
+        models_actions = [a for a in actions if a.item_type == "models"]
+        assert [a.action for a in models_actions] == ["skip"]
+
     def test_deploy_mcp_item_calls_deploy_mcp_server(self, tmp_path: Path):
         """Covers deploy.py line 103-104: elif item.item_type == 'mcp'."""
         src = tmp_path / "source"
@@ -601,3 +695,23 @@ class TestModelsDeployIntegration:
         # After removal, customModels should be gone
         settings = json.loads((tc.path / "settings.json").read_text())
         assert "customModels" not in settings
+
+
+class TestExpandEnvForHash:
+    def test_recurses_and_leaves_unset_vars_literal(self, monkeypatch):
+        from promptdeploy.deploy import _expand_env_for_hash
+
+        monkeypatch.setenv("PD_TEST_SET_VAR", "val")
+        monkeypatch.delenv("PD_TEST_UNSET_VAR", raising=False)
+        data = {
+            "a": "${PD_TEST_SET_VAR}",
+            "b": ["${PD_TEST_SET_VAR}", 3],
+            "c": {"d": "${PD_TEST_UNSET_VAR}"},
+            "e": 7,
+        }
+        assert _expand_env_for_hash(data) == {
+            "a": "val",
+            "b": ["val", 3],
+            "c": {"d": "${PD_TEST_UNSET_VAR}"},
+            "e": 7,
+        }

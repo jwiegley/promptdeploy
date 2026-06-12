@@ -129,8 +129,38 @@ class TestValidateItemMcp:
         content = b"just a string\n"
         item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
         issues = validate_item(item, config)
-        # Non-dict metadata treated as None -> no issues (no metadata to validate)
-        assert issues == []
+        # Non-mapping YAML is an error: deploy would otherwise write junk
+        # entries like ``"mcpServers": {"test-mcp": {}}`` into settings.json.
+        assert len(issues) == 1
+        assert issues[0].level == "error"
+        assert "must be a YAML mapping" in issues[0].message
+
+    def test_mcp_list_yaml_is_error(self, config: Config) -> None:
+        content = b"- name: test-mcp\n"
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
+        issues = validate_item(item, config)
+        assert any("must be a YAML mapping" in i.message for i in issues)
+
+    def test_mcp_empty_file_is_error(self, config: Config) -> None:
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, b"")
+        issues = validate_item(item, config)
+        assert any("must be a YAML mapping" in i.message for i in issues)
+
+    def test_mcp_enabled_bool_accepted(self, config: Config) -> None:
+        content = b"name: test-mcp\ncommand: npx\nenabled: false\n"
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
+        assert validate_item(item, config) == []
+
+    def test_mcp_enabled_non_bool_is_error(self, config: Config) -> None:
+        # All targets gate on truthiness, so the string "false" would
+        # silently deploy a server the author meant to disable.
+        content = b'name: test-mcp\ncommand: npx\nenabled: "false"\n'
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
+        issues = validate_item(item, config)
+        assert any(
+            i.level == "error" and "'enabled' must be a boolean" in i.message
+            for i in issues
+        )
 
     def test_mcp_with_only_filter(self, config: Config) -> None:
         content = b"name: test-mcp\ncommand: npx\nonly:\n  - droid\n"
@@ -911,6 +941,7 @@ class TestValidateItemHook:
             "SessionStart",
             "SessionEnd",
             "PreCompact",
+            "PostCompact",
             "UserPromptSubmit",
             "InstructionsLoaded",
             "ConfigChange",
@@ -959,8 +990,10 @@ class TestValidateItemHook:
             "hook", "test-hook", Path("/tmp/hooks/test.yaml"), None, content
         )
         issues = validate_item(item, config)
-        # Non-dict metadata -> None -> no issues
-        assert issues == []
+        # Non-mapping YAML is an error, not a silent pass.
+        assert len(issues) == 1
+        assert issues[0].level == "error"
+        assert "must be a YAML mapping" in issues[0].message
 
     def test_validate_all_includes_hooks(self, tmp_path: Path) -> None:
         hooks_dir = tmp_path / "hooks"
@@ -1242,19 +1275,10 @@ class TestValidateItemPrompt:
 
 class TestValidationIssue:
     def test_fields(self) -> None:
-        issue = ValidationIssue(
-            level="error", message="test", file_path=Path("/tmp/x"), line=42
-        )
+        issue = ValidationIssue(level="error", message="test", file_path=Path("/tmp/x"))
         assert issue.level == "error"
         assert issue.message == "test"
         assert issue.file_path == Path("/tmp/x")
-        assert issue.line == 42
-
-    def test_line_optional(self) -> None:
-        issue = ValidationIssue(
-            level="warning", message="warn", file_path=Path("/tmp/x")
-        )
-        assert issue.line is None
 
 
 def _cfg_with(tmp_path, settings_yaml: str):
@@ -1450,3 +1474,284 @@ def test_validate_settings_accepts_nested_json_types(tmp_path):
         "  ratio: 0.5\n",
     )
     assert [i for i in validate_all(cfg) if i.level == "error"] == []
+
+
+class TestUnclosedFrontmatterWarning:
+    def test_unclosed_frontmatter_warns(self, config: Config) -> None:
+        content = b"---\nname: test\nonly:\n  - droid\nNo closing delimiter.\n"
+        item = SourceItem("agent", "test", Path("/tmp/test.md"), None, content)
+        issues = validate_item(item, config)
+        assert any(
+            i.level == "warning" and "no frontmatter was parsed" in i.message
+            for i in issues
+        )
+
+    def test_unclosed_frontmatter_with_bom_warns(self, config: Config) -> None:
+        content = b"\xef\xbb\xbf---\nname: test\nNo closing delimiter.\n"
+        item = SourceItem("agent", "test", Path("/tmp/test.md"), None, content)
+        issues = validate_item(item, config)
+        assert any("no frontmatter was parsed" in i.message for i in issues)
+
+    def test_plain_body_does_not_warn(self, config: Config) -> None:
+        item = SourceItem(
+            "agent", "test", Path("/tmp/test.md"), None, b"No frontmatter at all.\n"
+        )
+        assert validate_item(item, config) == []
+
+
+class TestNonStringNameValidation:
+    def test_agent_int_name_is_error(self, config: Config) -> None:
+        content = b"---\nname: 123\n---\nBody\n"
+        item = SourceItem("agent", "helper", Path("/tmp/helper.md"), None, content)
+        issues = validate_item(item, config)
+        assert any(
+            i.level == "error" and "'name' must be a string" in i.message
+            for i in issues
+        )
+
+    def test_mcp_list_name_is_error(self, config: Config) -> None:
+        content = b"name: [a, b]\ncommand: npx\n"
+        item = SourceItem("mcp", "server", Path("/tmp/mcp/server.yaml"), None, content)
+        issues = validate_item(item, config)
+        assert any("'name' must be a string" in i.message for i in issues)
+
+    def test_hook_int_name_is_error(self, config: Config) -> None:
+        content = b"name: 7\nhooks:\n  Stop:\n    - matcher: ''\n      hooks: []\n"
+        item = SourceItem("hook", "guard", Path("/tmp/hooks/guard.yaml"), None, content)
+        issues = validate_item(item, config)
+        assert any("'name' must be a string" in i.message for i in issues)
+
+
+class TestPerFileDiscoveryErrors:
+    def test_all_bad_files_reported_not_just_first(self, tmp_path: Path) -> None:
+        # Two malformed agents plus a good one: both errors must surface in a
+        # single run, and the good file must still be validated.
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        bad = b"---\ninvalid: yaml: [broken\n---\n"
+        (agents_dir / "a-bad.md").write_bytes(bad)
+        (agents_dir / "b-bad.md").write_bytes(bad)
+        (agents_dir / "c-good.md").write_bytes(
+            b"---\nname: good\nonly:\n  - nonexistent\n---\nBody\n"
+        )
+        config = Config(
+            source_root=tmp_path,
+            targets={"t": TargetConfig(id="t", type="claude", path=tmp_path)},
+            groups={},
+        )
+        issues = validate_all(config)
+        discovery_errors = [i for i in issues if "Discovery failed" in i.message]
+        assert len(discovery_errors) == 2
+        assert {i.file_path for i in discovery_errors} == {
+            agents_dir / "a-bad.md",
+            agents_dir / "b-bad.md",
+        }
+        # The later good file was still validated.
+        assert any("Invalid environment ID" in i.message for i in issues)
+
+    def test_duplicate_detection_survives_parse_error(self, tmp_path: Path) -> None:
+        # A parse error in an alphabetically earlier file must not abandon
+        # duplicate-name detection for the rest of the directory.
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "a-bad.md").write_bytes(b"---\ninvalid: yaml: [broken\n---\n")
+        (commands_dir / "deploy -- prod.md").write_bytes(b"Deploy prod")
+        (commands_dir / "deploy -- dev.md").write_bytes(b"Deploy dev")
+        config = Config(
+            source_root=tmp_path,
+            targets={
+                "t": TargetConfig(
+                    id="t", type="claude", path=tmp_path, labels=["prod", "dev"]
+                )
+            },
+            groups={"prod": ["t"], "dev": ["t"]},
+        )
+        issues = validate_all(config)
+        assert any("Discovery failed" in i.message for i in issues)
+        assert any("Duplicate" in i.message for i in issues)
+
+
+class TestMarketplaceBooleanValues:
+    def _item(self, content_dict: dict) -> SourceItem:
+        import yaml
+
+        content = yaml.dump(content_dict).encode("utf-8")
+        return SourceItem(
+            "marketplace",
+            str(content_dict.get("name", "acme")),
+            Path("/tmp/marketplaces/acme.yaml"),
+            content_dict,
+            content,
+        )
+
+    def test_plugin_value_string_false_is_error(self, config: Config) -> None:
+        # bool("false") is True, so a string value silently inverts the
+        # author's intent at deploy time.
+        item = self._item({"name": "acme", "plugins": {"formatter": "false"}})
+        issues = validate_item(item, config)
+        assert any(
+            i.level == "error" and "must be a boolean" in i.message for i in issues
+        )
+
+    def test_plugin_value_bool_accepted(self, config: Config) -> None:
+        item = self._item({"name": "acme", "plugins": {"formatter": False}})
+        assert validate_item(item, config) == []
+
+    def test_auto_update_string_is_error(self, config: Config) -> None:
+        item = self._item({"name": "acme", "autoUpdate": "no", "plugins": {}})
+        issues = validate_item(item, config)
+        assert any(
+            i.level == "error" and "'autoUpdate' must be a boolean" in i.message
+            for i in issues
+        )
+
+    def test_auto_update_bool_accepted(self, config: Config) -> None:
+        item = self._item({"name": "acme", "autoUpdate": False, "plugins": {}})
+        assert validate_item(item, config) == []
+
+    def test_non_dict_marketplace_yaml_is_error(self, config: Config) -> None:
+        item = SourceItem(
+            "marketplace",
+            "acme",
+            Path("/tmp/marketplaces/acme.yaml"),
+            None,
+            b"- just\n- a\n- list\n",
+        )
+        issues = validate_item(item, config)
+        assert any("must be a YAML mapping" in i.message for i in issues)
+
+
+class TestSkillLimits:
+    def _skill(self, frontmatter: bytes, body: bytes = b"Body\n") -> SourceItem:
+        from promptdeploy.frontmatter import parse_frontmatter
+
+        content = b"---\n" + frontmatter + b"---\n" + body
+        metadata, _ = parse_frontmatter(content)
+        assert metadata is not None
+        name = metadata.get("name")
+        if not isinstance(name, str):
+            name = "my-skill"
+        return SourceItem(
+            "skill", name, Path("/tmp/skills/my-skill/SKILL.md"), metadata, content
+        )
+
+    def test_valid_skill_passes(self, config: Config) -> None:
+        item = self._skill(b"name: my-skill\ndescription: Does things\n")
+        assert validate_item(item, config) == []
+
+    def test_name_over_64_chars_is_error(self, config: Config) -> None:
+        long_name = "x" * 65
+        item = SourceItem(
+            "skill",
+            long_name,
+            Path(f"/tmp/skills/{long_name}/SKILL.md"),
+            {"name": long_name, "description": "d"},
+            f"---\nname: {long_name}\ndescription: d\n---\nBody\n".encode(),
+        )
+        issues = validate_item(item, config)
+        assert any(
+            i.level == "error" and "exceeds 64 characters" in i.message for i in issues
+        )
+
+    def test_missing_description_is_error(self, config: Config) -> None:
+        item = self._skill(b"name: my-skill\n")
+        issues = validate_item(item, config)
+        assert any(i.level == "error" and "description" in i.message for i in issues)
+
+    def test_description_over_1024_chars_is_error(self, config: Config) -> None:
+        desc = "d" * 1025
+        item = self._skill(f"name: my-skill\ndescription: {desc}\n".encode())
+        issues = validate_item(item, config)
+        assert any(
+            i.level == "error" and "exceeds 1024 characters" in i.message
+            for i in issues
+        )
+
+    def test_skill_md_over_500_lines_warns(self, config: Config) -> None:
+        body = b"line\n" * 510
+        item = self._skill(b"name: my-skill\ndescription: d\n", body=body)
+        issues = validate_item(item, config)
+        assert any(i.level == "warning" and "lines" in i.message for i in issues)
+
+    def test_name_directory_mismatch_warns(self, config: Config) -> None:
+        item = SourceItem(
+            "skill",
+            "other-name",
+            Path("/tmp/skills/my-skill/SKILL.md"),
+            {"name": "other-name", "description": "d"},
+            b"---\nname: other-name\ndescription: d\n---\nBody\n",
+        )
+        issues = validate_item(item, config)
+        assert any(
+            i.level == "warning" and "does not match its directory" in i.message
+            for i in issues
+        )
+
+    def test_filetagged_directory_matches_base_name(self, config: Config) -> None:
+        # ``skills/my-skill -- prod/`` resolves to base name ``my-skill``.
+        item = SourceItem(
+            "skill",
+            "my-skill",
+            Path("/tmp/skills/my-skill -- prod/SKILL.md"),
+            {"name": "my-skill", "description": "d"},
+            b"---\nname: my-skill\ndescription: d\n---\nBody\n",
+            filetags=["prod"],
+        )
+        config.groups["prod"] = ["claude-personal"]
+        assert validate_item(item, config) == []
+
+
+class TestSlashNamespaceCollisions:
+    def test_command_and_skill_with_same_name_warn(self, tmp_path: Path) -> None:
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "review.md").write_bytes(b"Review things.\n")
+        skill_dir = tmp_path / "skills" / "review"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_bytes(
+            b"---\nname: review\ndescription: Reviews\n---\nBody\n"
+        )
+        config = Config(
+            source_root=tmp_path,
+            targets={"t": TargetConfig(id="t", type="claude", path=tmp_path)},
+            groups={},
+        )
+        issues = validate_all(config)
+        collisions = [i for i in issues if "slash-command namespace" in i.message]
+        assert len(collisions) == 1
+        assert collisions[0].level == "warning"
+        assert "review" in collisions[0].message
+
+    def test_distinct_names_no_warning(self, tmp_path: Path) -> None:
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "review.md").write_bytes(b"Review things.\n")
+        skill_dir = tmp_path / "skills" / "deploy"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_bytes(
+            b"---\nname: deploy\ndescription: Deploys\n---\nBody\n"
+        )
+        config = Config(
+            source_root=tmp_path,
+            targets={"t": TargetConfig(id="t", type="claude", path=tmp_path)},
+            groups={},
+        )
+        issues = validate_all(config)
+        assert not any("slash-command namespace" in i.message for i in issues)
+
+
+class TestBrokenSkillSymlinkWarning:
+    def test_broken_symlink_warns(self, tmp_path: Path) -> None:
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        (skills_dir / "vanished").symlink_to(tmp_path / "no-such-target")
+        config = Config(
+            source_root=tmp_path,
+            targets={"t": TargetConfig(id="t", type="claude", path=tmp_path)},
+            groups={},
+        )
+        issues = validate_all(config)
+        warnings = [i for i in issues if "Broken symlink" in i.message]
+        assert len(warnings) == 1
+        assert warnings[0].level == "warning"
+        assert warnings[0].file_path == skills_dir / "vanished"

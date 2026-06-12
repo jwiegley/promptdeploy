@@ -89,7 +89,30 @@ class TestDeployCommand:
         meta, body = parse_frontmatter(skill_md.read_bytes())
         assert meta is not None
         assert "only" not in meta
+        # droid_deploy is deployment metadata and must not leak into the
+        # deployed SKILL.md frontmatter.
+        assert "droid_deploy" not in meta
+        assert meta["name"] == "fix"
         assert body == b"Fix things.\n"
+
+    def test_command_replaces_symlinked_skill_dir(self, tmp_path: Path):
+        """A pre-existing symlink at skills/<name> is replaced, not written
+        through -- otherwise the deploy would modify the link target."""
+        target = _make_target(tmp_path)
+        real_dir = tmp_path / "real-skill"
+        real_dir.mkdir()
+
+        dest = tmp_path / ".droid" / "skills" / "fix"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.symlink_to(real_dir)
+
+        content = b"---\nname: fix\ndroid_deploy: skill\n---\nBody.\n"
+        target.deploy_command("fix", content)
+
+        assert not dest.is_symlink()
+        assert (dest / "SKILL.md").exists()
+        # The symlink target was not written into.
+        assert not (real_dir / "SKILL.md").exists()
 
 
 class TestRemoveCommand:
@@ -156,6 +179,27 @@ class TestDeployPrompt:
         assert target.consume_warnings() == [
             ("demo", ["Undefined Jinja variable: missing"])
         ]
+
+    def test_prompt_replaces_symlinked_skill_dir(self, tmp_path: Path):
+        """A pre-existing symlink at skills/<name> is replaced, not written
+        through -- otherwise the deploy would modify the link target."""
+        target = _make_target(tmp_path)
+        real_dir = tmp_path / "real-prompt"
+        real_dir.mkdir()
+
+        dest = tmp_path / ".droid" / "skills" / "demo"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.symlink_to(real_dir)
+
+        src = tmp_path / "demo.md"
+        body = b"Plain prompt.\n"
+        src.write_bytes(body)
+        target.deploy_prompt("demo", body, src)
+
+        assert not dest.is_symlink()
+        assert (dest / "SKILL.md").exists()
+        # The symlink target was not written into.
+        assert not (real_dir / "SKILL.md").exists()
 
 
 class TestRemovePrompt:

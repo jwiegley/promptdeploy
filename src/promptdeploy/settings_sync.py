@@ -7,8 +7,10 @@ Pure rendering/merge logic lives in ``settings.py``.
 
 from __future__ import annotations
 
+import copy
 import io
 import os
+import stat
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,17 +18,29 @@ from typing import Any, Dict, List, Optional
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.scalarstring import ScalarString, SingleQuotedScalarString
 
 from .config import Config
 from .settings import (
     MANAGED_ELSEWHERE,
     generate_merge_patch,
+    render_pre_exact,
     render_settings,
     strip_keys,
+    strip_nulls,
 )
 from .targets import create_target
 
 _MANAGED_ELSEWHERE = MANAGED_ELSEWHERE
+
+# Plain scalars that YAML 1.1 resolves to booleans but YAML 1.2 leaves as
+# strings. The deploy pipeline reads settings.yaml with PyYAML (1.1) while
+# this module writes it with ruamel (1.2), so such strings must be quoted on
+# write or the two sides disagree on the value. y/n are included for the
+# YAML 1.1 spec even though PyYAML's resolver ignores the single-letter forms.
+_YAML11_BOOLEAN_STRINGS = frozenset(
+    {"y", "n", "yes", "no", "true", "false", "on", "off"}
+)
 
 
 def _yaml() -> YAML:
@@ -44,16 +58,54 @@ def load_settings_doc(path: Path):
     return data if data is not None else _yaml().load("{}\n")
 
 
+def _quote_yaml11_booleans(node: Any) -> Any:
+    """Force-quote YAML-1.1 boolean-like strings (in place for containers).
+
+    Already-styled scalars (loaded with ``preserve_quotes``) keep their
+    original quoting; only plain strings are wrapped.
+    """
+    if isinstance(node, str):
+        if (
+            not isinstance(node, ScalarString)
+            and node.lower() in _YAML11_BOOLEAN_STRINGS
+        ):
+            return SingleQuotedScalarString(node)
+        return node
+    if isinstance(node, dict):
+        for key in node:
+            node[key] = _quote_yaml11_booleans(node[key])
+        return node
+    if isinstance(node, list):
+        for i, value in enumerate(node):
+            node[i] = _quote_yaml11_booleans(value)
+        return node
+    return node
+
+
 def dump_settings_doc(doc, path: Path) -> None:
-    """Atomically write a round-trip doc back to settings.yaml."""
+    """Atomically write a round-trip doc back to settings.yaml.
+
+    Boolean-like plain strings are quoted in place (see
+    :func:`_quote_yaml11_booleans`) and the destination's existing file mode
+    is preserved (mkstemp would otherwise reset it to 0600); a new file gets
+    the umask-derived default.
+    """
+    _quote_yaml11_booleans(doc)
     buf = io.StringIO()
     _yaml().dump(doc, buf)
     text = buf.getvalue()
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+    else:
+        umask = os.umask(0)
+        os.umask(umask)
+        mode = 0o666 & ~umask
     fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
     try:
         with os.fdopen(fd, "w") as f:
             f.write(text)
+        os.chmod(tmp, mode)
         os.replace(tmp, path)
     except BaseException:
         try:
@@ -64,10 +116,15 @@ def dump_settings_doc(doc, path: Path) -> None:
 
 
 def read_live_settings(target_config) -> Dict[str, Any]:
-    """Return a target's live settings.json minus hooks/mcpServers.
+    """Return a target's live settings.json minus the MANAGED_ELSEWHERE keys
+    (``hooks``/``mcpServers``/``extraKnownMarketplaces``/``enabledPlugins``)
+    and any explicit ``null`` values.
 
-    Pulls remote state via the target's prepare()/cleanup() lifecycle (rsync for
-    remote targets, no-op locally) and reads through the public accessor.
+    Nulls are stripped to mirror ``render_settings``: RFC 7396 merge patches
+    cannot express an explicit ``null`` value, so leaving them in would make
+    host state both undiffable and unreachable. Pulls remote state via the
+    target's prepare()/cleanup() lifecycle (rsync for remote targets, no-op
+    locally) and reads through the public accessor.
     """
     target = create_target(target_config)
     try:
@@ -75,7 +132,7 @@ def read_live_settings(target_config) -> Dict[str, Any]:
         raw = target.read_settings_json()
     finally:
         target.cleanup()
-    return strip_keys(raw, _MANAGED_ELSEWHERE)
+    return strip_nulls(strip_keys(raw, _MANAGED_ELSEWHERE))
 
 
 def _claude_target_ids(config: Config, target_ids: List[str]) -> List[str]:
@@ -156,9 +213,15 @@ def reconcile_settings(
 ) -> List[SettingsDiff]:
     """Diff each claude target's live settings against settings.yaml.
 
-    With ``apply``, write each host's drifted top-level keys into that target's
-    overrides block (a ``null`` when the host lacks a key that ``base`` has),
-    preserving comments on untouched override keys.
+    With ``apply``, fold every reported diff into that target's exact
+    override entry. The drift patch is generated against the
+    pre-exact-override intermediate (``base`` + matching group/label
+    overrides, via ``render_pre_exact``) so the written override composes
+    with group overrides instead of fighting them: a key the host deleted
+    folds back as an explicit ``null`` override (stripped at render time),
+    and a key where the host already matches the intermediate is pinned
+    verbatim so a stale exact override stops re-introducing drift. Comments
+    on untouched override keys are preserved.
     """
     if not settings_path.exists():
         raise FileNotFoundError(
@@ -166,7 +229,6 @@ def reconcile_settings(
         )
 
     doc = load_settings_doc(settings_path)
-    base = dict(doc.get("base") or {})
     claude_ids = _claude_target_ids(config, target_ids)
 
     all_diffs: List[SettingsDiff] = []
@@ -178,17 +240,26 @@ def reconcile_settings(
         all_diffs.extend(diffs)
         if not apply:
             continue
-        drifted = [d for d in diffs if d.kind in ("+", "~")]
-        if not drifted:
+        if not diffs:
             continue
-        patch = generate_merge_patch(base, host)  # base -> host, per key
-        overrides = doc.setdefault("overrides", {})
-        ov = overrides.setdefault(tid, {})
-        for d in drifted:
+        intermediate = render_pre_exact(doc, tid, config)
+        patch = generate_merge_patch(intermediate, host)  # intermediate -> host
+        overrides = doc.get("overrides")
+        if overrides is None:  # absent key or a bare `overrides:` (null)
+            overrides = CommentedMap()
+            doc["overrides"] = overrides
+        ov = overrides.get(tid)
+        if ov is None:  # absent entry or a bare `<target>:` (null)
+            ov = CommentedMap()
+            overrides[tid] = ov
+        for d in diffs:
             if d.key in patch:
-                ov[d.key] = patch[d.key]
+                ov[d.key] = copy.deepcopy(patch[d.key])
             else:
-                ov.pop(d.key, None)
+                # Host matches the intermediate on this key, so only a stale
+                # exact override can explain the drift: pin the host value
+                # (None for '-' diffs) over it.
+                ov[d.key] = copy.deepcopy(d.host_value)
         changed = True
     if apply and changed:
         dump_settings_doc(doc, settings_path)

@@ -35,19 +35,6 @@ class TestOutputAction:
         captured = capsys.readouterr()
         assert "[dry-run]" in captured.out
 
-    def test_diff_hidden_in_normal(self, capsys) -> None:
-        out = Output(Verbosity.NORMAL)
-        out.action("M", "agent", "helper", "local", diff="+ added line")
-        captured = capsys.readouterr()
-        assert "added line" not in captured.out
-
-    def test_diff_shown_in_verbose(self, capsys) -> None:
-        out = Output(Verbosity.VERBOSE)
-        out.action("M", "agent", "helper", "local", diff="+ added line\n- removed line")
-        captured = capsys.readouterr()
-        assert "+ added line" in captured.out
-        assert "- removed line" in captured.out
-
 
 class TestOutputWarning:
     def test_warning_to_stderr(self, capsys) -> None:

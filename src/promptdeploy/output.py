@@ -36,15 +36,11 @@ class Output:
         name: str,
         target_id: str,
         prefix: str = "",
-        diff: Optional[str] = None,
     ) -> None:
-        """Print a deploy action line. Shows diff in verbose mode."""
+        """Print a deploy action line."""
         if self.verbosity == Verbosity.QUIET:
             return
         print(f"  {prefix}{symbol}  {item_type:8s} {name:30s} -> {target_id}")
-        if diff and self.verbosity == Verbosity.VERBOSE:
-            for line in diff.splitlines():
-                print(f"    {line}")
 
     def warning(self, message: str) -> None:
         if self.verbosity == Verbosity.QUIET:

@@ -835,3 +835,156 @@ def test_discover_settings_non_dict_yaml(tmp_path):
     items = list(SourceDiscovery(tmp_path).discover_settings())
     assert len(items) == 1
     assert items[0].metadata is None
+
+
+class TestNonStringNames:
+    """Non-string `name:` frontmatter falls back to the filename-derived name.
+
+    A non-string name (e.g. `name: 123`) would corrupt manifests/settings.json
+    keys (create/remove churn) or crash on unhashable list values.
+    """
+
+    def test_agent_int_name_falls_back_to_stem(self, tmp_path):
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "helper.md").write_bytes(b"---\nname: 123\n---\nBody.\n")
+        agents = list(SourceDiscovery(tmp_path).discover_agents())
+        assert len(agents) == 1
+        assert agents[0].name == "helper"
+
+    def test_command_list_name_falls_back_to_stem(self, tmp_path):
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "fix.md").write_bytes(b"---\nname: [a, b]\n---\nBody.\n")
+        commands = list(SourceDiscovery(tmp_path).discover_commands())
+        assert len(commands) == 1
+        assert commands[0].name == "fix"
+
+    def test_skill_int_name_falls_back_to_dirname(self, tmp_path):
+        skill_dir = tmp_path / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_bytes(b"---\nname: 42\n---\nBody.\n")
+        skills = list(SourceDiscovery(tmp_path).discover_skills())
+        assert len(skills) == 1
+        assert skills[0].name == "my-skill"
+
+    def test_mcp_int_name_falls_back_to_stem(self, tmp_path):
+        mcp_dir = tmp_path / "mcp"
+        mcp_dir.mkdir()
+        (mcp_dir / "server.yaml").write_bytes(b"name: 7\ncommand: npx\n")
+        servers = list(SourceDiscovery(tmp_path).discover_mcp_servers())
+        assert len(servers) == 1
+        assert servers[0].name == "server"
+
+    def test_hook_int_name_falls_back_to_stem(self, tmp_path):
+        hooks_dir = tmp_path / "hooks"
+        hooks_dir.mkdir()
+        (hooks_dir / "guard.yaml").write_bytes(b"name: 99\nhooks: {}\n")
+        hooks = list(SourceDiscovery(tmp_path).discover_hooks())
+        assert len(hooks) == 1
+        assert hooks[0].name == "guard"
+
+
+class TestDiscoveryErrorHandling:
+    """Frontmatter errors during discovery name the offending file and,
+    in lenient mode, are collected without aborting the directory."""
+
+    BAD = b"---\ninvalid: yaml: [broken\n---\nBody.\n"
+
+    def test_agent_frontmatter_error_includes_path(self, tmp_path):
+        from promptdeploy.frontmatter import FrontmatterError
+
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "bad.md").write_bytes(self.BAD)
+        with pytest.raises(FrontmatterError, match="bad.md"):
+            list(SourceDiscovery(tmp_path).discover_agents())
+
+    def test_command_frontmatter_error_includes_path(self, tmp_path):
+        from promptdeploy.frontmatter import FrontmatterError
+
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "bad.md").write_bytes(self.BAD)
+        with pytest.raises(FrontmatterError, match="bad.md"):
+            list(SourceDiscovery(tmp_path).discover_commands())
+
+    def test_skill_frontmatter_error_includes_path(self, tmp_path):
+        from promptdeploy.frontmatter import FrontmatterError
+
+        skill_dir = tmp_path / "skills" / "broken"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_bytes(self.BAD)
+        with pytest.raises(FrontmatterError, match="SKILL.md"):
+            list(SourceDiscovery(tmp_path).discover_skills())
+
+    def test_agents_lenient_mode_collects_errors_and_continues(self, tmp_path):
+        from promptdeploy.source import DiscoveryError
+
+        agents_dir = tmp_path / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "a-bad.md").write_bytes(self.BAD)
+        (agents_dir / "b-bad.md").write_bytes(self.BAD)
+        (agents_dir / "c-good.md").write_bytes(b"---\nname: good\n---\nBody.\n")
+        errors: list[DiscoveryError] = []
+        agents = list(SourceDiscovery(tmp_path).discover_agents(errors=errors))
+        assert [a.name for a in agents] == ["good"]
+        assert len(errors) == 2
+        assert errors[0].path == agents_dir / "a-bad.md"
+        assert errors[1].path == agents_dir / "b-bad.md"
+        assert "Invalid YAML" in errors[0].message
+
+    def test_commands_lenient_mode_collects_errors_and_continues(self, tmp_path):
+        from promptdeploy.source import DiscoveryError
+
+        commands_dir = tmp_path / "commands"
+        commands_dir.mkdir()
+        (commands_dir / "bad.md").write_bytes(self.BAD)
+        (commands_dir / "good.md").write_bytes(b"Plain body.\n")
+        errors: list[DiscoveryError] = []
+        commands = list(SourceDiscovery(tmp_path).discover_commands(errors=errors))
+        assert [c.name for c in commands] == ["good"]
+        assert len(errors) == 1
+        assert errors[0].path == commands_dir / "bad.md"
+
+    def test_skills_lenient_mode_collects_errors_and_continues(self, tmp_path):
+        from promptdeploy.source import DiscoveryError
+
+        skills_dir = tmp_path / "skills"
+        bad = skills_dir / "a-bad"
+        bad.mkdir(parents=True)
+        (bad / "SKILL.md").write_bytes(self.BAD)
+        good = skills_dir / "b-good"
+        good.mkdir()
+        (good / "SKILL.md").write_bytes(b"---\nname: b-good\n---\nBody.\n")
+        errors: list[DiscoveryError] = []
+        skills = list(SourceDiscovery(tmp_path).discover_skills(errors=errors))
+        assert [s.name for s in skills] == ["b-good"]
+        assert len(errors) == 1
+        assert errors[0].path == bad / "SKILL.md"
+
+
+class TestBrokenSkillSymlinks:
+    def test_broken_symlink_detected(self, tmp_path):
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        (skills_dir / "vanished").symlink_to(tmp_path / "no-such-dir")
+        working_target = tmp_path / "real-skill"
+        working_target.mkdir()
+        (working_target / "SKILL.md").write_bytes(b"---\nname: real\n---\nBody.\n")
+        (skills_dir / "linked").symlink_to(working_target)
+        d = SourceDiscovery(tmp_path)
+        assert d.broken_skill_symlinks() == [skills_dir / "vanished"]
+        # The working symlinked skill is still discovered normally.
+        assert [s.name for s in d.discover_skills()] == ["real"]
+
+    def test_no_skills_dir_returns_empty(self, tmp_path):
+        assert SourceDiscovery(tmp_path).broken_skill_symlinks() == []
+
+    def test_no_broken_symlinks_returns_empty(self, tmp_path):
+        skills_dir = tmp_path / "skills"
+        skills_dir.mkdir()
+        sk = skills_dir / "ok"
+        sk.mkdir()
+        (sk / "SKILL.md").write_bytes(b"---\nname: ok\n---\nBody.\n")
+        assert SourceDiscovery(tmp_path).broken_skill_symlinks() == []

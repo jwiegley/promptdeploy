@@ -84,17 +84,26 @@ class TestComputeDirectoryHash:
         result = compute_directory_hash(tmp_path)
         assert result.startswith("sha256:")
 
+    def test_path_content_boundary_is_framed(self, tmp_path: Path) -> None:
+        """(path, content) pairs are length-framed, so shifting bytes across
+        the path/content boundary must change the hash."""
+        d1 = tmp_path / "d1"
+        d1.mkdir()
+        (d1 / "ab").write_bytes(b"c")
+
+        d2 = tmp_path / "d2"
+        d2.mkdir()
+        (d2 / "a").write_bytes(b"bc")
+
+        assert compute_directory_hash(d1) != compute_directory_hash(d2)
+
 
 class TestLoadManifest:
     def test_nonexistent_returns_empty(self, tmp_path: Path) -> None:
         manifest = load_manifest(tmp_path / "nope.json")
         assert manifest.version == MANIFEST_VERSION
-        assert "agents" in manifest.items
-        assert "commands" in manifest.items
-        assert "skills" in manifest.items
-        assert "mcp_servers" in manifest.items
-        for entries in manifest.items.values():
-            assert entries == {}
+        # Categories are created on demand, not pre-seeded.
+        assert manifest.items == {}
 
     def test_loads_valid_json(self, tmp_path: Path) -> None:
         data = {
@@ -122,7 +131,71 @@ class TestLoadManifest:
         item = manifest.items["agents"]["rust-pro"]
         assert item.source_hash == "sha256:abc123"
         assert item.target_path == "/home/.claude/agents/rust-pro.md"
-        assert item.config_key is None
+
+
+class TestLoadManifestRobustness:
+    """The manifest is a rebuildable cache: corrupt files fall back to empty (B31)."""
+
+    def test_corrupt_json_returns_empty_with_warning(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = tmp_path / MANIFEST_FILENAME
+        path.write_text("{not valid json")
+        manifest = load_manifest(path)
+        assert manifest.version == MANIFEST_VERSION
+        for entries in manifest.items.values():
+            assert entries == {}
+        err = capsys.readouterr().err
+        assert "WARNING" in err
+        assert str(path) in err
+
+    def test_non_mapping_json_returns_empty_with_warning(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        path = tmp_path / MANIFEST_FILENAME
+        path.write_text("[1, 2, 3]")
+        manifest = load_manifest(path)
+        assert manifest.items == {}
+        err = capsys.readouterr().err
+        assert "WARNING" in err
+        assert str(path) in err
+
+    def test_future_version_loads_known_fields(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A newer-version manifest loads its known fields; unknown ones are ignored."""
+        data = {
+            "version": 99,
+            "deployed_at": "2026-01-01T00:00:00+00:00",
+            "items": {
+                "agents": {
+                    "a": {
+                        "source_hash": "sha256:abc",
+                        "target_path": "/x/a.md",
+                        "shiny_new_field": {"nested": True},
+                    }
+                }
+            },
+        }
+        path = tmp_path / MANIFEST_FILENAME
+        path.write_text(json.dumps(data))
+        manifest = load_manifest(path)
+        assert manifest.version == 99
+        item = manifest.items["agents"]["a"]
+        assert item.source_hash == "sha256:abc"
+        assert item.target_path == "/x/a.md"
+        err = capsys.readouterr().err
+        assert "version" in err
+
+    def test_missing_source_hash_defaults_to_empty(self, tmp_path: Path) -> None:
+        data = {
+            "version": MANIFEST_VERSION,
+            "items": {"agents": {"a": {"target_path": "/x/a.md"}}},
+        }
+        path = tmp_path / MANIFEST_FILENAME
+        path.write_text(json.dumps(data))
+        manifest = load_manifest(path)
+        assert manifest.items["agents"]["a"].source_hash == ""
 
 
 class TestSaveManifest:
@@ -141,7 +214,7 @@ class TestSaveManifest:
     def test_writes_valid_json(self, tmp_path: Path) -> None:
         path = tmp_path / MANIFEST_FILENAME
         manifest = Manifest()
-        manifest.items["agents"]["test-agent"] = ManifestItem(
+        manifest.items.setdefault("agents", {})["test-agent"] = ManifestItem(
             source_hash="sha256:deadbeef",
             target_path="/dest/agent.md",
         )
@@ -153,8 +226,6 @@ class TestSaveManifest:
         agent = data["items"]["agents"]["test-agent"]
         assert agent["source_hash"] == "sha256:deadbeef"
         assert agent["target_path"] == "/dest/agent.md"
-        # config_key is None, should be omitted
-        assert "config_key" not in agent
 
 
 class TestSaveManifestError:
@@ -164,7 +235,9 @@ class TestSaveManifestError:
 
         path = tmp_path / MANIFEST_FILENAME
         manifest = Manifest()
-        manifest.items["agents"]["test"] = ManifestItem(source_hash="sha256:abc")
+        manifest.items.setdefault("agents", {})["test"] = ManifestItem(
+            source_hash="sha256:abc"
+        )
 
         with patch("os.replace", side_effect=OSError("mock failure")):
             with pytest.raises(OSError, match="mock failure"):
@@ -204,18 +277,16 @@ class TestRoundTrip:
             version=MANIFEST_VERSION,
             deployed_at="2025-06-15T12:00:00+00:00",
         )
-        original.items["agents"]["my-agent"] = ManifestItem(
+        original.items.setdefault("agents", {})["my-agent"] = ManifestItem(
             source_hash="sha256:aaa",
             target_path="/agents/my-agent.md",
         )
-        original.items["skills"]["my-skill"] = ManifestItem(
+        original.items.setdefault("skills", {})["my-skill"] = ManifestItem(
             source_hash="sha256:bbb",
-            config_key="skills.my-skill",
         )
-        original.items["mcp_servers"]["server1"] = ManifestItem(
+        original.items.setdefault("mcp_servers", {})["server1"] = ManifestItem(
             source_hash="sha256:ccc",
             target_path="/mcp/server1.json",
-            config_key="mcp.server1",
         )
         save_manifest(original, path)
 
@@ -226,22 +297,21 @@ class TestRoundTrip:
         agent = loaded.items["agents"]["my-agent"]
         assert agent.source_hash == "sha256:aaa"
         assert agent.target_path == "/agents/my-agent.md"
-        assert agent.config_key is None
 
         skill = loaded.items["skills"]["my-skill"]
         assert skill.source_hash == "sha256:bbb"
         assert skill.target_path is None
-        assert skill.config_key == "skills.my-skill"
 
         server = loaded.items["mcp_servers"]["server1"]
         assert server.source_hash == "sha256:ccc"
         assert server.target_path == "/mcp/server1.json"
-        assert server.config_key == "mcp.server1"
 
 
 class TestHasChanged:
     def test_new_item(self) -> None:
+        # Category exists but the item is unknown.
         manifest = Manifest()
+        manifest.items["agents"] = {}
         assert has_changed(manifest, "agents", "new-agent", "sha256:xyz")
 
     def test_unknown_category(self) -> None:
@@ -250,12 +320,16 @@ class TestHasChanged:
 
     def test_changed_hash(self) -> None:
         manifest = Manifest()
-        manifest.items["agents"]["my-agent"] = ManifestItem(source_hash="sha256:old")
+        manifest.items.setdefault("agents", {})["my-agent"] = ManifestItem(
+            source_hash="sha256:old"
+        )
         assert has_changed(manifest, "agents", "my-agent", "sha256:new")
 
     def test_unchanged(self) -> None:
         manifest = Manifest()
-        manifest.items["agents"]["my-agent"] = ManifestItem(source_hash="sha256:same")
+        manifest.items.setdefault("agents", {})["my-agent"] = ManifestItem(
+            source_hash="sha256:same"
+        )
         assert not has_changed(manifest, "agents", "my-agent", "sha256:same")
 
 

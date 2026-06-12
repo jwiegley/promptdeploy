@@ -554,6 +554,99 @@ class TestRunDeploy:
         assert "0 unchanged" in captured.out
 
 
+class TestUnknownTargetArg:
+    """An unknown --target value exits 1 with a message, not a traceback (B2)."""
+
+    def test_deploy_unknown_target_exits(self, tmp_path, monkeypatch, capsys):
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=True,
+            target=["nope"],
+            only_type=None,
+            target_root=None,
+            force=False,
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            _run_deploy(args)
+        assert exc_info.value.code == 1
+        assert "Unknown target: nope" in capsys.readouterr().err
+
+    def test_status_unknown_target_exits(self, tmp_path, monkeypatch, capsys):
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        args = argparse.Namespace(target=["nope"], target_root=None)
+        with pytest.raises(SystemExit) as exc_info:
+            _run_status(args)
+        assert exc_info.value.code == 1
+        assert "Unknown target: nope" in capsys.readouterr().err
+
+    def test_list_unknown_target_exits(self, tmp_path, monkeypatch, capsys):
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        args = argparse.Namespace(target=["nope"], target_root=None)
+        with pytest.raises(SystemExit) as exc_info:
+            _run_list(args)
+        assert exc_info.value.code == 1
+        assert "Unknown target: nope" in capsys.readouterr().err
+
+
+class TestLoadConfigErrorExits:
+    """A ValueError from load_config (bad deploy.yaml) exits cleanly (B3/B4)."""
+
+    def test_validate_bad_deploy_yaml_exits(self, monkeypatch, capsys):
+        def boom(*_args, **_kwargs):
+            raise ValueError("Top level of deploy.yaml must be a mapping")
+
+        monkeypatch.setattr("promptdeploy.cli.load_config", boom)
+        with pytest.raises(SystemExit) as exc_info:
+            _run_validate()
+        assert exc_info.value.code == 1
+        assert "must be a mapping" in capsys.readouterr().err
+
+
+class TestCorruptSettingsJson:
+    def test_deploy_corrupt_settings_json_exits(self, tmp_path, monkeypatch, capsys):
+        """A corrupt settings.json on a claude target exits 1 naming the file."""
+        src = tmp_path / "source"
+        src.mkdir()
+        hooks_dir = src / "hooks"
+        hooks_dir.mkdir()
+        (hooks_dir / "my-hook.yaml").write_bytes(
+            b"name: my-hook\nhooks:\n  Stop:\n    - matcher: ''\n      hooks:\n"
+            b"        - command: echo\n          type: command\n"
+        )
+        tc = _make_claude_target(tmp_path)
+        (tc.path / "settings.json").write_text("{not json")
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=None,
+            force=False,
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            _run_deploy(args)
+        assert exc_info.value.code == 1
+        assert "settings.json" in capsys.readouterr().err
+
+
 # ===================================================================
 # _run_validate tests
 # ===================================================================
@@ -599,7 +692,6 @@ class TestRunValidate:
                 level="warning",
                 message="test warning",
                 file_path=Path("/tmp/w.md"),
-                line=5,
             )
         ]
 
@@ -615,33 +707,8 @@ class TestRunValidate:
         assert "WARNING" in captured.out
         assert "0 error(s), 1 warning(s)" in captured.out
 
-    def test_validate_error_with_line(self, tmp_path, monkeypatch, capsys):
-        """Error with line number formats correctly."""
-        from promptdeploy.validate import ValidationIssue
-
-        fake_issues = [
-            ValidationIssue(
-                level="error",
-                message="broken thing",
-                file_path=Path("/tmp/e.md"),
-                line=10,
-            )
-        ]
-
-        monkeypatch.setattr(
-            "promptdeploy.cli.load_config",
-            lambda *a, **kw: Config(source_root=tmp_path, targets={}, groups={}),
-        )
-        monkeypatch.setattr(
-            "promptdeploy.validate.validate_all", lambda cfg: fake_issues
-        )
-        with pytest.raises(SystemExit):
-            _run_validate()
-        captured = capsys.readouterr()
-        assert ":10:" in captured.out
-
-    def test_validate_error_without_line(self, tmp_path, monkeypatch, capsys):
-        """Error without line number omits colon."""
+    def test_validate_error_format(self, tmp_path, monkeypatch, capsys):
+        """Errors print as 'ERROR: <path>: <message>'."""
         from promptdeploy.validate import ValidationIssue
 
         fake_issues = [
@@ -1134,3 +1201,50 @@ def test_settings_reconcile_prints_diffs_report_and_apply(
     cli.main()
     out = capsys.readouterr().out
     assert "Applied host drift into overrides." in out
+
+
+class TestFrontmatterErrorExits:
+    """A malformed agent must produce a clean error naming the file, not a
+    traceback, from both deploy and status."""
+
+    def _make_bad_source(self, tmp_path: Path) -> Path:
+        src = tmp_path / "source"
+        src.mkdir()
+        agents = src / "agents"
+        agents.mkdir()
+        (agents / "bad.md").write_bytes(b"---\ninvalid: yaml: [broken\n---\nBody\n")
+        return src
+
+    def test_deploy_frontmatter_error_exits(self, tmp_path, monkeypatch, capsys):
+        src = self._make_bad_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=True,
+            target=None,
+            only_type=None,
+            target_root=None,
+            force=False,
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            _run_deploy(args)
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "bad.md" in captured.err
+
+    def test_status_frontmatter_error_exits(self, tmp_path, monkeypatch, capsys):
+        src = self._make_bad_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+
+        args = argparse.Namespace(target=None, target_root=None)
+        with pytest.raises(SystemExit) as exc_info:
+            _run_status(args)
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "bad.md" in captured.err

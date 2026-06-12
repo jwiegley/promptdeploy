@@ -5,15 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional
 
-from .config import Config
-from .filters import should_deploy_to
-from .manifest import (
-    compute_directory_hash,
-    compute_file_hash,
-    has_changed,
-    load_manifest,
-)
-from .source import SourceDiscovery, SourceItem
+from .config import Config, load_anthropic_default_model
+from .deploy import _TYPE_TO_CATEGORY, compute_item_hash, item_selected
+from .manifest import has_changed, load_manifest
+from .source import SourceDiscovery
 from .targets import create_target
 
 
@@ -27,25 +22,19 @@ class StatusEntry:
     state: str  # 'current', 'changed', 'new', 'pending_removal'
 
 
-_TYPE_TO_CATEGORY = {
-    "agent": "agents",
-    "command": "commands",
-    "skill": "skills",
-    "mcp": "mcp_servers",
-    "models": "models",
-    "hook": "hooks",
-    "marketplace": "marketplaces",
-    "prompt": "prompts",
-    "settings": "settings",
-}
-
 _CATEGORY_TO_TYPE = {v: k for k, v in _TYPE_TO_CATEGORY.items()}
 
 
 def get_status(
     config: Config, target_ids: Optional[List[str]] = None
 ) -> List[StatusEntry]:
-    """Compare source items against deployed manifests for each target."""
+    """Compare source items against deployed manifests for each target.
+
+    Item selection and hashing are shared with :func:`promptdeploy.deploy.deploy`
+    (see :func:`promptdeploy.deploy.item_selected` and
+    :func:`promptdeploy.deploy.compute_item_hash`) so status reports exactly
+    what a deploy would do.
+    """
     if target_ids is None:
         target_ids = list(config.targets.keys())
 
@@ -53,22 +42,25 @@ def get_status(
     discovery = SourceDiscovery(config.source_root)
     items = list(discovery.discover_all())
 
+    # Resolve the Anthropic default model exactly as deploy() does so that
+    # claude targets report the same content fingerprint (injected model
+    # frontmatter) in their hashes.
+    global_model = load_anthropic_default_model(config.source_root / "models.yaml")
+
     for target_id in target_ids:
         target_config = config.targets[target_id]
-        target = create_target(target_config)
+        target = create_target(target_config, global_model=global_model)
         try:
             target.prepare()
             manifest = load_manifest(target.manifest_path())
 
             deployed_names: set[tuple[str, str]] = set()
             for item in items:
-                if not should_deploy_to(
-                    target_id, item.metadata, config, str(item.path)
-                ):
+                if not item_selected(item, target, target_id, config):
                     continue
 
                 category = _TYPE_TO_CATEGORY[item.item_type]
-                current_hash = _compute_hash(item)
+                current_hash = compute_item_hash(item, target, config)
                 deployed_names.add((category, item.name))
 
                 if has_changed(manifest, category, item.name, current_hash):
@@ -96,10 +88,3 @@ def get_status(
             target.cleanup()
 
     return entries
-
-
-def _compute_hash(item: SourceItem) -> str:
-    """Compute the appropriate hash for an item based on its type."""
-    if item.item_type == "skill":
-        return compute_directory_hash(item.path.parent.resolve())
-    return compute_file_hash(item.content)

@@ -7,7 +7,9 @@ from typing import Optional, Tuple
 
 import yaml
 
-FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
+# The closing delimiter accepts end-of-file as well as a newline so a file
+# whose final line is the bare ``---`` (no trailing newline) still parses.
+FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
 
 
 class FrontmatterError(Exception):
@@ -18,9 +20,15 @@ def parse_frontmatter(content: bytes) -> Tuple[Optional[dict], bytes]:
     """Parse YAML frontmatter from content bytes.
 
     Returns a tuple of (metadata dict or None, body content as bytes).
-    Raises FrontmatterError on invalid YAML.
+    Raises FrontmatterError on invalid YAML or non-UTF-8 content.
+
+    Decodes with ``utf-8-sig`` so a leading BOM cannot silently defeat
+    frontmatter parsing (and with it ``only``/``except`` filtering).
     """
-    text = content.decode("utf-8")
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise FrontmatterError(f"File is not valid UTF-8: {exc}") from exc
     match = FRONTMATTER_PATTERN.match(text)
     if not match:
         return None, content
@@ -59,7 +67,6 @@ def serialize_frontmatter(metadata: dict, body: bytes) -> bytes:
 
 def transform_for_target(
     content: bytes,
-    target_id: str,
     inject: Optional[dict] = None,
 ) -> bytes:
     """Parse frontmatter, strip deployment fields, inject overrides, and re-serialize.

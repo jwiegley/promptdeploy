@@ -9,7 +9,7 @@ from typing import Iterator, List, Optional
 import yaml
 
 from promptdeploy.filetags import parse_filetags
-from promptdeploy.frontmatter import parse_frontmatter
+from promptdeploy.frontmatter import FrontmatterError, parse_frontmatter
 from promptdeploy.poet import (
     PLAIN_EXTENSIONS,
     POET_EXTENSIONS,
@@ -29,6 +29,27 @@ class SourceItem:
     metadata: Optional[dict]
     content: bytes
     filetags: List[str] = field(default_factory=list)
+
+
+@dataclass
+class DiscoveryError:
+    """A per-file discovery failure captured during lenient discovery."""
+
+    path: Path
+    message: str
+
+
+def _resolve_name(metadata: Optional[dict], base_name: str) -> str:
+    """Resolve an item's name from metadata with a string-type guard.
+
+    A non-string ``name:`` (e.g. ``name: 123``) would corrupt manifest and
+    settings.json keys (int keys coerce to str on json.dump while the
+    manifest keeps the int, so reclamation never matches) or crash on an
+    unhashable list/dict; fall back to the filename-derived base name and
+    let validate.py report the malformed name.
+    """
+    name_value = (metadata or {}).get("name")
+    return name_value if isinstance(name_value, str) else base_name
 
 
 class SourceDiscovery:
@@ -67,8 +88,7 @@ class SourceDiscovery:
             base_name, tags = parse_filetags(path.stem)
             content = path.read_bytes()
             metadata = extract_comment_frontmatter(content)
-            name_value = metadata.get("name")
-            name = name_value if isinstance(name_value, str) else base_name
+            name = _resolve_name(metadata, base_name)
             yield SourceItem(
                 item_type="prompt",
                 name=name,
@@ -78,28 +98,57 @@ class SourceDiscovery:
                 filetags=tags,
             )
 
-    def discover_agents(self) -> Iterator[SourceItem]:
-        """Discover agent definitions from agents/*.md."""
+    def discover_agents(
+        self, errors: Optional[List[DiscoveryError]] = None
+    ) -> Iterator[SourceItem]:
+        """Discover agent definitions from agents/*.md.
+
+        When ``errors`` is provided, per-file frontmatter failures are
+        appended to it and discovery continues with the next file; otherwise
+        the first failure raises FrontmatterError.
+        """
         agents_dir = self.source_root / "agents"
         if not agents_dir.is_dir():
             return
         for path in sorted(agents_dir.iterdir()):
             if path.name.startswith(".") or path.suffix != ".md":
                 continue
-            yield self._load_markdown_item("agent", path)
+            try:
+                yield self._load_markdown_item("agent", path)
+            except FrontmatterError as exc:
+                if errors is None:
+                    raise
+                errors.append(DiscoveryError(path=path, message=str(exc)))
 
-    def discover_commands(self) -> Iterator[SourceItem]:
-        """Discover command prompts from commands/*.md."""
+    def discover_commands(
+        self, errors: Optional[List[DiscoveryError]] = None
+    ) -> Iterator[SourceItem]:
+        """Discover command prompts from commands/*.md.
+
+        ``errors`` enables lenient per-file error collection as in
+        :meth:`discover_agents`.
+        """
         commands_dir = self.source_root / "commands"
         if not commands_dir.is_dir():
             return
         for path in sorted(commands_dir.iterdir()):
             if path.name.startswith(".") or path.suffix != ".md":
                 continue
-            yield self._load_markdown_item("command", path)
+            try:
+                yield self._load_markdown_item("command", path)
+            except FrontmatterError as exc:
+                if errors is None:
+                    raise
+                errors.append(DiscoveryError(path=path, message=str(exc)))
 
-    def discover_skills(self) -> Iterator[SourceItem]:
-        """Discover skills from skills/*/SKILL.md."""
+    def discover_skills(
+        self, errors: Optional[List[DiscoveryError]] = None
+    ) -> Iterator[SourceItem]:
+        """Discover skills from skills/*/SKILL.md.
+
+        ``errors`` enables lenient per-file error collection as in
+        :meth:`discover_agents`.
+        """
         skills_dir = self.source_root / "skills"
         if not skills_dir.is_dir():
             return
@@ -117,8 +166,14 @@ class SourceDiscovery:
             # Resolve symlinks for content but preserve original path
             resolved = skill_md.resolve()
             content = resolved.read_bytes()
-            metadata, _ = parse_frontmatter(content)
-            name = (metadata or {}).get("name", base_name)
+            try:
+                metadata, _ = parse_frontmatter(content)
+            except FrontmatterError as exc:
+                if errors is None:
+                    raise FrontmatterError(f"{skill_md}: {exc}") from exc
+                errors.append(DiscoveryError(path=skill_md, message=str(exc)))
+                continue
+            name = _resolve_name(metadata, base_name)
             yield SourceItem(
                 item_type="skill",
                 name=name,
@@ -127,6 +182,23 @@ class SourceDiscovery:
                 content=content,
                 filetags=tags,
             )
+
+    def broken_skill_symlinks(self) -> List[Path]:
+        """Return skills/ entries that are symlinks to nonexistent targets.
+
+        :meth:`discover_skills` necessarily skips these (``entry.is_dir()``
+        follows the link and returns False), so validate surfaces them as
+        warnings — otherwise a git-tracked skill silently vanishes from
+        every target.
+        """
+        skills_dir = self.source_root / "skills"
+        if not skills_dir.is_dir():
+            return []
+        return [
+            entry
+            for entry in sorted(skills_dir.iterdir())
+            if entry.is_symlink() and not entry.exists()
+        ]
 
     def discover_mcp_servers(self) -> Iterator[SourceItem]:
         """Discover MCP server configs from mcp/*.yaml."""
@@ -144,7 +216,7 @@ class SourceDiscovery:
                 metadata = None
             if not isinstance(metadata, dict):
                 metadata = None
-            name = (metadata or {}).get("name", base_name)
+            name = _resolve_name(metadata, base_name)
             yield SourceItem(
                 item_type="mcp",
                 name=name,
@@ -170,12 +242,7 @@ class SourceDiscovery:
                 metadata = None
             if not isinstance(metadata, dict):
                 metadata = None
-            name_value = (metadata or {}).get("name", base_name)
-            # A non-string name would corrupt settings.json (int keys coerce to
-            # str on json.dump while the manifest keeps the int, so reclamation
-            # never matches) or crash on an unhashable list/dict; fall back to
-            # the filename stem and let validate.py report the malformed name.
-            name = name_value if isinstance(name_value, str) else base_name
+            name = _resolve_name(metadata, base_name)
             yield SourceItem(
                 item_type="marketplace",
                 name=name,
@@ -241,7 +308,7 @@ class SourceDiscovery:
                 metadata = None
             if not isinstance(metadata, dict):
                 metadata = None
-            name = (metadata or {}).get("name", base_name)
+            name = _resolve_name(metadata, base_name)
             yield SourceItem(
                 item_type="hook",
                 name=name,
@@ -252,12 +319,18 @@ class SourceDiscovery:
             )
 
     def _load_markdown_item(self, item_type: str, path: Path) -> SourceItem:
-        """Load a markdown file as a SourceItem, parsing frontmatter for metadata."""
+        """Load a markdown file as a SourceItem, parsing frontmatter for metadata.
+
+        Raises FrontmatterError naming the offending file on parse failure.
+        """
         base_name, tags = parse_filetags(path.stem)
         resolved = path.resolve()
         content = resolved.read_bytes()
-        metadata, _ = parse_frontmatter(content)
-        name = (metadata or {}).get("name", base_name)
+        try:
+            metadata, _ = parse_frontmatter(content)
+        except FrontmatterError as exc:
+            raise FrontmatterError(f"{path}: {exc}") from exc
+        name = _resolve_name(metadata, base_name)
         return SourceItem(
             item_type=item_type,
             name=name,

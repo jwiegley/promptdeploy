@@ -249,12 +249,172 @@ class TestRemoveHook:
         assert "hooks" not in settings
 
     def test_partial_removal_keeps_other_event_types(self, tmp_path: Path):
-        """Removing one hook source keeps other event types intact."""
+        """Removing one hook source keeps other sources' event types intact."""
         target = _make_target(tmp_path)
         target.deploy_hook("git-ai", _GIT_AI_CONFIG)
+        target.deploy_hook("session-logger", _SESSION_LOGGER_CONFIG)
+
+        target.remove_hook("session-logger")
 
         settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
-        # git-ai entries should still be there
+        # session-logger's event type is gone...
+        assert "Stop" not in settings["hooks"]
+        # ...but git-ai's event types and entries are untouched.
         assert "PostToolUse" in settings["hooks"]
+        assert "PreToolUse" in settings["hooks"]
         post_sources = {e["_source"] for e in settings["hooks"]["PostToolUse"]}
-        assert "git-ai" in post_sources
+        assert post_sources == {"git-ai"}
+
+
+def _hook_group(name: str, event: str, command: str) -> dict:
+    return {
+        "name": name,
+        "hooks": {
+            event: [
+                {
+                    "matcher": "Write|Edit",
+                    "hooks": [{"command": command, "type": "command"}],
+                }
+            ]
+        },
+    }
+
+
+_SESSION_LOGGER_CONFIG = _hook_group("session-logger", "Stop", "log-session stop")
+
+
+class TestMultiSourceHooks:
+    """Coexistence matrix for multiple hook groups on the same event type."""
+
+    def test_different_contents_coexist(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_hook("group-a", _hook_group("group-a", "PostToolUse", "cmd-a"))
+        target.deploy_hook("group-b", _hook_group("group-b", "PostToolUse", "cmd-b"))
+
+        settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+        post = settings["hooks"]["PostToolUse"]
+        assert {e["_source"] for e in post} == {"group-a", "group-b"}
+        assert len(post) == 2
+
+    def test_redeploy_one_group_leaves_other_untouched(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_hook("group-a", _hook_group("group-a", "PostToolUse", "cmd-a"))
+        target.deploy_hook("group-b", _hook_group("group-b", "PostToolUse", "cmd-b"))
+
+        target.deploy_hook("group-a", _hook_group("group-a", "PostToolUse", "cmd-a2"))
+
+        settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+        post = settings["hooks"]["PostToolUse"]
+        by_source = {e["_source"]: e for e in post}
+        assert set(by_source) == {"group-a", "group-b"}
+        assert by_source["group-a"]["hooks"][0]["command"] == "cmd-a2"
+        assert by_source["group-b"]["hooks"][0]["command"] == "cmd-b"
+
+    def test_remove_one_group_leaves_other(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        target.deploy_hook("group-a", _hook_group("group-a", "PostToolUse", "cmd-a"))
+        target.deploy_hook("group-b", _hook_group("group-b", "PostToolUse", "cmd-b"))
+
+        target.remove_hook("group-a")
+
+        settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+        post = settings["hooks"]["PostToolUse"]
+        assert {e["_source"] for e in post} == {"group-b"}
+
+    def test_identical_contents_keep_one_entry_per_group(self, tmp_path: Path):
+        """Two groups deploying byte-identical hook content each keep their
+        own tagged entry. De-duplication must not steal another group's
+        entry: if it did, removing the second group would delete a hook the
+        first group's manifest still claims."""
+        target = _make_target(tmp_path)
+        same = "shared-command --hook-input stdin"
+        target.deploy_hook("group-a", _hook_group("group-a", "PostToolUse", same))
+        target.deploy_hook("group-b", _hook_group("group-b", "PostToolUse", same))
+
+        settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+        post = settings["hooks"]["PostToolUse"]
+        assert {e["_source"] for e in post} == {"group-a", "group-b"}
+        assert len(post) == 2
+
+        # Removing group-b leaves group-a's identical hook installed.
+        target.remove_hook("group-b")
+        settings = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+        post = settings["hooks"]["PostToolUse"]
+        assert [e["_source"] for e in post] == ["group-a"]
+
+    def test_redeploy_still_dedupes_own_and_untagged_entries(self, tmp_path: Path):
+        """Within a group, redeploying replaces both its own tagged entries
+        and matching untagged (hand-installed) duplicates."""
+        target = _make_target(tmp_path)
+        settings_path = tmp_path / ".claude" / "settings.json"
+        manual = {
+            "hooks": {
+                "PostToolUse": [
+                    {
+                        "matcher": "Write|Edit",
+                        "hooks": [{"command": "cmd-a", "type": "command"}],
+                    }
+                ]
+            }
+        }
+        settings_path.write_text(json.dumps(manual))
+
+        target.deploy_hook("group-a", _hook_group("group-a", "PostToolUse", "cmd-a"))
+
+        settings = json.loads(settings_path.read_text())
+        post = settings["hooks"]["PostToolUse"]
+        assert len(post) == 1
+        assert post[0]["_source"] == "group-a"
+
+
+class TestDeployHookMalformedSettings:
+    """deploy_hook must tolerate hand-edited settings.json shapes (B25)."""
+
+    def test_hooks_key_not_a_dict_is_replaced(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        settings_path = tmp_path / ".claude" / "settings.json"
+        settings_path.write_text(json.dumps({"hooks": "not-a-dict"}))
+
+        target.deploy_hook("git-ai", _GIT_AI_CONFIG)
+
+        settings = json.loads(settings_path.read_text())
+        assert isinstance(settings["hooks"], dict)
+        assert settings["hooks"]["PostToolUse"][0]["_source"] == "git-ai"
+
+    def test_event_value_not_a_list_is_replaced(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        settings_path = tmp_path / ".claude" / "settings.json"
+        settings_path.write_text(json.dumps({"hooks": {"PostToolUse": "junk"}}))
+
+        target.deploy_hook("git-ai", _GIT_AI_CONFIG)
+
+        settings = json.loads(settings_path.read_text())
+        post = settings["hooks"]["PostToolUse"]
+        assert isinstance(post, list)
+        assert post[0]["_source"] == "git-ai"
+
+    def test_non_dict_entries_are_preserved(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        settings_path = tmp_path / ".claude" / "settings.json"
+        settings_path.write_text(
+            json.dumps({"hooks": {"PostToolUse": ["stray-string"]}})
+        )
+
+        target.deploy_hook("git-ai", _GIT_AI_CONFIG)
+
+        settings = json.loads(settings_path.read_text())
+        post = settings["hooks"]["PostToolUse"]
+        assert "stray-string" in post
+        assert any(isinstance(e, dict) and e.get("_source") == "git-ai" for e in post)
+
+    def test_stale_non_list_event_survives_strip_pass(self, tmp_path: Path):
+        # A non-list event value not present in the new config is left alone.
+        target = _make_target(tmp_path)
+        settings_path = tmp_path / ".claude" / "settings.json"
+        settings_path.write_text(json.dumps({"hooks": {"Stop": "junk"}}))
+
+        target.deploy_hook("git-ai", _GIT_AI_CONFIG)
+
+        settings = json.loads(settings_path.read_text())
+        assert settings["hooks"]["Stop"] == "junk"
+        assert "PostToolUse" in settings["hooks"]

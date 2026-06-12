@@ -30,12 +30,10 @@ from jinja2 import (
     Environment,
     FileSystemLoader,
     StrictUndefined,
+    TemplateError,
     TemplateSyntaxError,
     Undefined,
 )
-
-# Variables always supplied to Jinja templates by parse_poet.
-BUILTIN_VARS = ("current_time",)
 
 _VALID_ROLES = frozenset({"system", "user", "assistant"})
 
@@ -67,8 +65,10 @@ def extract_comment_frontmatter(content: bytes) -> dict:
 
     Reads contiguous comment/blank lines from the very top of the file.
     Lines starting with ``#`` are treated as ``key: value`` pairs (the value
-    is YAML-decoded so list/scalar/mapping forms all work). The first line
-    that is neither a comment nor blank stops the scan.
+    is YAML-decoded so list and scalar forms both work; an inline value that
+    YAML-parses to a mapping — e.g. ``description: Review code: thoroughly``
+    — is kept as the raw string instead). The first line that is neither a
+    comment nor blank stops the scan.
 
     Returns an empty dict when no comment frontmatter is present.
     """
@@ -92,6 +92,13 @@ def extract_comment_frontmatter(content: bytes) -> dict:
             value = yaml.safe_load(raw_value.strip()) if raw_value.strip() else None
         except yaml.YAMLError:
             value = raw_value.strip()
+        else:
+            if isinstance(value, dict):
+                # A second ``: `` in an inline scalar makes YAML read it as a
+                # nested mapping; comment-frontmatter values are scalars or
+                # lists, so keep the raw string rather than silently dropping
+                # the value downstream (render_for_command requires a str).
+                value = raw_value.strip()
         metadata[key] = value
     return metadata
 
@@ -112,6 +119,13 @@ def _make_undefined_class(missing: List[str]) -> type[Undefined]:
       so the user sees that the conditional block silently disappeared.
     * ``{% for x in foo %}...{% endfor %}`` -- iterates as empty AND records
       a warning so the user sees the loop body was skipped.
+    * comparisons, ``in``, ``| length``, ``| int``/``| float`` -- evaluate
+      neutrally (False / 0) AND record a warning.
+    * calls, subscripts, and arithmetic -- degrade to an undefined value so
+      the eventual use (printing, boolean test) records the placeholder.
+
+    Anything not covered here still raises UndefinedError, which
+    :func:`_render_template` wraps as :class:`PoetError`.
     """
 
     class CapturingUndefined(StrictUndefined):
@@ -147,6 +161,65 @@ def _make_undefined_class(missing: List[str]) -> type[Undefined]:
             self._record(suffix=" (used in conditional, treated as false)")
             return False
 
+        def __eq__(self, other: object) -> bool:  # type: ignore[override]
+            self._record(suffix=" (compared, treated as not equal)")
+            return False
+
+        def __ne__(self, other: object) -> bool:  # type: ignore[override]
+            self._record(suffix=" (compared, treated as not equal)")
+            return True
+
+        # Defining __eq__ would otherwise set __hash__ to None; keep the
+        # base Undefined hash so the value stays hashable.
+        __hash__ = Undefined.__hash__  # type: ignore[assignment]
+
+        def _degrade_comparison(self, other: object) -> bool:
+            self._record(suffix=" (compared, treated as false)")
+            return False
+
+        __lt__ = __le__ = __gt__ = __ge__ = _degrade_comparison  # type: ignore[assignment]
+
+        def __len__(self) -> int:  # type: ignore[override]
+            self._record(suffix=" (length taken, treated as 0)")
+            return 0
+
+        def __contains__(self, item: object) -> bool:  # type: ignore[override]
+            self._record(suffix=" (membership test, treated as empty)")
+            return False
+
+        def __call__(  # type: ignore[override]
+            self, *args: object, **kwargs: object
+        ) -> "CapturingUndefined":
+            # Calling an undefined degrades to the undefined itself so the
+            # eventual use of the result records the placeholder.
+            return self
+
+        def __getitem__(self, key: object) -> "CapturingUndefined":  # type: ignore[override]
+            # Subscripts chain like attribute access, so ``{{ foo['bar'] }}``
+            # degrades to the placeholder ``{{ foo['bar'] }}``.
+            base_name = self._undefined_name or "<unknown>"
+            return type(self)(name=f"{base_name}[{key!r}]")
+
+        def __int__(self) -> int:  # type: ignore[override]
+            self._record(suffix=" (coerced to int, treated as 0)")
+            return 0
+
+        def __float__(self) -> float:  # type: ignore[override]
+            self._record(suffix=" (coerced to float, treated as 0.0)")
+            return 0.0
+
+        def _degrade_arithmetic(
+            self, *args: object, **kwargs: object
+        ) -> "CapturingUndefined":
+            # Arithmetic degrades to the undefined itself; the eventual use
+            # of the result records the placeholder.
+            return self
+
+        __add__ = __radd__ = __sub__ = __rsub__ = _degrade_arithmetic  # type: ignore[assignment]
+        __mul__ = __rmul__ = __truediv__ = __rtruediv__ = _degrade_arithmetic  # type: ignore[assignment]
+        __floordiv__ = __rfloordiv__ = __mod__ = __rmod__ = _degrade_arithmetic  # type: ignore[assignment]
+        __pos__ = __neg__ = __pow__ = __rpow__ = _degrade_arithmetic  # type: ignore[assignment]
+
     return CapturingUndefined
 
 
@@ -170,7 +243,13 @@ def _render_template(
         template = env.from_string(body)
     except TemplateSyntaxError as exc:
         raise PoetError(f"Jinja syntax error: {exc}") from exc
-    return template.render(**vars)
+    try:
+        return template.render(**vars)
+    except TemplateError as exc:
+        # Render-time failures: TemplateNotFound from {% include %}, syntax
+        # errors inside included templates, and any UndefinedError from an
+        # operation CapturingUndefined does not degrade.
+        raise PoetError(f"Jinja render error: {exc}") from exc
 
 
 def _split_comment_frontmatter(text: str) -> tuple[str, str]:
@@ -201,7 +280,11 @@ def parse_poet(
     variables degrade to a literal ``{{ name }}`` placeholder and are
     recorded as warnings rather than raising.
     """
-    text = content.decode("utf-8")
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        where = f" in {source_path}" if source_path is not None else ""
+        raise PoetError(f"File is not valid UTF-8{where}: {exc}") from exc
     comment_block, body = _split_comment_frontmatter(text)
     frontmatter = extract_comment_frontmatter(comment_block.encode("utf-8"))
 
@@ -222,7 +305,18 @@ def parse_poet(
     try:
         data = yaml.safe_load(rendered)
     except yaml.YAMLError as exc:
-        raise PoetError(f"Invalid YAML in poet body: {exc}") from exc
+        hint = ""
+        if missing:
+            # An undefined variable rendered as a literal "{{ name }}"
+            # placeholder is frequently what broke the YAML (in unquoted
+            # scalar position it parses as a flow mapping); name the
+            # variables so the error is actionable.
+            hint = (
+                "; hint: undefined Jinja variables were rendered as literal"
+                f" placeholders and may have produced invalid YAML:"
+                f" {', '.join(missing)}"
+            )
+        raise PoetError(f"Invalid YAML in poet body: {exc}{hint}") from exc
 
     if data is None:
         turns: List[PoetTurn] = []
@@ -241,7 +335,10 @@ def parse_plain(content: bytes) -> PoetDocument:
     No Jinja rendering is applied. The whole file becomes one
     ``role: system`` turn.
     """
-    text = content.decode("utf-8").rstrip()
+    try:
+        text = content.decode("utf-8").rstrip()
+    except UnicodeDecodeError as exc:
+        raise PoetError(f"File is not valid UTF-8: {exc}") from exc
     turns = [PoetTurn(role="system", content=text)] if text else []
     return PoetDocument(turns=turns)
 

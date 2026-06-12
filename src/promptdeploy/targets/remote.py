@@ -134,10 +134,7 @@ class RemoteTarget(Target):
         return self._inner.deployed_artifact_path(item_type, name)
 
     def consume_warnings(self) -> list[tuple[str, list[str]]]:
-        consume = getattr(self._inner, "consume_warnings", None)
-        if consume is None:
-            return []
-        return consume()
+        return self._inner.consume_warnings()
 
     def item_exists(self, item_type: str, name: str) -> bool:
         return self._inner.item_exists(item_type, name)

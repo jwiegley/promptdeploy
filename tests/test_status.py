@@ -254,6 +254,203 @@ class TestGetStatusSkills:
         assert entries[0].state == "new"
 
 
+class TestStatusMatchesDeploy:
+    """Status must use the same selection + hashing rules as deploy (B30)."""
+
+    def test_droid_target_skipped_items_not_reported(self, tmp_path: Path) -> None:
+        """Items a droid target would no-op must not appear as phantom 'new'."""
+        from promptdeploy.deploy import deploy
+
+        src = tmp_path / "src"
+        (src / "agents").mkdir(parents=True)
+        (src / "agents" / "helper.md").write_bytes(b"---\nname: helper\n---\nAgent.\n")
+        # Plain command (no droid_deploy: skill) -- droid skips it.
+        (src / "commands").mkdir()
+        (src / "commands" / "fix.md").write_bytes(b"---\nname: fix\n---\nFix.\n")
+        # Hooks and settings are claude-only -- droid skips both.
+        (src / "hooks").mkdir()
+        (src / "hooks" / "my-hook.yaml").write_bytes(
+            b"name: my-hook\nhooks:\n  Stop:\n    - matcher: ''\n      hooks:\n"
+            b"        - command: 'echo'\n          type: command\n"
+        )
+        (src / "settings.yaml").write_text("base:\n  effortLevel: low\n")
+
+        target_dir = tmp_path / "droid"
+        target_dir.mkdir()
+        tc = TargetConfig(id="droid-t", type="droid", path=target_dir)
+        config = Config(source_root=src, targets={tc.id: tc}, groups={})
+
+        deploy(config)
+        # A follow-up dry-run deploy reports nothing pending...
+        followup = deploy(config, dry_run=True)
+        assert all(a.action == "skip" for a in followup)
+        # ...and status must agree: only the agent is tracked, all current.
+        entries = get_status(config)
+        assert {(e.name, e.state) for e in entries} == {("helper", "current")}
+
+    def test_gptel_target_only_reports_prompts(self, tmp_path: Path) -> None:
+        """gptel skips everything except prompts; status must mirror that."""
+        from promptdeploy.deploy import deploy
+
+        src = tmp_path / "src"
+        (src / "agents").mkdir(parents=True)
+        (src / "agents" / "helper.md").write_bytes(b"---\nname: helper\n---\nAgent.\n")
+        (src / "prompts").mkdir()
+        (src / "prompts" / "p.txt").write_text("hello")
+
+        target_dir = tmp_path / "gptel"
+        target_dir.mkdir()
+        tc = TargetConfig(id="gptel-emacs", type="gptel", path=target_dir)
+        config = Config(source_root=src, targets={tc.id: tc}, groups={})
+
+        deploy(config)
+        followup = deploy(config, dry_run=True)
+        assert all(a.action == "skip" for a in followup)
+        entries = get_status(config)
+        assert {(e.name, e.state) for e in entries} == {("p", "current")}
+
+    def test_filetagged_item_not_reported_on_excluded_target(
+        self, tmp_path: Path
+    ) -> None:
+        """'heavy -- positron.md' must not appear as 'new' on non-positron targets."""
+        src = tmp_path / "src"
+        (src / "commands").mkdir(parents=True)
+        (src / "commands" / "heavy -- positron.md").write_bytes(b"Heavy body.\n")
+
+        t_personal = tmp_path / "claude-personal"
+        t_positron = tmp_path / "claude-positron"
+        t_personal.mkdir()
+        t_positron.mkdir()
+        targets = {
+            "claude-personal": TargetConfig(
+                id="claude-personal",
+                type="claude",
+                path=t_personal,
+                labels=["claude", "personal"],
+            ),
+            "claude-positron": TargetConfig(
+                id="claude-positron",
+                type="claude",
+                path=t_positron,
+                labels=["claude", "positron"],
+            ),
+        }
+        groups = {
+            "claude": ["claude-personal", "claude-positron"],
+            "personal": ["claude-personal"],
+            "positron": ["claude-positron"],
+        }
+        config = Config(source_root=src, targets=targets, groups=groups)
+
+        entries = get_status(config)
+        assert {(e.target_id, e.name, e.state) for e in entries} == {
+            ("claude-positron", "heavy", "new")
+        }
+
+    def test_current_after_deploy_with_default_model(self, tmp_path: Path) -> None:
+        """With a configured default_model, status agrees with a clean deploy.
+
+        The injected model is part of the deploy-side content fingerprint;
+        status must fold it into its hashes the same way or every agent and
+        skill shows as phantom 'changed'.
+        """
+        from promptdeploy.deploy import deploy
+
+        src = tmp_path / "src"
+        (src / "agents").mkdir(parents=True)
+        (src / "agents" / "helper.md").write_bytes(b"---\nname: helper\n---\nAgent.\n")
+        skill_dir = src / "skills" / "my-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_bytes(
+            b"---\nname: my-skill\ndescription: test\n---\nBody"
+        )
+        (src / "models.yaml").write_text(
+            "providers:\n"
+            "  anthropic:\n"
+            "    display_name: Anthropic\n"
+            "    claude:\n"
+            "      default_model: claude-opus-4-7\n"
+            "    models:\n"
+            "      claude-opus-4-7:\n"
+            "        display_name: Claude Opus 4.7\n"
+        )
+
+        target_dir = tmp_path / "claude"
+        target_dir.mkdir()
+        tc = TargetConfig(id="claude-x", type="claude", path=target_dir)
+        config = Config(source_root=src, targets={tc.id: tc}, groups={})
+
+        deploy(config)
+        entries = get_status(config)
+        assert entries, "expected at least the agent and skill"
+        assert {(e.name, e.state) for e in entries} == {
+            ("helper", "current"),
+            ("my-skill", "current"),
+        }
+
+    def test_settings_current_after_deploy(self, tmp_path: Path) -> None:
+        """settings must show 'current' after a clean deploy, not phantom 'changed'.
+
+        deploy() stores a hash of the rendered settings JSON in the manifest;
+        status must hash the same rendered output (i.e. pass config through to
+        compute_item_hash) or the hashes never match and settings shows
+        'changed' forever even though a follow-up deploy skips it.
+        """
+        from promptdeploy.deploy import deploy
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "settings.yaml").write_text("base:\n  effortLevel: low\n")
+
+        target_dir = tmp_path / "claude"
+        target_dir.mkdir()
+        tc = TargetConfig(id="claude-x", type="claude", path=target_dir)
+        config = Config(source_root=src, targets={tc.id: tc}, groups={})
+
+        deploy(config)
+        followup = deploy(config, dry_run=True)
+        assert all(a.action == "skip" for a in followup)
+        entries = get_status(config)
+        assert {(e.item_type, e.name, e.state) for e in entries} == {
+            ("settings", "settings", "current")
+        }
+
+    def test_models_current_after_deploy_on_droid(self, tmp_path: Path) -> None:
+        """models must show 'current' after a clean deploy on a droid target.
+
+        deploy() hashes the filtered, env-expanded models config; status must
+        do the same or models shows phantom 'changed' on droid/opencode
+        targets after every deploy.
+        """
+        from promptdeploy.deploy import deploy
+
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "models.yaml").write_text(
+            "providers:\n"
+            "  acme:\n"
+            "    display_name: Acme\n"
+            "    base_url: https://acme.com\n"
+            "    api_key: key\n"
+            "    models:\n"
+            "      m1:\n"
+            "        display_name: Model 1\n"
+        )
+
+        target_dir = tmp_path / "droid"
+        target_dir.mkdir()
+        tc = TargetConfig(id="droid-t", type="droid", path=target_dir)
+        config = Config(source_root=src, targets={tc.id: tc}, groups={})
+
+        deploy(config)
+        followup = deploy(config, dry_run=True)
+        assert all(a.action == "skip" for a in followup)
+        entries = get_status(config)
+        assert {(e.item_type, e.name, e.state) for e in entries} == {
+            ("models", "models", "current")
+        }
+
+
 def test_status_handles_settings_and_prompts(tmp_path):
     from promptdeploy.config import Config, TargetConfig
     from promptdeploy.status import get_status

@@ -25,10 +25,6 @@ def create_target(target_config, *, global_model=None):
     when both are set. ``None`` disables injection entirely.
     """
     from ..config import current_host
-    from .claude import ClaudeTarget
-    from .droid import DroidTarget
-    from .gptel import GptelTarget
-    from .opencode import OpenCodeTarget
 
     is_remote = target_config.host is not None and target_config.host != current_host()
     if is_remote:

@@ -65,21 +65,32 @@ class GptelTarget(Target):
         # loop reads via deployed_artifact_path() and persists into the
         # manifest so remove_prompt can target exactly that file.
         self._last_deployed: dict[str, Path] = {}
+        # Maps prompt name -> artifact filename derived from the source
+        # extension by the most recent would_deploy_bytes() call.
+        # read_deployed_bytes() prefers this over probing extensions so a
+        # user-authored stem-sibling (e.g. a foo.json next to a deployed
+        # foo.md) cannot shadow the artifact deploy owns.
+        self._expected_artifact: dict[str, str] = {}
         # Warnings collected during the most recent deploy_prompt call.
         # The deploy loop drains these via consume_warnings().
         self._warnings: list[tuple[str, list[str]]] = []
 
-    def deploy_prompt(self, name: str, content: bytes, source_path: Path) -> None:
+    def _artifact_name(self, name: str, source_path: Path) -> str:
+        """Filename this target writes for ``name`` given the source extension."""
         ext = source_path.suffix
         if ext in POET_EXTENSIONS:
+            return f"{name}.json"
+        return f"{name}{ext}"
+
+    def deploy_prompt(self, name: str, content: bytes, source_path: Path) -> None:
+        dest = self._config_path / self._artifact_name(name, source_path)
+        if source_path.suffix in POET_EXTENSIONS:
             doc = parse_poet(content, source_path=source_path)
             if doc.warnings:
                 self._warnings.append((name, list(doc.warnings)))
             rendered = render_for_gptel(doc)
-            dest = self._config_path / f"{name}.json"
         else:
             rendered = content
-            dest = self._config_path / f"{name}{ext}"
         dest.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=dest.parent, suffix=".tmp")
         try:
@@ -185,6 +196,10 @@ class GptelTarget(Target):
     ) -> Optional[bytes]:
         if item_type != "prompt" or source_path is None:
             return None
+        # Remember which artifact the source extension maps to so that a
+        # following read_deployed_bytes() compares against the file deploy
+        # owns rather than a stem-sibling found by extension probing.
+        self._expected_artifact[name] = self._artifact_name(name, source_path)
         if source_path.suffix in POET_EXTENSIONS:
             doc = parse_poet(content, source_path=source_path)
             return render_for_gptel(doc)
@@ -193,8 +208,21 @@ class GptelTarget(Target):
     def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
         if item_type != "prompt":
             return None
-        # Find whichever extension is actually present; mirror the search
-        # order used by ``item_exists`` and ``remove_prompt``.
+        # Prefer the artifact recorded by the most recent
+        # would_deploy_bytes() call -- the file deploy owns for this
+        # prompt. Probing extensions here would let an unrelated
+        # user-authored stem-sibling (e.g. foo.json next to a deployed
+        # foo.md) masquerade as the deployed artifact, causing perpetual
+        # 'update' churn and defeating silent adoption.
+        expected = self._expected_artifact.get(name)
+        if expected is not None:
+            try:
+                return (self._config_path / expected).read_bytes()
+            except FileNotFoundError:
+                return None
+        # Fallback for callers that did not establish an expected artifact:
+        # find whichever extension is actually present, mirroring the
+        # search order used by ``item_exists``.
         for ext in (".json", ".txt", ".md", ".org"):
             path = self._config_path / f"{name}{ext}"
             try:

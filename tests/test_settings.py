@@ -1,9 +1,12 @@
 """Tests for the pure settings rendering core."""
 
+import pytest
+
 from promptdeploy.config import Config, TargetConfig
 from promptdeploy.settings import (
     apply_merge_patch,
     generate_merge_patch,
+    render_pre_exact,
     render_settings,
     strip_keys,
     strip_nulls,
@@ -31,17 +34,42 @@ class TestApplyMergePatch:
         assert apply_merge_patch(base, {"env": {"X": None}}) == {"env": {"Y": "2"}}
 
     def test_dict_patch_over_nondict_target_replaces(self):
-        # RFC 7386: a dict patch over a non-dict target treats target as {}.
+        # RFC 7396: a dict patch over a non-dict target treats target as {}.
         assert apply_merge_patch({"a": 5}, {"a": {"b": 1}}) == {"a": {"b": 1}}
 
     def test_scalar_patch_replaces_whole_value(self):
-        # RFC 7386: when the patch itself is not an object, it replaces base.
+        # RFC 7396: when the patch itself is not an object, it replaces base.
         assert apply_merge_patch({"a": 1}, "replaced") == "replaced"
 
     def test_inputs_not_mutated(self):
         base = {"env": {"X": "1"}}
         apply_merge_patch(base, {"env": {"X": "2"}})
         assert base == {"env": {"X": "1"}}
+
+
+# The complete example test-case table from RFC 7396, Appendix A.
+RFC7396_APPENDIX_A = [
+    ({"a": "b"}, {"a": "c"}, {"a": "c"}),
+    ({"a": "b"}, {"b": "c"}, {"a": "b", "b": "c"}),
+    ({"a": "b"}, {"a": None}, {}),
+    ({"a": "b", "b": "c"}, {"a": None}, {"b": "c"}),
+    ({"a": ["b"]}, {"a": "c"}, {"a": "c"}),
+    ({"a": "c"}, {"a": ["b"]}, {"a": ["b"]}),
+    ({"a": {"b": "c"}}, {"a": {"b": "d", "c": None}}, {"a": {"b": "d"}}),
+    ({"a": [{"b": "c"}]}, {"a": [1]}, {"a": [1]}),
+    (["a", "b"], ["c", "d"], ["c", "d"]),
+    ({"a": "b"}, ["c"], ["c"]),
+    ({"a": "foo"}, None, None),
+    ({"a": "foo"}, "bar", "bar"),
+    ({"e": None}, {"a": 1}, {"e": None, "a": 1}),
+    ([1, 2], {"a": "b", "c": None}, {"a": "b"}),
+    ({}, {"a": {"bb": {"ccc": None}}}, {"a": {"bb": {}}}),
+]
+
+
+@pytest.mark.parametrize("original,patch,expected", RFC7396_APPENDIX_A)
+def test_rfc7396_appendix_a_vectors(original, patch, expected):
+    assert apply_merge_patch(original, patch) == expected
 
 
 class TestGenerateMergePatch:
@@ -73,6 +101,17 @@ class TestGenerateMergePatch:
         }  # d removed within b, e removed, f added
         patch = generate_merge_patch(base, target)
         assert apply_merge_patch(base, patch) == target
+
+    def test_explicit_null_in_target_is_unexpressible(self):
+        # RFC 7396 cannot distinguish "set to null" from "delete": a None in
+        # `target` becomes a deletion in the patch, so the round-trip yields
+        # the null-stripped target rather than the target itself. Callers
+        # must strip nulls first (render_settings and read_live_settings do).
+        base = {"a": 1}
+        target = {"a": None, "b": 2}
+        patch = generate_merge_patch(base, target)
+        assert patch == {"a": None, "b": 2}
+        assert apply_merge_patch(base, patch) == {"b": 2}  # not == target
 
 
 class TestStripHelpers:
@@ -188,3 +227,27 @@ class TestRenderSettings:
     def test_none_override_value_is_ignored(self):
         doc = {"base": {"a": 1}, "overrides": {"t": None}}
         assert render_settings(doc, "t", _cfg("t")) == {"a": 1}
+
+    def test_none_group_override_value_is_ignored(self):
+        doc = {"base": {"a": 1}, "overrides": {"g": None}}
+        cfg = _cfg("t", groups={"g": ["t"]})
+        assert render_settings(doc, "t", cfg) == {"a": 1}
+
+
+class TestRenderPreExact:
+    def test_applies_groups_but_not_exact_override(self):
+        doc = {
+            "base": {"x": "base"},
+            "overrides": {
+                "g": {"x": "group"},
+                "t": {"x": "exact"},
+            },
+        }
+        cfg = _cfg("t", groups={"g": ["t"]})
+        # The exact `t` override is reconcile's output, not its input.
+        assert render_pre_exact(doc, "t", cfg) == {"x": "group"}
+        assert render_settings(doc, "t", cfg) == {"x": "exact"}
+
+    def test_strips_managed_keys_and_nulls(self):
+        doc = {"base": {"a": None, "mcpServers": {"m": 1}, "b": 2}}
+        assert render_pre_exact(doc, "t", _cfg("t")) == {"b": 2}

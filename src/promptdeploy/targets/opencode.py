@@ -51,23 +51,39 @@ _OPENCODE_TOOL_NAMES = frozenset(
 )
 
 
-def _convert_claude_tools(tools_value: object) -> dict[str, bool]:
+# Claude Code names MCP tools ``mcp__<server>__<tool>``; OpenCode flattens
+# the same tool to ``<server>_<tool>``.
+_MCP_TOOL_RE = re.compile(r"^mcp__([^_].*?)__(.+)$")
+
+
+def _convert_claude_tools(
+    tools_value: object, warnings: Optional[list[str]] = None
+) -> dict[str, bool]:
     """Convert a Claude Code ``tools`` value to an OpenCode tools object.
 
     Accepts either a comma-separated string or a YAML list of strings.
     Claude Code format examples::
 
         "Read, Grep, Glob, Bash(grep:*), Bash(wc:*)"
-        ["mcp__perplexity__perplexity_search_web", "mcp__perplexity__perplexity_fetch_web"]
+        ["mcp__perplexity__perplexity_search_web", "WebFetch"]
 
     OpenCode expects a mapping of tool names to booleans::
 
-        {"read": true, "grep": true, "glob": true, "bash": true}
+        {"read": true, "bash": true, "edit": false, ...}
 
-    Tool names are lowercased and de-duplicated.  ``Bash(...)`` variants
-    collapse to a single ``bash: true`` entry.  Unknown/MCP tool names are
-    silently dropped since they cannot be represented as OpenCode built-in
-    tool booleans.  Returns an empty dict for non-string/non-list inputs.
+    A Claude ``tools`` field is an *allowlist*: only the listed tools are
+    available.  OpenCode instead enables every tool unless it is mapped to
+    ``false``, so each listed tool is emitted as ``true`` and every OpenCode
+    built-in NOT listed is emitted as ``false`` -- otherwise a restricted
+    agent would silently gain the full toolset on OpenCode.
+
+    Built-in tool names are lowercased and de-duplicated; ``Bash(...)``
+    variants collapse to a single ``bash: true`` entry (the argument
+    restriction cannot be expressed, which is recorded in ``warnings``).
+    MCP tools ``mcp__<server>__<tool>`` translate to OpenCode's flattened
+    ``<server>_<tool>`` name.  Anything else cannot be translated: it is
+    dropped with a warning.  Returns an empty dict for non-string/non-list
+    inputs and for inputs with no tokens at all.
     """
     if isinstance(tools_value, str):
         tokens: list[str] = re.split(r"\s*,\s*", tools_value.strip())
@@ -75,27 +91,52 @@ def _convert_claude_tools(tools_value: object) -> dict[str, bool]:
         tokens = [str(t).strip() for t in tools_value]
     else:
         return {}
+    tokens = [t for t in tokens if t]
+    if not tokens:
+        return {}
 
     result: dict[str, bool] = {}
     for token in tokens:
-        if not token:
+        mcp_match = _MCP_TOOL_RE.match(token)
+        if mcp_match is not None:
+            server, tool = mcp_match.groups()
+            result[f"{server}_{tool}"] = True
             continue
         # Strip Bash(...) qualifiers -> "bash"
         base = re.sub(r"\(.*\)$", "", token).strip().lower()
+        if base != token.lower() and warnings is not None:
+            warnings.append(
+                f"tools entry '{token}': argument restriction cannot be "
+                f"expressed on OpenCode; widened to '{base}'"
+            )
         if base in _OPENCODE_TOOL_NAMES:
             result[base] = True
+        elif warnings is not None:
+            warnings.append(
+                f"tools entry '{token}' has no OpenCode equivalent; "
+                f"dropped from the allowlist"
+            )
+    # Preserve allowlist semantics: disable every built-in that was not
+    # explicitly listed (sorted for deterministic output).
+    for builtin in sorted(_OPENCODE_TOOL_NAMES):
+        result.setdefault(builtin, False)
     return result
 
 
-def _transform_for_opencode(content: bytes, target_id: str) -> bytes:
+def _transform_for_opencode(
+    content: bytes, warnings: Optional[list[str]] = None
+) -> bytes:
     """Transform frontmatter for OpenCode targets.
 
     In addition to stripping deployment fields (``only``/``except``), this:
 
-    * Converts a string- or list-valued ``tools`` field (Claude Code format)
-      to an OpenCode-compatible object with boolean values.  When the
-      converted mapping is empty (e.g. only MCP tools were listed), the
-      field is removed so OpenCode's schema validator does not reject it.
+    * Converts a string- or list-valued ``tools`` field (a Claude Code
+      allowlist) to an OpenCode-compatible object with boolean values --
+      listed tools become ``true``, unlisted built-ins ``false``, and MCP
+      tools are translated to OpenCode's ``<server>_<tool>`` names.  When
+      nothing converts (e.g. an empty list), the field is removed so
+      OpenCode's schema validator does not reject it.  Restrictions that
+      cannot be translated are reported via ``warnings``.
     * Removes ``model`` (Claude Code uses short aliases like ``sonnet``
       which are not valid OpenCode model identifiers).
     """
@@ -105,10 +146,10 @@ def _transform_for_opencode(content: bytes, target_id: str) -> bytes:
 
     cleaned = strip_deployment_fields(metadata)
 
-    # Convert tools: string|list -> tools: {name: true, ...}
+    # Convert tools: string|list -> tools: {name: bool, ...}
     tools_val = cleaned.get("tools")
     if isinstance(tools_val, (str, list)):
-        converted = _convert_claude_tools(tools_val)
+        converted = _convert_claude_tools(tools_val, warnings)
         if converted:
             cleaned["tools"] = converted
         else:
@@ -170,12 +211,12 @@ class OpenCodeTarget(Target):
     def deploy_agent(self, name: str, content: bytes) -> None:
         dest = self._config_path / "agents" / f"{name}.md"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(_transform_for_opencode(content, self._id))
+        dest.write_bytes(self._transform_collecting_warnings(name, content))
 
     def deploy_command(self, name: str, content: bytes) -> None:
         dest = self._config_path / "commands" / f"{name}.md"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(_transform_for_opencode(content, self._id))
+        dest.write_bytes(self._transform_collecting_warnings(name, content))
 
     def deploy_prompt(self, name: str, content: bytes, source_path: Path) -> None:
         from ..poet import POET_EXTENSIONS, parse_plain, parse_poet, render_for_command
@@ -196,6 +237,14 @@ class OpenCodeTarget(Target):
         self._warnings = []
         return warnings
 
+    def _transform_collecting_warnings(self, name: str, content: bytes) -> bytes:
+        """Run the OpenCode transform, queueing any warnings under ``name``."""
+        warnings: list[str] = []
+        transformed = _transform_for_opencode(content, warnings)
+        if warnings:
+            self._warnings.append((name, warnings))
+        return transformed
+
     def deploy_skill(self, name: str, source_dir: Path) -> None:
         dest = self._config_path / "skills" / name
         if dest.is_symlink():
@@ -206,7 +255,7 @@ class OpenCodeTarget(Target):
         skill_md = dest / "SKILL.md"
         if skill_md.exists():
             skill_md.write_bytes(
-                _transform_for_opencode(skill_md.read_bytes(), self._id)
+                self._transform_collecting_warnings(name, skill_md.read_bytes())
             )
 
     def deploy_hook(self, name: str, config: dict) -> None:
@@ -385,7 +434,7 @@ class OpenCodeTarget(Target):
         source_path: Optional[Path] = None,
     ) -> Optional[bytes]:
         if item_type in ("agent", "command"):
-            return _transform_for_opencode(content, self._id)
+            return _transform_for_opencode(content)
         if item_type == "prompt":
             from ..poet import (
                 POET_EXTENSIONS,

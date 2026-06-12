@@ -14,11 +14,30 @@ from promptdeploy.ssh import (
     _SSH_OPTS,
     _RSYNC_SSH,
     _check_tools,
+    _quote_remote_path,
     _rsync_filter_args,
     ssh_exists,
     ssh_pull,
     ssh_push,
 )
+
+
+class TestQuoteRemotePath:
+    def test_plain_path_unchanged(self) -> None:
+        assert _quote_remote_path(Path("/remote/path")) == "/remote/path"
+
+    def test_path_with_space_quoted(self) -> None:
+        assert _quote_remote_path(Path("/remote/my dir")) == "'/remote/my dir'"
+
+    def test_tilde_slash_kept_outside_quotes(self) -> None:
+        # The leading ~/ must stay unquoted so the remote shell expands it.
+        assert _quote_remote_path(Path("~/my dir")) == "~/'my dir'"
+
+    def test_bare_tilde_unquoted(self) -> None:
+        assert _quote_remote_path(Path("~")) == "~"
+
+    def test_tilde_path_without_specials(self) -> None:
+        assert _quote_remote_path(Path("~/plain")) == "~/plain"
 
 
 class TestCheckTools:
@@ -97,6 +116,19 @@ class TestSSHExists:
         with patch("promptdeploy.ssh.subprocess.run", return_value=result):
             with pytest.raises(SSHError, match="SSH connection to .* failed"):
                 ssh_exists("user@host", Path("/remote/path"))
+
+    def test_quotes_path_with_spaces(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Remote paths are shell-quoted in the ssh command line (B32)."""
+        monkeypatch.setattr("shutil.which", lambda tool: f"/usr/bin/{tool}")
+        result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(
+            args=[], returncode=0
+        )
+        with patch("promptdeploy.ssh.subprocess.run", return_value=result) as mock_run:
+            assert ssh_exists("user@host", Path("/remote/my dir")) is True
+        mock_run.assert_called_once_with(
+            ["ssh", *_SSH_OPTS, "user@host", "test", "-d", "'/remote/my dir'"],
+            capture_output=True,
+        )
 
 
 class TestSSHPull:
@@ -274,7 +306,6 @@ class TestSSHPush:
         assert mkdir_call == call(
             ["ssh", *_SSH_OPTS, "user@host", "mkdir", "-p", "/remote"],
             capture_output=True,
-            check=False,
         )
         rsync_call = mock_run.call_args_list[1]
         assert rsync_call == call(
@@ -386,3 +417,44 @@ class TestSSHPush:
             mock_run.side_effect = [mkdir_result, rsync_result]
             with pytest.raises(SSHError, match="rsync push.*failed.*permission denied"):
                 ssh_push("user@host", Path("/remote/path"), local)
+
+    def test_raises_on_mkdir_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A failed remote mkdir is surfaced instead of silently ignored (B32)."""
+        monkeypatch.setattr("shutil.which", lambda tool: f"/usr/bin/{tool}")
+        local = tmp_path / "staging"
+        local.mkdir()
+
+        mkdir_result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(
+            args=[], returncode=1, stderr=b"mkdir: permission denied"
+        )
+
+        with patch("promptdeploy.ssh.subprocess.run", return_value=mkdir_result):
+            with pytest.raises(SSHError, match="permission denied"):
+                ssh_push("user@host", Path("/remote/path"), local)
+
+    def test_mkdir_quotes_tilde_parent(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The mkdir path is quoted but a leading ~/ stays unquoted (B32)."""
+        monkeypatch.setattr("shutil.which", lambda tool: f"/usr/bin/{tool}")
+        local = tmp_path / "staging"
+        local.mkdir()
+
+        mkdir_result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(
+            args=[], returncode=0
+        )
+        rsync_result: subprocess.CompletedProcess[str] = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+
+        with patch("promptdeploy.ssh.subprocess.run") as mock_run:
+            mock_run.side_effect = [mkdir_result, rsync_result]
+            ssh_push("user@host", Path("~/my dir/sub"), local)
+
+        mkdir_call = mock_run.call_args_list[0]
+        assert mkdir_call == call(
+            ["ssh", *_SSH_OPTS, "user@host", "mkdir", "-p", "~/'my dir'"],
+            capture_output=True,
+        )

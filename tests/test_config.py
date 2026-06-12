@@ -114,6 +114,86 @@ class TestLoadConfig:
         assert config.targets["claude-personal"].model is None
 
 
+class TestLoadConfigRobustness:
+    def test_source_root_tilde_expanded(self, tmp_path: Path) -> None:
+        """A source_root of ~/... expands to the home directory (B1)."""
+        data = {**SAMPLE_CONFIG, "source_root": "~/prompt-source"}
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        assert config.source_root == (Path.home() / "prompt-source").resolve()
+
+    def test_empty_file_loads_empty_config(self, tmp_path: Path) -> None:
+        """An empty deploy.yaml yields an empty config, not AttributeError (B3)."""
+        config_path = tmp_path / "deploy.yaml"
+        config_path.write_text("")
+        config = load_config(config_path)
+        assert config.targets == {}
+        assert config.source_root == tmp_path.resolve()
+
+    def test_null_sections_load_empty_config(self, tmp_path: Path) -> None:
+        """Present-but-null targets/groups/hosts keys are treated as empty."""
+        config_path = tmp_path / "deploy.yaml"
+        config_path.write_text("source_root: .\ntargets:\ngroups:\nhosts:\n")
+        config = load_config(config_path)
+        assert config.targets == {}
+
+    def test_non_mapping_raises_value_error(self, tmp_path: Path) -> None:
+        """A deploy.yaml whose top level is not a mapping raises a clear error."""
+        config_path = tmp_path / "deploy.yaml"
+        config_path.write_text("- just\n- a\n- list\n")
+        with pytest.raises(ValueError, match="must be a mapping"):
+            load_config(config_path)
+
+
+class TestGroupMemberValidation:
+    def test_unknown_group_member_raises(self, tmp_path: Path) -> None:
+        """A typo'd member in an explicit group fails loudly at load (B4)."""
+        data = {
+            "source_root": ".",
+            "targets": {
+                "t1": {"type": "claude", "path": str(tmp_path / "t1")},
+            },
+            "groups": {"mygroup": ["t1", "t2-typo"]},
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        with pytest.raises(ValueError, match=r"mygroup.*t2-typo"):
+            load_config(config_path)
+
+    def test_empty_explicit_group_allowed(self, tmp_path: Path) -> None:
+        data = {
+            "source_root": ".",
+            "targets": {
+                "t1": {"type": "claude", "path": str(tmp_path / "t1")},
+            },
+            "groups": {"empty-group": []},
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        assert config.groups["empty-group"] == []
+
+    def test_null_group_member_list_allowed(self, tmp_path: Path) -> None:
+        data = {
+            "source_root": ".",
+            "targets": {
+                "t1": {"type": "claude", "path": str(tmp_path / "t1")},
+            },
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        # Append a group whose member list is null.
+        with open(config_path, "a") as f:
+            f.write("groups:\n  nullgroup:\n")
+        config = load_config(config_path)
+        assert config.groups["nullgroup"] == []
+
+
 class TestFindConfigFile:
     def test_finds_in_current_dir(self, config_dir: Path) -> None:
         found = find_config_file(config_dir)
@@ -586,6 +666,11 @@ class TestExpandTargetArg:
     def test_unknown_target_raises(self, config: Config) -> None:
         with pytest.raises(ValueError, match="Unknown target: nonexistent"):
             expand_target_arg(["nonexistent"], config)
+
+    def test_overlapping_selections_deduplicated(self, config: Config) -> None:
+        """A target named both directly and via a group appears once."""
+        result = expand_target_arg(["claude", "claude-personal"], config)
+        assert result == ["claude-personal", "claude-positron"]
 
 
 class TestLoadAnthropicDefaultModel:

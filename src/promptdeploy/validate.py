@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 import yaml
 
@@ -13,9 +13,10 @@ from .config import (
     load_anthropic_default_model,
     load_anthropic_known_models,
 )
+from .filetags import parse_filetags
 from .frontmatter import FrontmatterError, parse_frontmatter
 from .poet import POET_EXTENSIONS, PoetError, parse_poet
-from .source import SourceDiscovery, SourceItem
+from .source import DiscoveryError, SourceDiscovery, SourceItem
 
 
 @dataclass
@@ -25,7 +26,6 @@ class ValidationIssue:
     level: str  # 'error' or 'warning'
     message: str
     file_path: Path
-    line: Optional[int] = None
 
 
 def validate_all(config: Config) -> List[ValidationIssue]:
@@ -35,30 +35,53 @@ def validate_all(config: Config) -> List[ValidationIssue]:
 
     all_items: List[SourceItem] = []
 
-    # Discover each type separately, catching parse errors during discovery
-    for discover_fn, dir_name in [
-        (discovery.discover_agents, "agents"),
-        (discovery.discover_commands, "commands"),
-        (discovery.discover_skills, "skills"),
-        (discovery.discover_mcp_servers, "mcp"),
-        (discovery.discover_models, "models"),
-        (discovery.discover_hooks, "hooks"),
-        (discovery.discover_marketplaces, "marketplaces"),
-        (discovery.discover_prompts, "prompts"),
-    ]:
-        try:
-            for item in discover_fn():
-                all_items.append(item)
-                issues.extend(validate_item(item, config))
-        except (FrontmatterError, yaml.YAMLError) as e:
-            # Discovery itself failed on a file - report as validation error
+    # Markdown-backed types collect per-file frontmatter errors leniently so
+    # one bad file aborts neither the rest of its directory nor
+    # duplicate-name detection.
+    for markdown_discover_fn in (
+        discovery.discover_agents,
+        discovery.discover_commands,
+        discovery.discover_skills,
+    ):
+        discovery_errors: List[DiscoveryError] = []
+        for item in markdown_discover_fn(errors=discovery_errors):
+            all_items.append(item)
+            issues.extend(validate_item(item, config))
+        for err in discovery_errors:
             issues.append(
                 ValidationIssue(
                     level="error",
-                    message=f"Discovery failed in {dir_name}/: {e}",
-                    file_path=config.source_root / dir_name,
+                    message=f"Discovery failed: {err.message}",
+                    file_path=err.path,
                 )
             )
+
+    # YAML-backed types never raise during discovery: parse failures surface
+    # as metadata=None and are reported per item by validate_item.
+    for discover_fn in (
+        discovery.discover_mcp_servers,
+        discovery.discover_models,
+        discovery.discover_hooks,
+        discovery.discover_marketplaces,
+        discovery.discover_prompts,
+    ):
+        for item in discover_fn():
+            all_items.append(item)
+            issues.extend(validate_item(item, config))
+
+    # A committed skill that is a broken symlink silently vanishes from
+    # discovery (and therefore from every target); surface it here.
+    for link in discovery.broken_skill_symlinks():
+        issues.append(
+            ValidationIssue(
+                level="warning",
+                message=(
+                    f"Broken symlink (target {link.readlink()} does not "
+                    f"exist); this skill is silently skipped by discovery"
+                ),
+                file_path=link,
+            )
+        )
 
     # Detect duplicate resolved names within each item type
     seen: dict[tuple[str, str], Path] = {}
@@ -77,6 +100,29 @@ def validate_all(config: Config) -> List[ValidationIssue]:
             )
         else:
             seen[key] = item.path
+
+    # Commands, skills, and prompts all surface in the same slash-command
+    # namespace on claude targets, so a name shared across these types
+    # collides in the live `/` menu even though each per-type check passes.
+    slash_seen: dict[str, tuple[str, Path]] = {}
+    for item in all_items:
+        if item.item_type not in ("command", "skill", "prompt"):
+            continue
+        prev = slash_seen.get(item.name)
+        if prev is None:
+            slash_seen[item.name] = (item.item_type, item.path)
+        elif prev[0] != item.item_type:
+            issues.append(
+                ValidationIssue(
+                    level="warning",
+                    message=(
+                        f"{item.item_type} '{item.name}' shares the "
+                        f"slash-command namespace with the {prev[0]} defined "
+                        f"by {prev[1]}"
+                    ),
+                    file_path=item.path,
+                )
+            )
 
     # Target-level rules: (a) per-target model: only applies to claude targets;
     # (b) warn when the effective model on a claude target is neither in
@@ -260,6 +306,7 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
             "SessionStart",
             "SessionEnd",
             "PreCompact",
+            "PostCompact",
             "UserPromptSubmit",
             "InstructionsLoaded",
             "ConfigChange",
@@ -268,12 +315,26 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
         }
     )
 
-    # Parse metadata
+    # Parse metadata. yaml.safe_load is given raw bytes so a non-UTF-8 file
+    # surfaces as a ReaderError (a YAMLError) instead of an uncaught
+    # UnicodeDecodeError.
     try:
         if item.item_type in ("mcp", "models", "hook", "marketplace"):
-            metadata = yaml.safe_load(item.content.decode("utf-8"))
+            metadata = yaml.safe_load(item.content)
             if not isinstance(metadata, dict):
-                metadata = None
+                # These item types are deployed from their parsed mapping; a
+                # list, bare scalar, or empty file would otherwise validate
+                # clean and deploy junk (e.g. an empty mcpServers entry).
+                return [
+                    ValidationIssue(
+                        level="error",
+                        message=(
+                            f"Top level of a {item.item_type} file must be "
+                            f"a YAML mapping"
+                        ),
+                        file_path=item.path,
+                    )
+                ]
         elif item.item_type == "prompt":
             metadata = item.metadata
         else:
@@ -326,7 +387,41 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                 )
 
     if metadata is None:
+        # A file that opens with '---' but yields no frontmatter (e.g. the
+        # closing delimiter is missing) would deploy its raw '---' block to
+        # every target with only/except silently ignored.
+        if item.item_type in (
+            "agent",
+            "command",
+            "skill",
+        ) and item.content.removeprefix(b"\xef\xbb\xbf").startswith(b"---"):
+            issues.append(
+                ValidationIssue(
+                    level="warning",
+                    message=(
+                        "File starts with '---' but no frontmatter was "
+                        "parsed (missing closing '---'?)"
+                    ),
+                    file_path=item.path,
+                )
+            )
         return issues
+
+    # A non-string name: cannot be used as a manifest/settings key;
+    # discovery falls back to the filename-derived name, so surface the
+    # malformed value here. (Marketplaces have their own stricter check.)
+    if item.item_type != "marketplace":
+        name_value = metadata.get("name")
+        if name_value is not None and not isinstance(name_value, str):
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message=(
+                        f"'name' must be a string (got {type(name_value).__name__})"
+                    ),
+                    file_path=item.path,
+                )
+            )
 
     # Check only/except mutual exclusivity
     only = metadata.get("only")
@@ -378,6 +473,76 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                 ValidationIssue(
                     level="error",
                     message="MCP server missing 'command' or 'url'",
+                    file_path=item.path,
+                )
+            )
+        enabled = metadata.get("enabled")
+        if enabled is not None and not isinstance(enabled, bool):
+            # All targets gate on truthiness, so a truthy non-bool (e.g. the
+            # string "false") would silently deploy a server the author
+            # meant to disable.
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message="MCP 'enabled' must be a boolean",
+                    file_path=item.path,
+                )
+            )
+
+    # Skill-specific validations (documented Agent Skills limits)
+    if item.item_type == "skill":
+        if len(item.name) > 64:
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message=(
+                        f"Skill name '{item.name}' exceeds 64 characters "
+                        f"({len(item.name)})"
+                    ),
+                    file_path=item.path,
+                )
+            )
+        description = metadata.get("description")
+        if not isinstance(description, str) or not description.strip():
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message="Skill 'description' is required",
+                    file_path=item.path,
+                )
+            )
+        elif len(description) > 1024:
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message=(
+                        f"Skill description exceeds 1024 characters "
+                        f"({len(description)})"
+                    ),
+                    file_path=item.path,
+                )
+            )
+        dir_base, _ = parse_filetags(item.path.parent.name)
+        if item.name != dir_base:
+            issues.append(
+                ValidationIssue(
+                    level="warning",
+                    message=(
+                        f"Skill name '{item.name}' does not match its "
+                        f"directory name '{dir_base}'"
+                    ),
+                    file_path=item.path,
+                )
+            )
+        line_count = len(item.content.splitlines())
+        if line_count > 500:
+            issues.append(
+                ValidationIssue(
+                    level="warning",
+                    message=(
+                        f"SKILL.md is {line_count} lines; consider keeping "
+                        f"it under ~500 (move detail into reference files)"
+                    ),
                     file_path=item.path,
                 )
             )
@@ -470,6 +635,15 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                     file_path=item.path,
                 )
             )
+        auto_update = metadata.get("autoUpdate")
+        if auto_update is not None and not isinstance(auto_update, bool):
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message="Marketplace 'autoUpdate' must be a boolean",
+                    file_path=item.path,
+                )
+            )
         source = metadata.get("source")
         if source is not None:
             if not isinstance(source, dict):
@@ -503,7 +677,7 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                     )
                 )
             else:
-                for plugin_name in plugins:
+                for plugin_name, plugin_enabled in plugins.items():
                     if not isinstance(plugin_name, str) or not plugin_name:
                         issues.append(
                             ValidationIssue(
@@ -519,6 +693,19 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                                 level="error",
                                 message=f"Marketplace plugin name "
                                 f"'{plugin_name}' must not contain '@'",
+                                file_path=item.path,
+                            )
+                        )
+                    if not isinstance(plugin_enabled, bool):
+                        # bool("false") is True, so a non-bool value would
+                        # silently invert the author's intent at deploy time.
+                        issues.append(
+                            ValidationIssue(
+                                level="error",
+                                message=(
+                                    f"Marketplace plugin '{plugin_name}' "
+                                    f"value must be a boolean"
+                                ),
                                 file_path=item.path,
                             )
                         )

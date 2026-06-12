@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import List, Literal, Optional, Set
 
 from .config import Config, load_anthropic_default_model
+from .envsubst import _ENV_PATTERN
 from .filters import should_deploy_to
 from .manifest import (
     Manifest,
@@ -51,11 +54,15 @@ _CLI_TYPE_TO_ITEM_TYPE = {
 }
 
 
+# Every action kind deploy() can emit, mypy-enforced via DeployAction.action.
+ActionType = Literal["create", "update", "remove", "skip", "pre-existing"]
+
+
 @dataclass
 class DeployAction:
     """Records a single deploy action taken (or planned)."""
 
-    action: str  # 'create', 'update', 'remove', 'skip'
+    action: ActionType
     item_type: str
     name: str
     target_id: str
@@ -121,14 +128,80 @@ def _filter_models_config(config_dict: dict, target_id: str, config: Config) -> 
     return {"providers": filtered_providers}
 
 
-def _compute_hash(item: SourceItem, target: Target) -> str:
+def item_selected(
+    item: SourceItem, target: Target, target_id: str, config: Config
+) -> bool:
+    """Decide whether an item applies to a target at all.
+
+    Single source of truth shared by :func:`deploy` and
+    :func:`promptdeploy.status.get_status`: an item is selected when it
+    passes the environment filters (frontmatter ``only``/``except`` plus
+    filename filetags) AND the target would not no-op the deploy via
+    :meth:`Target.should_skip`. Keeping both callers on this predicate
+    guarantees ``status`` cannot drift from what ``deploy`` would do.
+    """
+    if not should_deploy_to(
+        target_id,
+        item.metadata,
+        config,
+        str(item.path),
+        filetags=item.filetags,
+    ):
+        return False
+    return not target.should_skip(
+        item.item_type, item.name, item.content, item.metadata
+    )
+
+
+def _expand_env_for_hash(value: object) -> object:
+    """Recursively expand ``${VAR}`` references for hashing purposes only.
+
+    Unset variables stay as literal ``${VAR}`` text and no warning is
+    printed -- this expansion never produces deployed bytes. It exists so
+    the models manifest hash reflects the env values that droid/opencode
+    bake into their configs at deploy time: rotating a referenced key
+    changes the hash and triggers a redeploy even though models.yaml
+    itself is unchanged.
+    """
+    if isinstance(value, str):
+        return _ENV_PATTERN.sub(lambda m: os.environ.get(m.group(1), m.group(0)), value)
+    if isinstance(value, dict):
+        return {k: _expand_env_for_hash(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_expand_env_for_hash(v) for v in value]
+    return value
+
+
+def compute_item_hash(
+    item: SourceItem, target: Target, config: Optional[Config] = None
+) -> str:
     """Hash that reflects the effective deployed output, not just source bytes.
 
     The base hash covers the source content (or directory for skills). If the
     target reports a ``content_fingerprint`` -- e.g. an injected model -- it
     is mixed in so that config changes affecting deployed bytes invalidate
-    the manifest cache even when source bytes are unchanged.
+    the manifest cache even when source bytes are unchanged. Shared with
+    :func:`promptdeploy.status.get_status` so both sides hash identically.
+
+    When ``config`` is provided, ``settings`` and ``models`` items hash
+    their effective per-target output instead of raw source bytes: settings
+    hash the :func:`promptdeploy.settings.render_settings` result (so a
+    deploy.yaml edit such as a removed group label invalidates the cache),
+    and models hash the filtered config with current env values folded in
+    (so group edits and rotated API keys trigger a redeploy). Without
+    ``config`` these items fall back to hashing source bytes.
     """
+    if config is not None and item.item_type == "settings":
+        rendered = render_settings(item.metadata or {}, target.id, config)
+        return compute_file_hash(
+            json.dumps(rendered, sort_keys=True, default=str).encode()
+        )
+    if config is not None and item.item_type == "models":
+        filtered = _filter_models_config(item.metadata or {}, target.id, config)
+        effective = _expand_env_for_hash(filtered)
+        return compute_file_hash(
+            json.dumps(effective, sort_keys=True, default=str).encode()
+        )
     if item.item_type == "skill":
         base = compute_directory_hash(item.path.parent.resolve())
     else:
@@ -231,7 +304,6 @@ def deploy(
     target_ids: Optional[List[str]] = None,
     dry_run: bool = False,
     verbose: bool = False,
-    quiet: bool = False,
     item_types: Optional[List[str]] = None,
     force: bool = False,
 ) -> List[DeployAction]:
@@ -242,7 +314,6 @@ def deploy(
         target_ids: Specific targets to deploy to (None = all).
         dry_run: If True, compute actions without writing anything.
         verbose: Print extra detail.
-        quiet: Suppress output.
         item_types: CLI --only-type values (plural) to filter by.
         force: If True, deploy all items regardless of checksum or
             pre-existing state.
@@ -284,24 +355,13 @@ def deploy(
                 if allowed_types is not None and item.item_type not in allowed_types:
                     continue
 
-                # Apply environment filters (filetags + only/except)
-                if not should_deploy_to(
-                    target_id,
-                    item.metadata,
-                    config,
-                    str(item.path),
-                    filetags=item.filetags,
-                ):
-                    continue
-
-                # Skip items the target would no-op
-                if target.should_skip(
-                    item.item_type, item.name, item.content, item.metadata
-                ):
+                # Apply environment filters (filetags + only/except) and
+                # target-side skip rules via the shared predicate.
+                if not item_selected(item, target, target_id, config):
                     continue
 
                 category = _TYPE_TO_CATEGORY[item.item_type]
-                current_hash = _compute_hash(item, target)
+                current_hash = compute_item_hash(item, target, config)
                 deployed_names.add((category, item.name))
 
                 changed = has_changed(manifest, category, item.name, current_hash)
@@ -325,6 +385,7 @@ def deploy(
                                 source_path=str(item.path),
                             )
                         )
+                        recorded_keys = list(rendered.keys())
                     else:
                         actions.append(
                             DeployAction(
@@ -335,10 +396,17 @@ def deploy(
                                 source_path=str(item.path),
                             )
                         )
+                        # Nothing was deployed on this path: carry forward
+                        # the keys recorded by the last real deploy so a
+                        # later render that drops one of them can still
+                        # remove it from the target. Recording the current
+                        # render's keys here would orphan any key it no
+                        # longer contains.
+                        recorded_keys = previous_keys
                     new_manifest.items.setdefault("settings", {})[item.name] = (
                         ManifestItem(
                             source_hash=current_hash,
-                            managed_keys=list(rendered.keys()),
+                            managed_keys=recorded_keys,
                         )
                     )
                     continue
@@ -404,7 +472,7 @@ def deploy(
                             )
                             continue
                     else:
-                        action_type = "update" if is_update else "create"
+                        action_type: ActionType = "update" if is_update else "create"
 
                         if not dry_run:
                             if item.item_type == "models":
@@ -449,17 +517,27 @@ def deploy(
                 # target-side artifact path (when known) so future stale
                 # removals can unlink the exact file we wrote.
                 tp = target.deployed_artifact_path(item.item_type, item.name)
-                # Preserve the previous manifest's target_path if we don't
-                # have a fresh one (e.g. on dry-run/skip the target didn't
-                # actually deploy this run).
+                prev = manifest.items.get(category, {}).get(item.name)
+                prev_path = prev.target_path if prev is not None else None
                 if tp is None:
-                    prev = manifest.items.get(category, {}).get(item.name)
-                    if prev is not None and prev.target_path is not None:
-                        target_path_str = prev.target_path
-                    else:
-                        target_path_str = None
+                    # Preserve the previous manifest's target_path if we
+                    # don't have a fresh one (e.g. on dry-run/skip the
+                    # target didn't actually deploy this run).
+                    target_path_str = prev_path
                 else:
                     target_path_str = tp.as_posix()
+                    # A source extension change (e.g. foo.poet -> foo.md)
+                    # moves the deployed artifact. Unlink exactly the file
+                    # the previous deploy recorded so it cannot linger as
+                    # an orphan -- never stem-siblings, which may be
+                    # user-authored files.
+                    if (
+                        not dry_run
+                        and category == "prompts"
+                        and prev_path is not None
+                        and prev_path != target_path_str
+                    ):
+                        target.remove_prompt(item.name, target_path=Path(prev_path))
                 new_manifest.items.setdefault(category, {})[item.name] = ManifestItem(
                     source_hash=current_hash,
                     target_path=target_path_str,

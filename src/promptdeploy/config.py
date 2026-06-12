@@ -61,17 +61,24 @@ def find_config_file(start_dir: Optional[Path] = None) -> Path:
 def load_config(config_path: Optional[Path] = None) -> Config:
     if config_path is None:
         config_path = find_config_file()
-    with open(config_path, "r") as f:
-        data = yaml.safe_load(f)
+    with open(config_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Top level of {config_path} must be a mapping, got {type(data).__name__}"
+        )
 
-    source_root = Path(data.get("source_root", config_path.parent))
+    # Expand ``~`` before the absolute-path test so a source_root of
+    # ``~/...`` resolves to the home directory instead of being treated
+    # as a path relative to deploy.yaml.
+    source_root = Path(data.get("source_root", config_path.parent)).expanduser()
     if not source_root.is_absolute():
         source_root = (config_path.parent / source_root).resolve()
     else:
-        source_root = source_root.expanduser().resolve()
+        source_root = source_root.resolve()
 
     targets = {}
-    for target_id, target_data in data.get("targets", {}).items():
+    for target_id, target_data in (data.get("targets") or {}).items():
         host = target_data.get("host")
         path = Path(target_data["path"])
         if host is None:
@@ -87,7 +94,25 @@ def load_config(config_path: Optional[Path] = None) -> Config:
             model=model,
         )
 
-    groups: Dict[str, List[str]] = dict(data.get("groups", {}))
+    groups: Dict[str, List[str]] = {
+        name: list(members or [])
+        for name, members in (data.get("groups") or {}).items()
+    }
+
+    # Explicit group members must name real targets: groups do not nest,
+    # and a typo here would otherwise silently deploy to nothing (or fail
+    # later with a bare KeyError).  Label- and host-derived groups are
+    # built from the targets themselves, and host groups may be
+    # intentionally empty, so only the explicit ``groups:`` mapping is
+    # checked.
+    for group_name, members in groups.items():
+        for member in members:
+            if member not in targets:
+                raise ValueError(
+                    f"Group '{group_name}' in {config_path} references "
+                    f"unknown target '{member}' (group members must be "
+                    f"target ids)"
+                )
 
     # Auto-generate groups from target labels (merge with explicit groups)
     for target_id, tc in targets.items():
@@ -104,7 +129,7 @@ def load_config(config_path: Optional[Path] = None) -> Config:
     # restrict a model to hera-resident targets regardless of which
     # machine runs the deploy.  ``PROMPTDEPLOY_HOST`` overrides
     # detection of the current host.
-    declared_hosts = list(data.get("hosts", []))
+    declared_hosts = list(data.get("hosts") or [])
     host_group = current_host()
     for h in declared_hosts:
         existing = groups.setdefault(h, [])
@@ -167,7 +192,9 @@ def expand_target_arg(targets_arg: Optional[List[str]], config: Config) -> List[
             result.append(t)
         else:
             raise ValueError(f"Unknown target: {t}")
-    return result
+    # Preserve order while dropping duplicates (e.g. a target named both
+    # directly and via a group, or via two overlapping groups).
+    return list(dict.fromkeys(result))
 
 
 def load_anthropic_default_model(models_yaml_path: Path) -> Optional[str]:

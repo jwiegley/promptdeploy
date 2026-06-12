@@ -9,7 +9,12 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from ..frontmatter import parse_frontmatter, transform_for_target
+from ..frontmatter import (
+    parse_frontmatter,
+    serialize_frontmatter,
+    strip_deployment_fields,
+    transform_for_target,
+)
 from ..manifest import MANIFEST_FILENAME
 from .base import Target
 
@@ -78,7 +83,7 @@ class DroidTarget(Target):
     def deploy_agent(self, name: str, content: bytes) -> None:
         dest = self._config_path / "droids" / f"{name}.md"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(transform_for_target(content, self._id))
+        dest.write_bytes(transform_for_target(content))
 
     def deploy_command(self, name: str, content: bytes) -> None:
         # Commands are skipped by default on Droid. However, if
@@ -86,9 +91,16 @@ class DroidTarget(Target):
         metadata, body = parse_frontmatter(content)
         if metadata and metadata.get("droid_deploy") == "skill":
             dest = self._config_path / "skills" / name
+            # Never write through a pre-existing symlink: replace it so the
+            # deploy cannot modify an unrelated directory it points at.
+            if dest.is_symlink():
+                dest.unlink()
             dest.mkdir(parents=True, exist_ok=True)
+            # droid_deploy is deployment metadata, not part of the skill.
+            cleaned = strip_deployment_fields(metadata)
+            cleaned.pop("droid_deploy", None)
             skill_md = dest / "SKILL.md"
-            skill_md.write_bytes(transform_for_target(content, self._id))
+            skill_md.write_bytes(serialize_frontmatter(cleaned, body))
             return
         # Otherwise: skip silently.
 
@@ -103,6 +115,10 @@ class DroidTarget(Target):
             doc = parse_plain(content)
         rendered = render_for_command(doc)
         dest = self._config_path / "skills" / name
+        # Never write through a pre-existing symlink: replace it so the
+        # deploy cannot modify an unrelated directory it points at.
+        if dest.is_symlink():
+            dest.unlink()
         dest.mkdir(parents=True, exist_ok=True)
         skill_md = dest / "SKILL.md"
         skill_md.write_bytes(rendered)
@@ -121,7 +137,7 @@ class DroidTarget(Target):
         shutil.copytree(source_dir.resolve(), dest, symlinks=False)
         skill_md = dest / "SKILL.md"
         if skill_md.exists():
-            skill_md.write_bytes(transform_for_target(skill_md.read_bytes(), self._id))
+            skill_md.write_bytes(transform_for_target(skill_md.read_bytes()))
 
     def deploy_hook(self, name: str, config: dict) -> None:
         pass
@@ -200,8 +216,9 @@ class DroidTarget(Target):
                     droid_config[k] = v
                 elif k == "url":
                     droid_config["url"] = v
-            # Map enabled:false -> disabled:true (already handled above for
-            # the removal case; here we handle explicitly-enabled servers).
+            # Disabled servers never reach this branch: ``enabled: false``
+            # removes the entry from mcp.json entirely (handled above), so
+            # every server written here is enabled.
             droid_config["disabled"] = False
             data.setdefault("mcpServers", {})[name] = droid_config
 
@@ -284,7 +301,7 @@ class DroidTarget(Target):
         # directory artifact, and prompts also become skill directories.
         # Both directory artifacts fall outside the single-file adoption path.
         if item_type == "agent":
-            return transform_for_target(content, self._id)
+            return transform_for_target(content)
         return None
 
     def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:

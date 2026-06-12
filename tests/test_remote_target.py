@@ -114,6 +114,19 @@ class TestRemoteTargetLifecycle:
             includes=_MOCK_INCLUDES,
         )
 
+    @patch("promptdeploy.targets.remote.ssh_push")
+    def test_finalize_push_failure_propagates(
+        self, mock_ssh_push: MagicMock, remote_target: RemoteTarget
+    ) -> None:
+        """When ssh_push raises, finalize propagates the error and leaves
+        staging in place -- the deploy loop's cleanup() removes it."""
+        from promptdeploy.ssh import SSHError
+
+        mock_ssh_push.side_effect = SSHError("rsync push failed")
+        with pytest.raises(SSHError, match="rsync push failed"):
+            remote_target.finalize()
+        assert remote_target._staging_path.exists()
+
     def test_cleanup_removes_staging_dir(self, remote_target: RemoteTarget) -> None:
         assert remote_target._staging_path.exists()
         remote_target.cleanup()
@@ -243,23 +256,6 @@ class TestRemoteTargetDelegation:
         mock_inner.consume_warnings.return_value = [("demo", ["bad var"])]
         assert remote_target.consume_warnings() == [("demo", ["bad var"])]
         mock_inner.consume_warnings.assert_called_once_with()
-
-    def test_consume_warnings_when_inner_lacks_method(self, tmp_path: Path) -> None:
-        # An inner target that does not provide ``consume_warnings`` at all
-        # (e.g. a legacy implementation) should yield an empty list rather
-        # than crash.
-        class _Bare:
-            pass
-
-        staging = tmp_path / "staging-bare"
-        staging.mkdir()
-        target = RemoteTarget(
-            inner=_Bare(),  # type: ignore[arg-type]
-            host="h",
-            remote_path=Path("/remote"),
-            staging_path=staging,
-        )
-        assert target.consume_warnings() == []
 
     def test_should_skip(
         self, remote_target: RemoteTarget, mock_inner: MagicMock

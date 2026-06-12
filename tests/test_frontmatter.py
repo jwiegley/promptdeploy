@@ -64,6 +64,32 @@ class TestParseFrontmatter:
         assert metadata is None
         assert body == content
 
+    def test_utf8_bom_does_not_defeat_frontmatter(self):
+        # A UTF-8 BOM must not bypass frontmatter parsing (and with it
+        # only/except filtering and model injection).
+        content = b"\xef\xbb\xbf---\nname: test\nonly:\n  - a\n---\nBody.\n"
+        metadata, body = parse_frontmatter(content)
+        assert metadata == {"name": "test", "only": ["a"]}
+        assert body == b"Body.\n"
+
+    def test_missing_final_newline_after_closing_delimiter(self):
+        # The closing '---' at EOF without a trailing newline still counts.
+        content = b"---\nname: test\n---"
+        metadata, body = parse_frontmatter(content)
+        assert metadata == {"name": "test"}
+        assert body == b""
+
+    def test_closing_delimiter_trailing_spaces_at_eof(self):
+        content = b"---\nname: test\n---   "
+        metadata, body = parse_frontmatter(content)
+        assert metadata == {"name": "test"}
+        assert body == b""
+
+    def test_non_utf8_raises_frontmatter_error(self):
+        content = b"---\nname: test\n---\nBody \xff\xfe broken\n"
+        with pytest.raises(FrontmatterError, match="not valid UTF-8"):
+            parse_frontmatter(content)
+
 
 class TestStripDeploymentFields:
     def test_strip_only(self):
@@ -124,7 +150,7 @@ class TestSerializeFrontmatter:
 class TestTransformForTarget:
     def test_strips_deployment_fields(self):
         content = b"---\nname: test\nonly:\n  - target-a\n---\nBody.\n"
-        result = transform_for_target(content, "target-a")
+        result = transform_for_target(content)
         meta, body = parse_frontmatter(result)
         assert "only" not in meta
         assert meta["name"] == "test"
@@ -132,18 +158,18 @@ class TestTransformForTarget:
 
     def test_no_frontmatter_returns_original(self):
         content = b"No frontmatter here.\n"
-        result = transform_for_target(content, "target-a")
+        result = transform_for_target(content)
         assert result == content
 
     def test_idempotent(self):
         content = b"---\nname: test\nonly:\n  - target-a\n---\nBody.\n"
-        first = transform_for_target(content, "target-a")
-        second = transform_for_target(first, "target-a")
+        first = transform_for_target(content)
+        second = transform_for_target(first)
         assert first == second
 
     def test_all_deployment_fields_removed(self):
         content = b"---\nname: test\nonly:\n  - a\nexcept:\n  - b\n---\nBody.\n"
-        result = transform_for_target(content, "any")
+        result = transform_for_target(content)
         meta, _ = parse_frontmatter(result)
         assert "only" not in meta
         assert "except" not in meta
@@ -151,14 +177,14 @@ class TestTransformForTarget:
 
     def test_empty_metadata_after_strip(self):
         content = b"---\nonly:\n  - target-a\n---\nBody.\n"
-        result = transform_for_target(content, "target-a")
+        result = transform_for_target(content)
         assert result == b"Body.\n"
 
 
 class TestTransformForTargetInjection:
     def test_inject_none_is_noop(self):
         content = b"---\nname: test\nonly:\n  - target-a\n---\nBody.\n"
-        result = transform_for_target(content, "target-a", inject=None)
+        result = transform_for_target(content, inject=None)
         meta, body = parse_frontmatter(result)
         assert meta == {"name": "test"}
         assert body == b"Body.\n"
@@ -166,35 +192,31 @@ class TestTransformForTargetInjection:
 
     def test_inject_empty_dict_is_noop(self):
         content = b"---\nname: test\n---\nBody.\n"
-        result = transform_for_target(content, "target-a", inject={})
+        result = transform_for_target(content, inject={})
         meta, _ = parse_frontmatter(result)
         assert meta == {"name": "test"}
 
     def test_inject_no_frontmatter_returns_original(self):
         content = b"No frontmatter here.\n"
-        result = transform_for_target(content, "target-a", inject={"model": "opus"})
+        result = transform_for_target(content, inject={"model": "opus"})
         assert result == content
 
     def test_inject_overwrites_existing_key(self):
         content = b"---\nname: test\nmodel: sonnet\n---\nBody.\n"
-        result = transform_for_target(
-            content, "target-a", inject={"model": "claude-opus-4-7"}
-        )
+        result = transform_for_target(content, inject={"model": "claude-opus-4-7"})
         meta, _ = parse_frontmatter(result)
         assert meta["model"] == "claude-opus-4-7"
 
     def test_inject_adds_new_key_when_absent(self):
         content = b"---\nname: test\n---\nBody.\n"
-        result = transform_for_target(
-            content, "target-a", inject={"model": "claude-opus-4-7"}
-        )
+        result = transform_for_target(content, inject={"model": "claude-opus-4-7"})
         meta, _ = parse_frontmatter(result)
         assert meta["model"] == "claude-opus-4-7"
         assert meta["name"] == "test"
 
     def test_inject_none_value_is_skipped(self):
         content = b"---\nname: test\nmodel: sonnet\n---\nBody.\n"
-        result = transform_for_target(content, "target-a", inject={"model": None})
+        result = transform_for_target(content, inject={"model": None})
         meta, _ = parse_frontmatter(result)
         # None-valued inject key is a no-op for that key: existing value preserved.
         assert meta["model"] == "sonnet"
@@ -202,7 +224,7 @@ class TestTransformForTargetInjection:
     def test_inject_preserves_existing_key_order(self):
         # When inject overwrites an existing key, its position is preserved.
         content = b"---\nname: a\nmodel: old\ndescription: d\n---\nBody.\n"
-        result = transform_for_target(content, "target-a", inject={"model": "new"})
+        result = transform_for_target(content, inject={"model": "new"})
         text = result.decode("utf-8")
         # Confirm order: name, then model, then description.
         assert text.index("name:") < text.index("model:") < text.index("description:")
@@ -212,9 +234,7 @@ class TestTransformForTargetInjection:
     def test_inject_new_key_appended_last(self):
         # A new key is appended after existing ones.
         content = b"---\nname: a\ndescription: d\n---\nBody.\n"
-        result = transform_for_target(
-            content, "target-a", inject={"model": "claude-opus-4-7"}
-        )
+        result = transform_for_target(content, inject={"model": "claude-opus-4-7"})
         text = result.decode("utf-8")
         assert text.index("description:") < text.index("model:")
 
@@ -223,7 +243,6 @@ class TestTransformForTargetInjection:
         content = b"---\nname: a\n---\nBody.\n"
         result = transform_for_target(
             content,
-            "target-a",
             inject={"model": "claude-opus-4-7", "tools": None, "priority": 1},
         )
         meta, _ = parse_frontmatter(result)
