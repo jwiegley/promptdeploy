@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Grep, Glob, Bash(git:*), Bash(find:*), Bash(wc:*), Task
+allowed-tools: Read, Grep, Glob, Bash(git:*), Bash(find:*), Bash(wc:*), Bash(gh pr diff:*), Task
 description: Deep multi-language code review with specialist sub-agents
 argument-hint: [files, directories, commit range, or branch name]
 ---
@@ -21,8 +21,9 @@ Interpret `$ARGUMENTS` to determine what to review:
 - If it is **empty or `.`**, review all tracked files with uncommitted changes
   (`git diff HEAD --name-only`). If there are no uncommitted changes, review the
   most recent commit (`git diff HEAD~1 --name-only`).
-- If it looks like a **PR number** (e.g., `#42`), run
-  `gh pr diff $ARGUMENTS --name-only` and `gh pr diff $ARGUMENTS`.
+- If it looks like a **PR number** (e.g., `#42`), strip any leading `#` (gh
+  does not accept it) and run `gh pr diff <number> --name-only` and
+  `gh pr diff <number>`.
 
 Collect:
 1. The full list of files to review (with paths).

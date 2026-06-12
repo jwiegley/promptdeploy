@@ -1,3 +1,7 @@
+---
+description: Plan and execute a task using the pro agents, web research, and sequential thinking, ensuring lint and type checks pass
+---
+
 Remember the following:
 
 - Use the GitHub CLI (`gh`) for all GitHub-related tasks

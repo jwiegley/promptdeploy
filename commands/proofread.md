@@ -1,3 +1,7 @@
+---
+description: Fix spelling, grammar, and punctuation errors in all Markdown, Org-mode, and text files while preserving style, tone, and meaning
+---
+
 **Task:** Review and correct English language errors in all Markdown, Org-mode and other text files within this project.
 
 **Corrections to make:**

@@ -1,3 +1,7 @@
+---
+description: Use the named agents to deeply analyze the project and give expert guidance for constructing its CLAUDE.md
+---
+
 Use $ARGUMENTS to deeply analyze and understand the current project, so that you may provide expert guidance on the construction of a CLAUDE.md file that may be used to prepare future sessions for modification and improvement of the code here. Use sequential-thinking and Perplexity MCP as much as needed to research community best practices, coding guidelines, available libraries, etc.
 
 What to add:
@@ -15,3 +19,10 @@ Usage notes:
 - If there is a README.md, make sure to include the important parts.
 - Do not make up information such as "Common Development Tasks", "Tips for Development", "Support and Documentation" unless this is expressly included in other files that you read.
 - Be sure to prefix the file with the following text:
+
+  ```
+  # CLAUDE.md
+
+  This file provides guidance to Claude Code (claude.ai/code) when working
+  with code in this repository.
+  ```

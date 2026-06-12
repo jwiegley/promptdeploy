@@ -1,3 +1,8 @@
+---
+description: Diagnose and fix a Home Assistant integration whose config flow fails to load
+only: [personal]
+---
+
 I am trying to install the Home Assistant integration $ARGUMENTS but it is showing me this output:
 
 <output>

@@ -1,3 +1,7 @@
+---
+description: Debug the C++ produced by the Torch Fx ingest pipeline, tracing through the Bulk, Loopy, Tron, and CPP IRs
+---
+
 We are debugging the C++ produced by the ingest pipeline from Torch Fx. You can read the Note in @src/Fx.hs for details on the Torch -> Bulk pipeline. After that it passes through Bulk, Loopy, Tron, and CPP intermediate representations.
 
 The pipeline can be run via:

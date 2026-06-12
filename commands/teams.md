@@ -1,3 +1,7 @@
+---
+description: Create an agent team to explore a problem from research, prior-art, UX, architecture, planning, and testing angles
+---
+
 Create an agent team to explore this from different angles:
 - one teammate doing deep research on the problem domain
 - one teammate doing deep research on community best practices

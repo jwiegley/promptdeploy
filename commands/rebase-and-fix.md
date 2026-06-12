@@ -1,3 +1,7 @@
+---
+description: Rebase the working tree onto a branch, resolving conflicts with haskell-pro and cpp-pro, then rewrite and force-push descendant branches
+---
+
 I want to Git rebase the current working tree onto the $ARGUMENTS branch. Use haskell-pro and cpp-pro to analyze and resolve these conflicts in a way that preserves the semantics of the incoming changes, while maintaining the intent of the current working tree's work. Continue until the branch is fully rebased.
 
 If there are any other branches between this branch and $ARGUMENTS, I want you to also observe the following:

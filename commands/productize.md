@@ -1,8 +1,13 @@
+---
+description: Productize a repository -- README, LICENSE, flake.nix dev shell, formatting, linting, coverage, CI, and lefthook pre-commit checks
+---
+
 - Add a full, clear, concise README.md file, if it does not already exist,
-  written according to my voice as described in
-  @/Users/johnw/src/promptdeploy/commands/johnw.md
-- Add a LICENSE.md file that matches @/Users/johnw/src/ledger/main/LICENSE.md,
-  but with a “year range” matching the earliest to latest Git commit years
+  written in my voice (use the johnw skill)
+- Add a LICENSE.md file containing the standard BSD-3-Clause license with the
+  copyright line `Copyright (c) <earliest>-<latest>, John Wiegley.  All rights
+  reserved.`, where the “year range” matches the earliest to latest Git commit
+  years
 - Add flake.nix file so `nix develop` enters a full development shell with all
   dependencies necessary to build every target
 - Add pre-commit check and CI check to ensure that `nix build` completes
@@ -28,7 +33,23 @@
 - If this language supports a “memory sanitizer” build, or something similar,
   to check for proper use of memory and no bugs, add this as well
 - Add a lefthook.yml that performs all builds and checks on pre-commit (for
-  example, see @/Users/johnw/src/promptdeploy/lefthook.yml
+  example:
+
+  ```yaml
+  pre-commit:
+    parallel: true
+    commands:
+      ruff-format:
+        glob: "*.py"
+        run: ruff format --check {staged_files}
+      ruff-lint:
+        glob: "*.py"
+        run: ruff check {staged_files}
+      tests:
+        run: pytest tests/ -x -q
+  ```
+
+  adapted to the languages and tools used in the repository)
 - Ensure, if there is documentation that needs to be built, that there is a
   build target checking that the docs do build and that make this build output
   available as a CI artifact
@@ -41,7 +62,7 @@ Here are some of the tools I prefer to use for each language:
 
 ## Haskell
 
-lint: use the web-searcher skill to find the best option
+lint: use the web-searcher agent to find the best option
 format: `fourmolu`
 
 ## Rust
@@ -61,15 +82,15 @@ format: `ruff`
 
 ## Bash
 
-lint: use the web-searcher skill to find the best option
+lint: use the web-searcher agent to find the best option
 format: `shfmt`
 
 ## Emacs Lisp
 
-lint: use the web-searcher skill to find the best option
-format: use the web-searcher skill to find the best option
+lint: use the web-searcher agent to find the best option
+format: use the web-searcher agent to find the best option
 
 ## Coq (and Rocq)
 
-lint: use the web-searcher skill to find the best option
-format: use the web-searcher skill to find the best option
+lint: use the web-searcher agent to find the best option
+format: use the web-searcher agent to find the best option

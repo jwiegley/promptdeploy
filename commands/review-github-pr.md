@@ -1,3 +1,7 @@
+---
+description: Analyze and review a GitHub PR, reporting findings locally only -- never posting to GitHub
+---
+
 Please analyze and review the GitHub PR: $ARGUMENTS.
 
 ## CRITICAL: DO NOT POST TO GITHUB

@@ -620,16 +620,19 @@ For each candidate with a non-`keep` verdict:
    milestones below and in Phase 4.
 4. **If anything fails — recover cleanly before moving on.** Nothing is
    committed yet, but the working tree may have staged changes, unstaged
-   changes, and/or new untracked files. Run, in order:
+   changes, and/or new untracked files. Restore **only the files this region's
+   verdict touched** — a repo-wide restore would wipe the uncommitted markers
+   of every other pending region — and never let `git clean` delete the
+   sidecar:
    ```
-   git restore --staged --worktree -- .
-   git clean -fd
+   git restore --staged --worktree -- <files this verdict touched>
+   git clean -fd -e '.dce-pass-*' -- <paths this verdict touched>
    ```
-   This also restores the markers for the region you were acting on (they live
-   in the working tree). Re-mark the region if needed, downgrade its verdict to
-   `keep`, record the failure mode in the report, and move to the next
-   candidate. **Never** use `git reset --hard` or `git push --force` here —
-   they can lose unrelated user state.
+   Note that restoring those files also discards their markers (markers are
+   uncommitted working-tree changes). Re-mark the region if needed, downgrade
+   its verdict to `keep`, record the failure mode in the report, and move to
+   the next candidate. **Never** use `git reset --hard` or `git push --force`
+   here — they can lose unrelated user state.
 5. **If everything passes**: stage and commit only the files this region
    touched:
    ```

@@ -27,7 +27,9 @@ via `/retest` (it owns the general operating rules, the generic Known-traps, the
 weights-provisioning machinery, the three unit-test layers, the isolated one-TEST_CASE
 runner, the generic perf methodology, and the review/comment phases), then apply the
 categorical overrides below. This is a **documentation-style delegation** — there is no
-machine handoff or argument forwarding; read both docs and apply the overrides by hand.
+machine handoff or argument forwarding; read both docs and apply the overrides by hand
+(the `/retest` doc is the `retest` command prompt deployed alongside this one, e.g.
+`retest.md` in the same commands directory).
 **Where `/retest` and this doc conflict, this doc wins for categorical runs.**
 
 | `/retest` general | `/retest-categorical` categorical override |
@@ -76,10 +78,12 @@ the `ModelDef` table in `t/t_generate_categorical_fpga_real.cpp`.)
 # Operating rules
 
 Use the `/retest` **Operating rules** verbatim (Nix shell wrapper, `-j 4` max, executor
-selection, the `/opt/positron/weights/...` read-only / `/tmp/retest-categorical_weights/<repo>` fallback,
-one-TEST_CASE-per-process for FPGA, background long jobs, the distinct
-`PASS / SKIPPED / QUARANTINED / DIVERGE` states) — **including the "this host HAS FPGA cards,
-run the FPGA tests here every time" rule**: the Phase-3 byte-exact parity gate and Phase-5
+selection, the `/opt/positron/weights/...` read-only / `/tmp/retest_weights/<repo>` scratch
+fallback — for categorical runs substitute this doc's own scratch root,
+`/tmp/retest-categorical_weights/<repo>`, as Phase 0 does — one-TEST_CASE-per-process for FPGA,
+background long jobs, the distinct `PASS / SKIPPED / QUARANTINED / DIVERGE` states). To those
+this doc adds its own hardware rule — **this host HAS FPGA cards; run the FPGA tests here
+every time**: the Phase-3 byte-exact parity gate and Phase-5
 decode run on the FPGA cards present on this machine (`ls /dev/vfio/` populated ⇒ present;
 `pgrep -af 'runtron\|t_generate'` ⇒ free). Never call this a "host-only environment" or defer
 the FPGA gate for lack of hardware — a skipped FPGA gate is `INCOMPLETE`, never `PASS`. With

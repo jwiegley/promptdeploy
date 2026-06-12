@@ -1,3 +1,7 @@
+---
+description: Build an SQL query with sql-pro and the mssql MCP from schema alone, never revealing any table data
+---
+
 Use the sql-pro and the mssql MCP to help answer this question. Never reveal
 table data in this chat, only reference the schema in order to build me an SQL
 query that I can run myself to obtain the actual data. Treat all of the data

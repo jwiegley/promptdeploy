@@ -1,1 +1,6 @@
+---
+description: Run lefthook pre-commit on every branch in the current Graphite stack, drop empty commits, amend formatting fixes, and restack
+disable-model-invocation: true
+---
+
 For every branch in the current stack (see `gt ls -s` output), I want you to use your superpowers to ensure that `lefthook run --all-files pre-commit` runs for each one, and that any empty commits are removed from each of the branches. When you are done, use `gt restack` to restack the entire stack of PR branches. Make sure that if `make format-haskell` and `make format` produce any changes in any of these branches, that you amend those changes into the branch commit. You may have to use `nix develop --command $COMMAND` to run lefthook.

@@ -1,3 +1,7 @@
+---
+description: Address all bot comments on every PR in the current Graphite stack, fixing issues and resolving the comment threads
+---
+
 Process every PR in the current Graphite stack to address all bot comments. Follow this protocol exactly.
 
 ## Step 1: Enumerate the Stack

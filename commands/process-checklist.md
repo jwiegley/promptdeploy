@@ -1,3 +1,7 @@
+---
+description: Work through a Markdown checklist file, completing and checking off every unfinished task
+---
+
 You have been given a Markdown checklist of tasks in: $ARGUMENTS
 
 For each task that is not checked as completed:

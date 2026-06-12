@@ -1,12 +1,16 @@
+---
+description: Think, research, plan, act, review -- deeply analyze a GitHub issue, fix it step by step with regression tests, open a PR, and monitor CI
+---
+
 # Think, Research, Plan, Act, Review
 
 Think deeply to analyze the following query, construct a well thought out plan of action based on the following context, and then carefully execute that plan step by step.
 
 If you find that the bug or feature you’re attempting to fix has already been addressed in an earlier commit, just add a regression test to demonstrate the item has been dealt with.
 
-Create a PR for each using my jwiegley user on GitHub. The author/committer for all new commits should be signed by johnw@newartisans.com.
+Create a PR using my jwiegley user on GitHub. The author/committer for all new commits should be signed by johnw@newartisans.com.
 
-This series of jobs will take a long time, so make a comprehensive and effective plan and then execute step by step until you have completed them all and added new regression tests for each.
+This job will take a long time, so make a comprehensive and effective plan and then execute step by step until you have completed it and added new regression tests.
 
 Now, please analyze and fix the GitHub issue: $ARGUMENTS.
 
@@ -24,14 +28,13 @@ Sometime an issue will already have a “confirmation test” in the directory t
 4. Implement the necessary changes to fix the issue
 5. Write and run tests to verify the fix
 6. Ensure code passes linting and type checking
-7. Leave your work uncommitted in the working tree, so it can be reviewed.
 
 Remember the following:
 - Use the GitHub CLI (`gh`) for all GitHub-related tasks
 - Search the codebase for relevant files
 - Ensure code passes linting and type checking after doing any work
 - Use cpp-pro, python-pro, emacs-lisp-pro, rust-pro or haskell-pro as needed for diagnosing and analyzing PRs, fixing code, and writing any new code.
-- Use Web Search and Perplexity as need for research and discovering resources.
+- Use Web Search and Perplexity as needed for research and discovering resources.
 - Use sequential-thinking when appropriate to break down tasks further.
 - Use context7 whenever code examples might help.
 
@@ -39,7 +42,7 @@ Commit all work as a series of atomic, logically sequenced commits. Each commit 
 
 # Monitor your work after submitting the PR
 
-Use `gh` to montainer for CI test results and possible BugBot comments. If CI tests are failing for this PR, use the appropriate programming language agent to diagnose and resolve this issue, then push your fixes to the PR and monitor the CI test results using `gh` until you observe that everything passes correctly. If any further problems should be observed, repeat this diagnose, resolve, push and monitor process until everything is working with this PR.
+Use `gh` to monitor for CI test results and possible BugBot comments. If CI tests are failing for this PR, use the appropriate programming language agent to diagnose and resolve this issue, then push your fixes to the PR and monitor the CI test results using `gh` until you observe that everything passes correctly. If any further problems should be observed, repeat this diagnose, resolve, push and monitor process until everything is working with this PR.
 
 Also, if there are any BugBot, Cursor or Devin comments on this PR, I want you to fix and address these comments from these bots, and then after you have pushed the fixes, I want you to reply to those comments and then mark them resolved.
 

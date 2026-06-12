@@ -1,6 +1,7 @@
 ---
 description: Install and configure a service with nginx, monitoring, and secrets
 argument-hint: "[service-name]"
+disable-model-invocation: true
 ---
 
 I want you to setup the $ARGUMENTS service on this NixOS host, either as a native NixOS service or as a rootless quadlet container under a user account managed by home-manager, whichever is best for my configuration.
@@ -37,4 +38,4 @@ Use Web Search and Perplexity MCP as needed to discover what is the best way to 
 
 * If there is a choice of backing database, I prefer to use the PostgreSQL and Redis services already running on this server, even though you will likely need to create new users and databases within those services.
 
-Use the nixos and caveman skills to perform your work on these installation steps. Take as long as needed to ensure that the service is well integrated, coherent with the rest of this machine’s configuration, and functioning well before you are finished.
+Use the nixos skill to perform your work on these installation steps. Take as long as needed to ensure that the service is well integrated, coherent with the rest of this machine’s configuration, and functioning well before you are finished.

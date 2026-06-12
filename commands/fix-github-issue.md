@@ -1,3 +1,7 @@
+---
+description: Analyze and fix a GitHub issue in a dedicated git worktree and branch, leaving the work uncommitted for review
+---
+
 Please analyze and fix the GitHub issue: $ARGUMENTS.
 
 Follow these steps:

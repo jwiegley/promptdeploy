@@ -1,3 +1,7 @@
+---
+description: Analyze the codebase and create a CLAUDE.md covering common commands and big-picture architecture
+---
+
 Please analyze this codebase and create a CLAUDE.md file, which will be given to future instances of Claude Code to operate in this repository.
 
 What to add:
@@ -15,3 +19,10 @@ Usage notes:
 - If there is a README.md, make sure to include the important parts.
 - Do not make up information such as "Common Development Tasks", "Tips for Development", "Support and Documentation" unless this is expressly included in other files that you read.
 - Be sure to prefix the file with the following text:
+
+  ```
+  # CLAUDE.md
+
+  This file provides guidance to Claude Code (claude.ai/code) when working
+  with code in this repository.
+  ```

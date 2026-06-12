@@ -1,3 +1,10 @@
+---
+description: Commit all work as a series of atomic, logically sequenced commits, each one coherent, reviewable, and revertible on its own
+# Deliberately no disable-model-invocation here -- /push and /recommit direct
+# the model to invoke /commit itself, so model-initiated invocation must stay
+# enabled for those commands to compose with this one.
+---
+
 Commit all work as a series of atomic, logically sequenced commits. Each commit should represent one coherent change that can be understood, reviewed, and reverted independently.
 
 # Commit Decomposition Principles

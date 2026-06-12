@@ -1,3 +1,7 @@
+---
+description: Fix and resolve all automated bot comments (BugBot, Graphite, Cursor, Devin) on the current PR via a strict 5-phase protocol
+---
+
 There are bot comments on this PR (from BugBot, Graphite, Cursor, Devin, or similar automated tools) that need to be fixed and resolved. Follow this exact 5-phase protocol. Do not skip or reorder phases.
 
 ## Phase 1: INVENTORY
@@ -61,9 +65,11 @@ After pushing, process EVERY item from the Phase 1 inventory. Check off each ite
 
 **For each top-level comment:**
 
-1. Reply to the comment explaining what you fixed:
+1. Reply to the comment explaining what you fixed (substitute the actual PR
+   number from Phase 1 — `gh` expands `{owner}`/`{repo}` automatically, but
+   not the PR number):
    ```
-   gh api repos/{owner}/{repo}/issues/{pr_number}/comments -f body='Fixed: <brief explanation>'
+   gh api repos/{owner}/{repo}/issues/<pr-number>/comments -f body='Fixed: <brief explanation>'
    ```
 2. Minimize the original bot comment as resolved:
    ```

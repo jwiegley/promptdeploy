@@ -1,3 +1,8 @@
+---
+description: Restack the entire Graphite stack onto main, resolving and verifying every conflict, then submit and report
+disable-model-invocation: true
+---
+
 Bring my entire Graphite PR stack up to date with `main`, resolving every
 conflict encountered along the way, and submit the result. Run every `gt`
 command with `GIT_EDITOR=true` so nothing blocks waiting on an editor.
