@@ -439,57 +439,36 @@ class TestDeployMcpServer:
         assert result["mcpServers"]["existing"] == {"command": "keep"}
         assert result["mcpServers"]["new"] == {"command": "added"}
 
-    def test_expands_env_vars_in_env_dict(self, tmp_path: Path, monkeypatch):
+    def test_env_vars_passed_through_verbatim(self, tmp_path: Path, monkeypatch):
+        # Even when the variable IS set, the reference must be written
+        # verbatim: Claude Code expands ${VAR} at runtime via the
+        # --mcp-config launcher bridge (see docs/superpowers/specs/
+        # 2026-06-12-mcp-launcher-bridge-design.md).
         monkeypatch.setenv("MY_API_KEY", "secret123")
         target = _make_target(tmp_path)
         config = {
-            "command": "npx",
-            "args": ["-y", "server"],
-            "env": {"API_KEY": "${MY_API_KEY}"},
+            "name": "srv",
+            "command": "x",
+            "env": {"KEY": "${MY_API_KEY}"},
         }
         target.deploy_mcp_server("srv", config)
 
         settings_path = tmp_path / ".claude" / "settings.json"
         result = json.loads(settings_path.read_text())
-        assert result["mcpServers"]["srv"]["env"]["API_KEY"] == "secret123"
+        assert result["mcpServers"]["srv"]["env"]["KEY"] == "${MY_API_KEY}"
 
-    def test_non_env_keys_not_affected_by_expansion(self, tmp_path: Path, monkeypatch):
-        monkeypatch.setenv("SOME_VAR", "expanded")
+    def test_headers_passed_through_verbatim(self, tmp_path: Path):
         target = _make_target(tmp_path)
         config = {
-            "command": "${SOME_VAR}",
-            "env": {"KEY": "${SOME_VAR}"},
+            "name": "srv",
+            "url": "https://x",
+            "headers": {"K": "${SOME_KEY}"},
         }
         target.deploy_mcp_server("srv", config)
 
         settings_path = tmp_path / ".claude" / "settings.json"
         result = json.loads(settings_path.read_text())
-        # command is NOT in env sub-dict, so it stays literal
-        assert result["mcpServers"]["srv"]["command"] == "${SOME_VAR}"
-        # env values ARE expanded
-        assert result["mcpServers"]["srv"]["env"]["KEY"] == "expanded"
-
-    def test_unset_env_vars_preserved(self, tmp_path: Path, monkeypatch):
-        monkeypatch.delenv("UNSET_KEY_XYZ", raising=False)
-        target = _make_target(tmp_path)
-        config = {
-            "command": "echo",
-            "env": {"KEY": "${UNSET_KEY_XYZ}"},
-        }
-        target.deploy_mcp_server("srv", config)
-
-        settings_path = tmp_path / ".claude" / "settings.json"
-        result = json.loads(settings_path.read_text())
-        assert result["mcpServers"]["srv"]["env"]["KEY"] == "${UNSET_KEY_XYZ}"
-
-    def test_no_env_key_no_expansion(self, tmp_path: Path):
-        target = _make_target(tmp_path)
-        config = {"command": "echo", "args": ["hello"]}
-        target.deploy_mcp_server("srv", config)
-
-        settings_path = tmp_path / ".claude" / "settings.json"
-        result = json.loads(settings_path.read_text())
-        assert result["mcpServers"]["srv"] == {"command": "echo", "args": ["hello"]}
+        assert result["mcpServers"]["srv"]["headers"]["K"] == "${SOME_KEY}"
 
 
 class TestRemoveMcpServer:
