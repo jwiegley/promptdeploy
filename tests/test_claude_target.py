@@ -457,7 +457,10 @@ class TestDeployMcpServer:
         result = json.loads(settings_path.read_text())
         assert result["mcpServers"]["srv"]["env"]["KEY"] == "${MY_API_KEY}"
 
-    def test_headers_passed_through_verbatim(self, tmp_path: Path):
+    def test_headers_passed_through_verbatim(self, tmp_path: Path, monkeypatch):
+        # Set the variable so this also guards against a future lenient
+        # deploy-time expansion of headers, not just the unset case.
+        monkeypatch.setenv("SOME_KEY", "expanded-would-be-wrong")
         target = _make_target(tmp_path)
         config = {
             "name": "srv",
