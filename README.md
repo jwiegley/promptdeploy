@@ -152,10 +152,20 @@ There's a home-manager module if you want deployments to happen automatically on
     enable = true;
     package = inputs.promptdeploy.packages.${system}.default;
     sourceDir = "~/src/promptdeploy";
+    # Optional: defaults to the targets labelled `local` in deploy.yaml.
+    # List labels or target IDs (including remote ones) to widen the set.
     targets = [ "local" ];
   };
 }
 ```
+
+When `targets` is empty (the default), only the targets carrying the
+`local` label in `deploy.yaml` are deployed -- activation never reaches
+out to remote hosts over SSH unless you opt in explicitly. A failed
+deploy does not abort activation: promptdeploy's output is captured to
+`$XDG_STATE_HOME/promptdeploy/deploy.log` (default
+`~/.local/state/promptdeploy/deploy.log`) and a warning naming that log
+is printed.
 
 ## License
 
