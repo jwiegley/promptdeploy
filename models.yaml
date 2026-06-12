@@ -329,6 +329,7 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
+        only: [hera]
       hera/omlx/Qwen3.6-35B-A3B-4bit-MTPLX-Optimized-Speed:
         display_name: "Qwen 3.6 35B A 3B 4BIT Mtplx Optimized Speed (MLX)"
         max_output_tokens: 65536
@@ -496,6 +497,7 @@ providers:
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
+        only: [hera]
       Qwen3.6-35B-A3B-4bit-MTPLX-Optimized-Speed:
         display_name: "Qwen 3.6 35B A 3B 4BIT Mtplx Optimized Speed (MLX)"
         max_output_tokens: 128000

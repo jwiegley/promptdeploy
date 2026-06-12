@@ -42,7 +42,7 @@ overrides:
   claude-positron:
     preferredNotifChannel:
     statusLine:
-      command: bash /home/jwiegley/.claude/statusline-command.sh
+      command: bash /Users/johnw/.config/claude/positron/statusline-command.sh
   claude-andoria:
     preferredNotifChannel:
     statusLine:

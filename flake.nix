@@ -45,6 +45,19 @@
 
           doCheck = false;
 
+          # Remote deployment shells out to rsync/ssh (src/promptdeploy/ssh.py),
+          # which would otherwise resolve from the ambient PATH. On macOS that
+          # is openrsync, whose filter/--delete semantics differ from GNU rsync
+          # and would break the filters that confine the push's delete blast
+          # radius. Prefix PATH so the installed binary always uses GNU rsync
+          # and OpenSSH from nixpkgs.
+          makeWrapperArgs = [
+            "--prefix"
+            "PATH"
+            ":"
+            "${pkgs.lib.makeBinPath [ pkgs.rsync pkgs.openssh ]}"
+          ];
+
           meta = {
             description =
               "Deploy prompts, agents, skills, and MCP servers to multiple AI coding tools";
@@ -89,6 +102,9 @@
             pythonWithDeps
             pkgs.ruff
             pkgs.lefthook
+            # GNU rsync (not macOS openrsync) for remote deploys run from
+            # the dev shell (PYTHONPATH=src python -m promptdeploy ...).
+            pkgs.rsync
           ];
         };
       })

@@ -18,4 +18,6 @@ pre-commit:
       run: PYTHONPATH=src python -m pytest tests/ -x -q --cov --cov-report=term-missing
     agnix:
       glob: "*.{md,yaml,yml,json,toml}"
-      run: agnix .
+      # agnix is not in nixpkgs (it comes from a personal overlay), so skip
+      # gracefully rather than hard-failing pre-commit on a fresh clone.
+      run: command -v agnix >/dev/null 2>&1 || { echo "agnix not installed; skipping"; exit 0; }; agnix .

@@ -6,6 +6,10 @@ exclude = [
     "translate-tool/**",
     "result/**",
     ".direnv/**",
+    # The two command files below are personal commands whose absolute or
+    # cross-repo @-imports are intentional: they resolve relative to other
+    # working directories (e.g. ~/src/ledger, the positron repo), not this
+    # repo, so agnix's import-reference checks would false-positive on them.
     "commands/productize.md",
     "commands/tron-debug -- positron.md",
 ]

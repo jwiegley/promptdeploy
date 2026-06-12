@@ -21,6 +21,11 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.ruff]
+# Git submodule with its own repo and tooling; also absent from the Nix
+# flake's src (flakes omit submodule contents), so CI never lints it.
+extend-exclude = ["translate-tool"]
+
 [[tool.mypy.overrides]]
 module = "yaml"
 ignore_missing_imports = true
