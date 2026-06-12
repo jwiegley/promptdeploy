@@ -1,6 +1,6 @@
 source_root: .
 
-hosts: [hera, clio, vulcan]
+hosts: [hera, clio, vulcan, vps, andoria-08]
 
 targets:
   claude-personal:
