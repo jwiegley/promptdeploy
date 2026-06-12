@@ -1,5 +1,15 @@
 # Retest Categorical Boundary Sweep Review
 
+> **Resolved.** All three P2 issues below were fixed by commits `2c32b19`
+> (adds the generic "Token fidelity across context-length boundaries"
+> procedure to `/retest`, resolving Issue 1) and `3115483` (reworks the
+> `/retest-categorical` Phase-3 gate: splits `NOT-REACHABLE` into
+> `OUT-OF-SCOPE` and `REACHABILITY-REGRESSION`, enumerates the boundary
+> matrix directly, and maps every Phase-3 status into the final verdict
+> taxonomy, resolving Issues 2 and 3). This document is kept as a historical
+> record of the review; deleting it is the maintainer's alternative (see the
+> vendored/leftover-files decision).
+
 ## Scope
 
 This report documents three P2 review findings in

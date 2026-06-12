@@ -54,6 +54,15 @@ only:
   - claude
 ```
 
+## Filename Tags
+
+A filename may embed deployment labels after a ` -- ` (space-dash-dash-space)
+separator, e.g. `my-server -- positron.yaml`. Each tag is a target ID, label,
+or group name and acts as an implicit `only` entry with AND semantics: the
+server deploys only to targets matching every tag. Tags compose with the
+`only`/`except` fields and are stripped from the filename stem before it is
+used as the default `name`.
+
 ## Local Overrides
 
 Files matching `*.local.yaml` are gitignored and can be used to override settings for local development.

@@ -1,7 +1,7 @@
 # Inject `model:` Frontmatter into Claude-Deployed Agents and Skills
 
 **Date:** 2026-04-22
-**Status:** Approved (pending implementation)
+**Status:** Implemented (shipped)
 
 ## Background
 

@@ -1,6 +1,6 @@
 # promptdeploy
 
-I've been using three different AI coding tools -- Claude Code, Factory Droid, and OpenCode -- and quickly got tired of maintaining the same agents, commands, and configurations in three different places with three different formats. So I wrote `promptdeploy`: you define everything once in this repository, and it deploys to all your targets, handling the format differences for you.
+I've been using several different AI tools -- Claude Code, Factory Droid, OpenCode, and gptel in Emacs -- and quickly got tired of maintaining the same agents, commands, prompts, and configurations in four different places with four different formats. So I wrote `promptdeploy`: you define everything once in this repository, and it deploys to all your targets, handling the format differences for you.
 
 It's a single Python CLI tool with a few small dependencies (PyYAML, Jinja2, ruamel.yaml). You describe what you want in Markdown files and YAML, point it at your targets in `deploy.yaml`, and it figures out the rest.
 
@@ -13,18 +13,19 @@ The repository holds these types of content, all defined in simple Markdown or Y
 | Agents | `agents/*.md` | Specialized sub-agents (Markdown + YAML frontmatter) |
 | Commands | `commands/*.md` | Slash command prompts, `$ARGUMENTS` for user input |
 | Skills | `skills/*/SKILL.md` | Multi-file skill directories with a `SKILL.md` entry point |
+| Prompts | `prompts/*` | Prompt Poet (`.poet`/Jinja) or plain prompts, rendered per target: slash-command Markdown for the coding tools, role/content JSON for gptel |
 | MCP Servers | `mcp/*.yaml` | Model Context Protocol server definitions |
 | Hooks | `hooks/*.yaml` | Claude Code hook groups for tool events |
 | Marketplaces | `marketplaces/*.yaml` | Claude Code plugin marketplaces + enabled plugins (Claude-only) |
 | Models | `models.yaml` | Custom model providers and their models |
 | Settings | `settings.yaml` | Claude Code `settings.json`, single-sourced with `base:` + per-target `overrides:` |
 
-Any item can use `only`/`except` in its frontmatter to control which targets it deploys to. Group names from `deploy.yaml` expand to their members.
+Any item can use `only`/`except` in its frontmatter to control which targets it deploys to. Group names from `deploy.yaml` expand to their members. Labels can also be embedded directly in a filename with the filetags convention -- `heavy -- positron.md` deploys as `heavy`, and only to targets matching every listed label.
 
 ## Using promptdeploy
 
 ```bash
-promptdeploy deploy [--dry-run] [--target TARGET] [--only-type TYPE] [--verbose|--quiet]
+promptdeploy deploy [--dry-run] [--force] [--target TARGET] [--target-root DIR] [--only-type TYPE] [--verbose|--quiet]
 promptdeploy validate    # check for YAML errors, missing fields
 promptdeploy status      # show what's changed since last deploy
 promptdeploy list        # show managed items per target
@@ -32,11 +33,11 @@ promptdeploy settings init [--from REF] [--target T] [--force]  # bootstrap sett
 promptdeploy settings reconcile [--target T] [--apply]          # pull host settings drift into overrides
 ```
 
-The deploy pipeline works like this: discover all source items, filter by target, compute SHA256 hashes against the last manifest, write only what changed, clean up anything that's been removed from source. Unmanaged items in target directories are never touched.
+The deploy pipeline works like this: discover all source items, filter by target, compute SHA256 hashes against the last manifest, write only what changed, clean up anything that's been removed from source. Unmanaged items in target directories are never touched. `--force` redeploys everything even when unchanged; `--target-root DIR` redirects all output under a scratch directory (one subdirectory per target id) so you can preview a deploy without touching real configuration.
 
 ### Targets
 
-Targets are defined in `deploy.yaml`. Each has a type (`claude`, `droid`, or `opencode`) and a path. Remote targets add a `host:` field and deploy via rsync over SSH.
+Targets are defined in `deploy.yaml`. Each has a type (`claude`, `droid`, `opencode`, or `gptel`) and a path. Remote targets add a `host:` field and deploy via rsync over SSH. The `gptel` type receives only prompts, rendered as JSON for Emacs' gptel-prompts; the other types receive the full content set.
 
 ```yaml
 source_root: .
@@ -50,6 +51,9 @@ targets:
   opencode:
     type: opencode
     path: ~/.config/opencode
+  gptel-emacs:
+    type: gptel
+    path: ~/.emacs.d/prompts
 groups:
   claude:
     - claude-personal
@@ -57,11 +61,11 @@ groups:
 
 ### Environment variables
 
-API keys use `${VAR}` syntax in MCP and model definitions. Claude targets pass these through verbatim for runtime expansion; Droid and OpenCode expand them at deploy time from your shell environment. See `.env.example` for the full list.
+API keys and other secrets use `${VAR}` syntax in MCP and model definitions, resolved at deploy time from your shell environment plus a `.env` file at the repo root (which never overrides exported variables). How strictly they are expanded depends on the target: Claude targets expand only the `env` block of MCP servers, leaving unset variables as literal `${VAR}`; Droid expands model `api_key` values the same lenient way and copies MCP definitions verbatim; OpenCode expands both model `api_key` and MCP `env` values strictly -- a missing variable aborts the deploy -- since OpenCode runs from a directory where your shell variables won't be set. See `.env.example` for the full list.
 
 ### Single-source settings.yaml
 
-`settings.yaml` lets you maintain Claude Code's `settings.json` from one place. You write a shared `base:` and, where targets differ, per-target or per-group `overrides:`. Overrides are applied as a JSON Merge Patch ([RFC 7386](https://www.rfc-editor.org/rfc/rfc7386)): a key set to `null` deletes it, nested objects merge, and an exact target id wins over any group.
+`settings.yaml` lets you maintain Claude Code's `settings.json` from one place. You write a shared `base:` and, where targets differ, per-target or per-group `overrides:`. Overrides are applied as a JSON Merge Patch ([RFC 7396](https://www.rfc-editor.org/rfc/rfc7396)): a key set to `null` deletes it, nested objects merge, and an exact target id wins over any group.
 
 ```yaml
 base:
@@ -76,7 +80,7 @@ overrides:
       FAST: "1"
 ```
 
-Deploying renders the settings for each claude target and gently merges only the rendered top-level keys into that target's `settings.json`. Keys you manage are tracked per target, so dropping one from `settings.yaml` removes it on the next deploy, while `hooks`, `mcpServers`, and any keys you didn't put under `settings.yaml` are left untouched. Droid and OpenCode targets skip settings entirely.
+Deploying renders the settings for each claude target and gently merges only the rendered top-level keys into that target's `settings.json`. Keys you manage are tracked per target, so dropping one from `settings.yaml` removes it on the next deploy, while `hooks`, `mcpServers`, `extraKnownMarketplaces`, `enabledPlugins`, and any keys you didn't put under `settings.yaml` are left untouched. Droid and OpenCode targets skip settings entirely.
 
 Two helpers bootstrap and maintain the file:
 

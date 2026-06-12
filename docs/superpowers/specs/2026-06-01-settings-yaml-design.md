@@ -1,7 +1,7 @@
 # Single-Source Claude Code `settings.json` via `settings.yaml`
 
 **Date:** 2026-06-01
-**Status:** Approved (pending implementation plan)
+**Status:** Implemented (shipped)
 
 ## Background
 

@@ -9,6 +9,11 @@ A marketplace file drives two top-level keys in Claude's `settings.json`:
 - `extraKnownMarketplaces` — a map of marketplace name to `{source, autoUpdate?}`.
 - `enabledPlugins` — a map of `"<plugin>@<marketplace>"` to a boolean.
 
+> **Caveat:** these entries are discovery/activation only. Deploying them
+> registers the marketplace and marks plugins enabled, but Claude Code does
+> not auto-install the plugins on a fresh host — the plugin content must
+> still be fetched on that host through Claude Code itself (e.g. `/plugin`).
+
 ## Fields
 
 | Field         | Type   | Default        | Description                                                                 |
@@ -23,6 +28,15 @@ A marketplace file drives two top-level keys in Claude's `settings.json`:
 | `except`      | string[] | `[]`         | Exclude the listed targets/groups.                                          |
 
 Unknown top-level keys produce a validation warning.
+
+## Filename tags
+
+A filename may embed deployment labels after a ` -- ` (space-dash-dash-space)
+separator, e.g. `acme -- positron.yaml`. Each tag is a target ID, label, or
+group name and acts as an implicit `only` entry with AND semantics: the file
+deploys only to targets matching every tag. Tags compose with the
+`only`/`except` fields and are stripped from the filename stem before it is
+used as the default `name`.
 
 ## Source
 

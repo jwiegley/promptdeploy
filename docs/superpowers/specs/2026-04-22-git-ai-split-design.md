@@ -1,7 +1,7 @@
 # Split `claude-git-ai` into Local and Remote Targets
 
 **Date:** 2026-04-22
-**Status:** Approved (pending implementation)
+**Status:** Implemented (shipped)
 
 ## Background
 
