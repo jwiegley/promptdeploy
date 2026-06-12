@@ -157,10 +157,10 @@ export type WithRequired<T, K extends keyof T> = Prettify<
 ### Type Guards
 ```typescript
 // Proper type guard with type predicate
-export function isExecCommand(
-  command: IPactCommand,
-): command is IPactCommand & { payload: IExecutionPayloadObject } {
-  return 'exec' in command.payload;
+export function isErrorResponse(
+  response: ApiResponse,
+): response is ApiResponse & { error: ApiError } {
+  return 'error' in response && response.error !== undefined;
 }
 ```
 
@@ -220,7 +220,7 @@ export default defineConfig({
 - Migration guides for breaking changes
 - API reference documentation
 
-## Best Practices from Kadena.js
+## Additional Best Practices
 
 ### Type Composition
 - Use conditional types for dynamic type selection

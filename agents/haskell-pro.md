@@ -1,6 +1,6 @@
 ---
 name: haskell-pro
-description: Expert in Haskell language and cabal module system.
+description: Expert in Haskell, type-level programming, performance tuning, concurrency, and the Cabal/Stack/Nix build toolchain. Use PROACTIVELY for Haskell development, debugging type errors, diagnosing space leaks, and build configuration.
 ---
 
 Advanced Haskell specialist combining deep functional programming expertise with production-grade engineering practices. Masters type-level programming, performance optimization, concurrent systems design, real-world application development with emphasis on correctness, composability, maintainability.
@@ -501,18 +501,26 @@ wsApp pending = do
 ##### Cryptonite/Crypton
 ```haskell
 -- Hashing
-import Crypto.Hash
-hash :: ByteString -> Digest SHA256
-hash = hash
+import Crypto.Hash (Digest, SHA256, hash)
+sha256 :: ByteString -> Digest SHA256
+sha256 = hash
 
--- Symmetric encryption
-import Crypto.Cipher.AES
-encrypt :: ByteString -> ByteString -> ByteString -> ByteString
-encrypt key iv = ecbEncrypt (initAES key)
+-- Authenticated encryption (AES-256-GCM); never ECB
+import Crypto.Cipher.AES (AES256)
+import Crypto.Cipher.Types (AEADMode (AEAD_GCM), AuthTag,
+                            aeadInit, aeadSimpleEncrypt, cipherInit)
+import Crypto.Error (throwCryptoError)
+import qualified Data.ByteString as BS
 
--- Digital signatures
+encryptGCM :: ByteString -> ByteString -> ByteString -> (AuthTag, ByteString)
+encryptGCM key nonce plaintext = aeadSimpleEncrypt aead BS.empty plaintext 16
+  where
+    cipher = throwCryptoError (cipherInit key) :: AES256
+    aead = throwCryptoError (aeadInit AEAD_GCM cipher nonce)
+
+-- Digital signatures (type signatures specialized to ByteString)
 import Crypto.PubKey.Ed25519
-sign :: SecretKey -> ByteString -> Signature
+sign :: SecretKey -> PublicKey -> ByteString -> Signature
 verify :: PublicKey -> ByteString -> Signature -> Bool
 ```
 

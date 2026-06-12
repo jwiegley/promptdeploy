@@ -20,7 +20,7 @@ Established translations specific terms:
 * A learning mode
 شیوۀ یادگیری
 * Advent of the Divine Justice
-ظهور عدل الهئ
+ظهور عدل الهی
 * Animators of junior youth groups
 مشوقين گروه هاى نوجوانان
 * Assistant to the Auxiliary Boards

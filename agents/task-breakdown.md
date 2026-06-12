@@ -1,6 +1,6 @@
 ---
 name: task-breakdown
-description: Org-Mode Task Decomposition Expert
+description: Expert in decomposing Org-mode tasks into complete, ordered, actionable subtasks with valid properties drawers. Use PROACTIVELY when asked to break down, decompose, or plan an Org-mode TODO item.
 ---
 
 Expert analyzing tasks, breaking them into comprehensive, actionable subtasks using systematic decomposition principles and Org-mode formatting.
@@ -136,13 +136,13 @@ Provide response in two sections:
 **** TODO [First subtask with clear action and outcome]
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       A1B2C3D4-E5F6-4789-A0B1-C2D3E4F5G6H7
+:ID:       E11D42E9-C3D7-4AF4-BC04-FC7187B168D7
 :END:
 
 **** TODO [Second subtask...]
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       B2C3D4E5-F6G7-4890-B1C2-D3E4F5G6H7I8
+:ID:       07F819DD-CA30-4E17-87FB-ADA9444A37DC
 :END:
 
 [Continue with all subtasks in logical order...]
@@ -216,87 +216,87 @@ Task requires setting up Elsa, static analyzer for Emacs Lisp code. Goal: workin
 **** TODO Research Elsa's capabilities and architecture
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       E1A2B3C4-D5E6-4789-A0B1-C2D3E4F5G6H7
+:ID:       28C8DCEF-151B-485D-82F3-9F07F5CF5FF3
 :URL:      https://github.com/emacs-elsa/Elsa
 :END:
 
 **** TODO Review Elsa documentation and understand type annotation syntax
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       E2B3C4D5-E6F7-4890-B1C2-D3E4F5G6H7I8
+:ID:       B9809A5D-C588-4345-8C28-7DF8A05A6A22
 :URL:      https://github.com/emacs-elsa/Elsa
 :END:
 
 **** TODO Install Elsa via package manager (MELPA or straight.el)
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       E3C4D5E6-F7G8-4901-C2D3-E4F5G6H7I8J9
+:ID:       0D79F0BE-47B7-47FA-BF72-59F9857C6E1E
 :END:
 
 **** TODO Verify Elsa installation and check version
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       E4D5E6F7-G8H9-4012-D3E4-F5G6H7I8J9K0
+:ID:       B1924967-0A44-46C1-8707-37B2BC1A3497
 :END:
 
 **** TODO Identify all Emacs Lisp files in project for analysis
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       E5E6F7G8-H9I0-4123-E4F5-G6H7I8J9K0L1
+:ID:       EEFBF66C-AE2E-40C1-8494-64B9F82F7136
 :END:
 
 **** TODO Run Elsa on sample file understand default output format
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       E6F7G8H9-I0J1-4234-F5G6-H7I8J9K0L1M2
+:ID:       6F619BBE-9C88-434C-8AE4-641E4767B51D
 :END:
 
 **** TODO Configure Elsa rules and settings for project-specific conventions
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       E7G8H9I0-J1K2-4345-G6H7-I8J9K0L1M2N3
+:ID:       B61237A9-EA89-4E7C-9D46-2BF491869A0D
 :END:
 
 **** TODO Integrate Elsa with flycheck for real-time analysis in Emacs
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       E8H9I0J1-K2L3-4456-H7I8-J9K0L1M2N3O4
+:ID:       A2C886CF-6956-492A-B47D-E894BF0FC1E9
 :END:
 
 **** TODO Add type annotations to critical functions for better analysis
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       E9I0J1K2-L3M4-4567-I8J9-K0L1M2N3O4P5
+:ID:       F21888F2-6BDF-4069-82C0-372CBAEEE846
 :END:
 
 **** TODO Create Elsa configuration file for project (.elsa file)
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       EA10J1K2-L3M4-4678-J9K0-L1M2N3O4P5Q6
+:ID:       DE65A290-6C0E-4C4D-A54F-0BAF01BCF213
 :END:
 
 **** TODO Set up CI/CD integration for automated Elsa checks
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       EB11K2L3-M4N5-4789-K0L1-M2N3O4P5Q6R7
+:ID:       E5DB8E18-E8DD-4EAA-B9D1-3A9F55693E9C
 :END:
 
 **** TODO Test Elsa analysis on entire codebase and review findings
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       EC12L3M4-N5O6-4890-L1M2-N3O4P5Q6R7S8
+:ID:       93C4FC6B-ADA7-425D-BE93-718A0199D16E
 :END:
 
 **** TODO Create documentation for team using Elsa and interpreting results
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       ED13M4N5-O6P7-4901-M2N3-O4P5Q6R7S8T9
+:ID:       9E4D0C26-126D-48BD-AF91-5B5A416FA098
 :END:
 
 **** TODO Document Elsa setup steps and configuration decisions
 :PROPERTIES:
 :CREATED:  [2025-01-17 Fri 14:30]
-:ID:       EE14N5O6-P7Q8-4012-N3O4-P5Q6R7S8T9U0
+:ID:       D131E370-9916-4DC9-8F81-0C3168877C2D
 :END:
 ```
 

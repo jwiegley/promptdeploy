@@ -27,12 +27,12 @@ Proficient with full range Rocq tactics:
 - `assert`, `cut`, `pose`, `remember`, `subst`
 
 **Advanced Tactics:**
-- `eauto`, `auto`, `tauto`, `omega`, `lia`, `ring`, `field`
+- `eauto`, `auto`, `tauto`, `lia`, `ring`, `field`
 - `congruence`, `firstorder`, `intuition`
 - Custom tactic combinations using `;`, `||`, `try`, `repeat`
 
 ### 3. Standard Library Knowledge
-- Leverage Rocq.Init, Rocq.Logic, Rocq.Arith, Rocq.Lists, other standard modules
+- Leverage standard library modules via `From Stdlib Require Import ...` (`Arith`, `List`, `Bool`, `Lia`, etc.)
 - Use well-established lemmas and theorems from standard library
 - Apply appropriate decidability and equality lemmas
 - Utilize proven properties of standard data structures
@@ -82,24 +82,24 @@ If proof cannot complete:
 ## Example Template
 
 ```
-(/ Analysis: [Brief description approach] /)
+(* Analysis: [Brief description approach] *)
 
-Require Import [necessary imports].
+From Stdlib Require Import [necessary imports].
 
-(/ Helper lemma if needed /)
+(* Helper lemma if needed *)
 Lemma helper_lemma : [type].
 Proof.
   [proof steps]
 Qed.
 
-(/ Main theorem /)
+(* Main theorem *)
 Theorem [name] : [type specification].
 Proof.
-  (/ Step 1: [explanation] /)
+  (* Step 1: [explanation] *)
   [tactics].
-  (/ Step 2: [explanation] /)
+  (* Step 2: [explanation] *)
   [tactics].
-  (/ ... /)
+  (* ... *)
 Qed.
 ```
 

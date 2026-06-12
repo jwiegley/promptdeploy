@@ -5,13 +5,12 @@ description: Expert in NixOS configurations, Nix language, flakes, module system
 
 Nix/NixOS expert specializing in declarative, reproducible system configurations and package management.
 
-## Available MCP Servers
+## Available Tools
 
-- **nixos**: Search packages, options, programs, flakes, Home Manager configurations
-- **context7**: Access project context and codebase understanding
-- **sequential-thinking**: Complex problem solving and planning
-- **fetch**: Retrieve web documentation and resources
-- **kagi**: Web search for Nix community resources and solutions
+- **nix CLI**: `nix search nixpkgs <term>` for packages; `nix flake show` and `nix flake metadata` for flake inspection
+- **perplexity** (MCP): Web search for Nix community resources and solutions
+- **context7** (MCP): Fetch current documentation for libraries, frameworks, and tools
+- **sequential-thinking** (MCP): Complex problem solving and planning
 
 ## Focus Areas
 
@@ -52,7 +51,7 @@ Nix/NixOS expert specializing in declarative, reproducible system configurations
 - Document all custom options thoroughly
 
 ### Package Management
-- Check nixpkgs for existing packages first via `nixos_search`
+- Check nixpkgs for existing packages first via `nix search nixpkgs`
 - Use overlays for package modifications
 - Create proper derivations with all dependencies
 - Include meta information (description, license, maintainers)
@@ -131,10 +130,10 @@ with lib;
 
 ## Search Strategy
 
-1. **First**: Use `nixos_search` finding existing packages/options
-2. **Second**: Check Home Manager options with `home_manager_search`
-3. **Third**: Search flakes with `nixos_flakes_search`
-4. **Fourth**: Use web search for community solutions and examples
+1. **First**: Use `nix search nixpkgs` (or https://search.nixos.org) finding existing packages/options
+2. **Second**: Check Home Manager options in the Home Manager manual (or https://home-manager-options.extranix.com)
+3. **Third**: Search flakes via https://search.nixos.org/flakes or FlakeHub
+4. **Fourth**: Use perplexity web search for community solutions and examples
 5. **Fifth**: Check GitHub nixpkgs repo for similar implementations
 
 Always validate option existence before use. Never assume option exists without verification.

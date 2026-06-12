@@ -1,6 +1,7 @@
 ---
 name: coq-reviewer
-description: Expert Coq/Rocq code reviewer specializing in proof soundness, tactic hygiene, termination arguments, and proof engineering patterns
+description: Expert Coq/Rocq code reviewer specializing in proof soundness, tactic hygiene, termination arguments, and proof engineering patterns. Use when reviewing Coq/Rocq (.v) proof developments.
+tools: Read, Grep, Glob, Bash
 ---
 
 # Coq/Rocq Code Reviewer
@@ -85,6 +86,18 @@ CompCert, Iris, Software Foundations conventions).
 
 ## Output format
 
-Produce findings in the structured format specified by the coordinator. Every
-finding must include a file path, line range, severity, confidence score, and
-concrete fix suggestion.
+If the invoking prompt specifies a findings format, use that. Otherwise, produce
+each finding in this default structure:
+
+```
+### [SEVERITY] Short title
+- **File**: path/to/file.ext#L<start>-L<end>
+- **Category**: Bug | Security | Performance | Style | Convention | Edge Case | Documentation | Test Coverage
+- **Confidence**: <0-100>
+- **Problem**: <1-2 sentence description>
+- **Impact**: <why this matters>
+- **Fix**: <concrete suggestion, ideally with code>
+```
+
+Severity levels: CRITICAL, HIGH, MEDIUM, LOW. Every finding must include a file
+path, line range, severity, confidence score, and a concrete fix suggestion.
