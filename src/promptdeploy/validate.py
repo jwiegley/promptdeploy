@@ -84,7 +84,7 @@ def validate_all(config: Config) -> List[ValidationIssue]:
     models_yaml_path = config.source_root / "models.yaml"
     default_model = load_anthropic_default_model(models_yaml_path)
     known_models = load_anthropic_known_models(models_yaml_path)
-    always_accepted_aliases = {"opus", "sonnet", "haiku", "inherit"}
+    always_accepted_aliases = {"fable", "opus", "sonnet", "haiku", "inherit"}
     allowed_models = always_accepted_aliases | (known_models or set())
     deploy_yaml_path = config.source_root / "deploy.yaml"
 

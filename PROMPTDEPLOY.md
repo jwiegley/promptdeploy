@@ -93,14 +93,16 @@ providers:
     display_name: "Anthropic"
     except: [droid, opencode, opencode-vulcan]
     claude:
-      default_model: claude-opus-4-7
+      default_model: claude-fable-5
     models:
       claude-haiku-4-5-20251001:
         display_name: "Claude Haiku 4.5"
-      claude-opus-4-7:
-        display_name: "Claude Opus 4.7"
       claude-sonnet-4-6:
         display_name: "Claude Sonnet 4.6"
+      claude-opus-4-8:
+        display_name: "Claude Opus 4.8"
+      claude-fable-5:
+        display_name: "Claude Fable 5"
 ```
 
 The `anthropic` provider itself is scoped to claude targets via `except:` so it does not leak into Droid or OpenCode configuration. The `models:` dict is informational -- it lets `promptdeploy validate` warn when a per-target `model:` references a model not listed here (typo detection). `models:` entries require no credentials; `base_url` and `api_key` are only required when a provider deploys to Droid or OpenCode.

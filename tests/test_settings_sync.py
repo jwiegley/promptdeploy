@@ -254,7 +254,7 @@ def test_reconcile_reports_rendered_only_key(tmp_path):
     p = _claude_tc(tmp_path, "claude-personal", {})  # empty host settings.json
     config = Config(source_root=tmp_path, targets={p.id: p}, groups={})
     out = tmp_path / "settings.yaml"
-    out.write_text("base:\n  model: opus\n")
+    out.write_text("base:\n  model: fable\n")
     diffs = reconcile_settings(
         config, ["claude-personal"], settings_path=out, apply=False
     )
