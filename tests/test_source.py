@@ -176,8 +176,8 @@ class TestDiscoverMcpServers:
         mcps = {m.name: m for m in discovery.discover_mcp_servers()}
         ctx = mcps["context7"]
         assert ctx.metadata is not None
-        assert "command" in ctx.metadata
-        assert "args" in ctx.metadata
+        assert "url" in ctx.metadata
+        assert "headers" in ctx.metadata
 
     def test_mcp_skips_non_yaml(self, discovery):
         mcps = list(discovery.discover_mcp_servers())

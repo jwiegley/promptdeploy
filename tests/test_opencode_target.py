@@ -368,6 +368,39 @@ class TestDeployMcpServer:
         assert srv["url"] == "https://mcp.example.com/mcp"
         assert srv["headers"] == {"Authorization": "Bearer token"}
 
+    def test_env_var_expanded_in_headers_field(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setenv("MCP_HDR_TOKEN", "real-header-token")
+        target = _make_target(tmp_path)
+        target.deploy_mcp_server(
+            "remote",
+            {
+                "url": "https://mcp.example.com/mcp",
+                "headers": {"X-Api-Key": "${MCP_HDR_TOKEN}", "Static": "literal"},
+            },
+        )
+
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
+        headers = result["mcp"]["remote"]["headers"]
+        assert headers["X-Api-Key"] == "real-header-token"
+        assert headers["Static"] == "literal"
+
+    def test_missing_env_var_in_headers_field_raises(self, tmp_path: Path, monkeypatch):
+        from promptdeploy.envsubst import EnvVarError
+
+        monkeypatch.delenv("MCP_HDR_MISSING", raising=False)
+        target = _make_target(tmp_path)
+        with pytest.raises(
+            EnvVarError,
+            match=r"MCP_HDR_MISSING.*mcp\.remote\.headers\.X-Api-Key",
+        ):
+            target.deploy_mcp_server(
+                "remote",
+                {
+                    "url": "https://mcp.example.com/mcp",
+                    "headers": {"X-Api-Key": "${MCP_HDR_MISSING}"},
+                },
+            )
+
     def test_preserves_other_servers(self, tmp_path: Path):
         target = _make_target(tmp_path)
         oc_path = tmp_path / ".opencode" / "opencode.json"

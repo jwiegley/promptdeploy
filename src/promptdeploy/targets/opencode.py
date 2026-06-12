@@ -356,12 +356,26 @@ class OpenCodeTarget(Target):
                     )
                     for k, v in env.items()
                 }
+            # HTTP headers get the same strict deploy-time expansion as
+            # env values, and for the same reason: OpenCode will not
+            # expand ${VAR} at runtime.
+            headers = config.get("headers")
+            if headers:
+                oc_config["headers"] = {
+                    k: (
+                        expand_env_vars_strict(v, context=f"mcp.{name}.headers.{k}")
+                        if isinstance(v, str)
+                        else v
+                    )
+                    for k, v in headers.items()
+                }
             # Copy any remaining non-metadata, non-handled keys.
             for k, v in config.items():
                 if k not in _MCP_STRIP_KEYS and k not in (
                     "command",
                     "args",
                     "env",
+                    "headers",
                 ):
                     oc_config[k] = v
             data.setdefault("mcp", {})[name] = oc_config

@@ -378,6 +378,21 @@ class TestDeployMcpServer:
         assert srv["url"] == "https://example.com/mcp"
         assert srv["disabled"] is False
 
+    def test_headers_passed_through_on_http_server(self, tmp_path: Path):
+        # Characterization: headers are not handled specially on Droid;
+        # they pass through the remaining-keys copy loop verbatim.
+        target = _make_target(tmp_path)
+        config = {
+            "url": "https://example.com/mcp",
+            "headers": {"Authorization": "Bearer token"},
+        }
+        target.deploy_mcp_server("web-srv", config)
+
+        result = json.loads((tmp_path / ".droid" / "mcp.json").read_text())
+        srv = result["mcpServers"]["web-srv"]
+        assert srv["type"] == "http"
+        assert srv["headers"] == {"Authorization": "Bearer token"}
+
     def test_creates_mcp_json_if_missing(self, tmp_path: Path):
         target = _make_target(tmp_path)
         target.deploy_mcp_server("srv", {"command": "echo", "args": []})
