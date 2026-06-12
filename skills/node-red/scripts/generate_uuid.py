@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Generate valid Node-RED node IDs (UUIDs without hyphens).
+Generate valid Node-RED node IDs (16 hexadecimal characters).
 Usage: python generate_uuid.py [count]
 """
 
+import secrets
 import sys
-import uuid
 
 
 def generate_node_id():
-    """Generate a Node-RED compatible UUID (no hyphens)."""
-    return str(uuid.uuid4()).replace("-", "")
+    """Generate a Node-RED compatible ID (16 hex characters)."""
+    return secrets.token_hex(8)
 
 
 def main():

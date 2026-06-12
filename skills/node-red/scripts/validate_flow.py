@@ -24,9 +24,9 @@ def validate_flow(flow_path):
     errors = []
     warnings = []
 
-    # Collect all node IDs and tab IDs
+    # Collect all node IDs and container IDs (tabs and subflow definitions)
     node_ids = set()
-    tab_ids = set()
+    container_ids = set()
 
     for node in flow_data:
         if "id" not in node:
@@ -38,26 +38,35 @@ def validate_flow(flow_path):
             errors.append(f"Duplicate node ID: {node_id}")
         node_ids.add(node_id)
 
-        if node.get("type") == "tab":
-            tab_ids.add(node_id)
+        if node.get("type") in ("tab", "subflow"):
+            container_ids.add(node_id)
 
     # Validate node properties and wiring
     for node in flow_data:
         node_id = node.get("id", "unknown")
         node_type = node.get("type", "unknown")
 
-        # Skip tab nodes for certain checks
-        if node_type == "tab":
+        # Skip container definitions (tabs and subflow definitions)
+        if node_type in ("tab", "subflow"):
             continue
 
-        # Check required fields for non-tab nodes
+        # Check required fields for non-container nodes
         if "type" not in node:
             errors.append(f"Node {node_id} missing 'type' field")
 
-        if "z" not in node and node_type != "tab":
-            errors.append(f"Node {node_id} missing 'z' field (tab reference)")
-        elif node.get("z") and node["z"] not in tab_ids:
-            errors.append(f"Node {node_id} references non-existent tab: {node['z']}")
+        # Definition nodes (config nodes) have no canvas coordinates; they
+        # legitimately omit 'z' (global scope) and x/y.
+        is_definition = "x" not in node and "y" not in node
+
+        if "z" not in node:
+            if not is_definition:
+                errors.append(
+                    f"Node {node_id} missing 'z' field (tab/subflow reference)"
+                )
+        elif node.get("z") and node["z"] not in container_ids:
+            errors.append(
+                f"Node {node_id} references non-existent tab/subflow: {node['z']}"
+            )
 
         # Validate wires
         if "wires" in node:
@@ -76,8 +85,8 @@ def validate_flow(flow_path):
                                     f"Node {node_id} wires to non-existent node: {wire_id}"
                                 )
 
-        # Check coordinates
-        if "x" not in node or "y" not in node:
+        # Check coordinates (definition nodes have none by design)
+        if not is_definition and ("x" not in node or "y" not in node):
             warnings.append(f"Node {node_id} missing coordinates (x, y)")
 
         # Validate function nodes

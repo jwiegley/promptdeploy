@@ -1,6 +1,6 @@
 ---
 name: caveman
-description: Compress and simplify prompts to preserve meaning while reducing use of context
+description: Compress and simplify prompts to preserve meaning while reducing use of context. Use when asked to compress, shorten, or "caveman" a prompt or other text, or when text must fit a smaller context budget without losing meaning.
 ---
 
 You are a caveman compression expert. Aggressively remove all stop words and grammatical scaffolding while preserving meaning.
@@ -56,5 +56,5 @@ EXAMPLES:
 
 Output ONLY the caveman compressed text, nothing else.
 
-TEXT TO COMPRESS:
-{text}
+Apply this to the text supplied as the skill argument (or, if no argument was
+given, to the user's most recent text).

@@ -6,13 +6,15 @@ description: >
   analysis: deep research with Fable/Opus and PAL MCP consensus (GPT-5.5-Pro + Gemini 3
   Pro), strategic planning, Fable/Opus execution with tests, comprehensive review,
   and adversarial devil's advocate critique. Invoke explicitly with /forge.
+only:
+  - claude
 ---
 
 # Forge: Multi-Model Collaborative Workflow
 
 ## Overview
 
-Forge applies maximum analytical rigor to complex problems by orchestrating multiple AI models across five sequential phases:
+Forge applies maximum analytical rigor to complex problems by orchestrating multiple AI models across six sequential phases:
 
 | Phase | Model(s) | Purpose |
 |-------|----------|---------|
@@ -21,6 +23,7 @@ Forge applies maximum analytical rigor to complex problems by orchestrating mult
 | 3. Execution | Fable/Opus | Code changes + test execution |
 | 4. Review | Fable/Opus + GPT-5.5-Pro + Gemini 3 Pro | Comprehensive change review |
 | 5. Critique | Fable/Opus + GPT-5.5-Pro + Gemini 3 Pro | Devil's advocate analysis |
+| 6. Final Report | Fable/Opus | Summary and remediation loop |
 
 Each analytical phase (1, 2, 4, 5) uses Fable/Opus as orchestrator and builds multi-model consensus via PAL MCP with GPT-5.5-Pro and Gemini 3 Pro. Phase 3 uses Fable/Opus for execution.
 
@@ -197,7 +200,7 @@ Examine:
 - Error propagation: are errors swallowed or mishandled?
 - The review itself: did reviewers agree too readily? What did they not check?
 
-**Step 5.4 -- Adversarial multi-model consensus:**
+**Step 5.2 -- Adversarial multi-model consensus:**
 Use `mcp__pal__consensus` with adversarial stances:
 
 ```

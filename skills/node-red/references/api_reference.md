@@ -14,10 +14,24 @@ curl -H "Authorization: Bearer <access_token>" http://localhost:1880/flows
 
 ## Flow Management
 
-### GET /flows
-Retrieve all flows configuration.
+The Flows API has two versions. **v1 (the default)** works with a bare JSON
+array of nodes — this is what the recipes in SKILL.md use. **v2** wraps the
+array in an envelope with a revision id for optimistic locking, and only
+applies when the request carries the header `Node-RED-API-Version: v2`.
 
-**Response:**
+### GET /flows
+Retrieve the active flow configuration.
+
+**Response (v1, default):** a JSON array of all nodes, including tab and
+subflow definitions:
+```json
+[
+  { "id": "tab-id", "type": "tab", "label": "Flow 1" },
+  { "id": "node-id", "type": "inject", "z": "tab-id", "wires": [[]] }
+]
+```
+
+**Response (v2, requires `Node-RED-API-Version: v2` header):**
 ```json
 {
   "flows": [...],      // Array of flow nodes
@@ -28,16 +42,24 @@ Retrieve all flows configuration.
 ### POST /flows
 Deploy complete flow configuration.
 
-**Request:**
+**Request (v1, default):** the body is the complete flow array itself:
+```json
+[...]
+```
+
+**Request (v2, requires `Node-RED-API-Version: v2` header):**
 ```json
 {
   "flows": [...],      // Complete flow array
   "rev": "abc123"      // Optional: revision for conflict detection
 }
 ```
+With v2, a stale `rev` is rejected with a `conflict` error unless the
+deployment type is `reload`.
 
 **Headers:**
 - `Node-RED-Deployment-Type`: full|nodes|flows|reload
+- `Node-RED-API-Version`: v2 (only when using the v2 envelope)
 
 ### POST /flow
 Add a new flow/tab.
@@ -365,12 +387,6 @@ Real-time communication for editor.
 - `debug`: Debug messages
 - `notification`: System notifications
 
-## Rate Limiting
-
-API endpoints may be rate-limited based on settings:
-- Default: 100 requests per 15 minutes
-- Configurable via `rateLimit` in settings.js
-
 ## CORS Configuration
 
 Configure in settings.js:
@@ -385,11 +401,13 @@ httpNodeCors: {
 
 ### Deploy Flow via cURL
 ```bash
-# Get current flows
-FLOWS=$(curl -s http://localhost:1880/flows)
+# Get current flows (v1: the body is a bare JSON array)
+TOKEN=$(cat /run/secrets/node-red-admin-token)
+FLOWS=$(curl -s -H "Authorization: Bearer $TOKEN" http://localhost:1880/flows)
 
-# Modify and deploy
+# Modify and deploy (the body is the array itself)
 curl -X POST http://localhost:1880/flows \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -H "Node-RED-Deployment-Type: full" \
   -d "$FLOWS"
@@ -398,28 +416,30 @@ curl -X POST http://localhost:1880/flows \
 ### Python Example
 ```python
 import requests
-import json
 
-# Get flows
-resp = requests.get('http://localhost:1880/flows')
-config = resp.json()
+with open('/run/secrets/node-red-admin-token') as f:
+    token = f.read().strip()
+headers = {'Authorization': f'Bearer {token}'}
+
+# Get flows (v1: the response body is the flow array itself)
+resp = requests.get('http://localhost:1880/flows', headers=headers)
+flows = resp.json()  # a list of node objects
 
 # Add a new node
-new_node = {
-    "id": "generated-id",
+flows.append({
+    "id": "a1b2c3d4e5f60718",  # 16 hex chars (scripts/generate_uuid.py)
     "type": "debug",
     "z": "flow-tab-id",
     "name": "New Debug",
     "x": 300,
     "y": 200,
     "wires": []
-}
-config['flows'].append(new_node)
+})
 
 # Deploy
 requests.post(
     'http://localhost:1880/flows',
-    json=config,
-    headers={'Node-RED-Deployment-Type': 'nodes'}
+    json=flows,
+    headers={**headers, 'Node-RED-Deployment-Type': 'nodes'}
 )
 ```

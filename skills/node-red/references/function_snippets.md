@@ -56,10 +56,16 @@ return null;  // Don't return anything immediately
 ```
 
 ### HTTP request with async/await
-```javascript
-// Make async HTTP request
-const https = require('https');
 
+`require()` is not available inside function nodes. To use a Node.js module,
+add it on the function node's **Setup** tab (stored in the node's `libs`;
+enabled by default via `functionExternalModules` in settings.js). The example
+below assumes the `https` module was added on the Setup tab with variable
+name `https`. For simple cases, prefer wiring an `http request` node instead
+of issuing requests from function code.
+
+```javascript
+// Make async HTTP request ("https" added on the Setup tab)
 async function fetchData() {
     try {
         const response = await new Promise((resolve, reject) => {
@@ -232,7 +238,7 @@ function attemptOperation() {
             setTimeout(() => {
                 node.send(attemptOperation());
                 node.done();
-            }, 1000 * retries);  // Exponential backoff
+            }, 1000 * retries);  // Linear backoff: 1s, 2s, 3s
             return null;
         } else {
             node.error(`Failed after ${maxRetries} attempts`, msg);
@@ -576,7 +582,12 @@ function log(level, message, data = {}) {
 
 // Usage
 log('info', 'Processing started', {count: msg.payload.length});
-log('error', 'Processing failed', {error: error.message});
+
+try {
+    // Your operation here
+} catch (err) {
+    log('error', 'Processing failed', {error: err.message});
+}
 
 return msg;
 ```

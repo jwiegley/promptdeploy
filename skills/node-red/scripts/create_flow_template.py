@@ -3,17 +3,17 @@
 Generate boilerplate Node-RED flows for common patterns.
 Usage: python create_flow_template.py <template_type> [output.json]
 
-Templates: mqtt, http-api, data-pipeline, error-handler, dashboard
+Templates: mqtt, http-api, data-pipeline, error-handler
 """
 
 import json
+import secrets
 import sys
-import uuid
 
 
 def generate_id():
-    """Generate Node-RED compatible ID."""
-    return str(uuid.uuid4()).replace("-", "")
+    """Generate Node-RED compatible ID (16 hex characters)."""
+    return secrets.token_hex(8)
 
 
 def create_mqtt_flow():

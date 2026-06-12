@@ -188,11 +188,13 @@ scripts/package_skill.py <path/to/skill-folder> ./dist
 
 The packaging script will:
 
-1. **Validate** the skill automatically, checking:
-   - YAML frontmatter format and required fields
-   - Skill naming conventions and directory structure
-   - Description completeness and quality
-   - File organization and resource references
+1. **Validate** the skill automatically (via `scripts/quick_validate.py`). This is a quick sanity check of SKILL.md only, verifying that:
+   - SKILL.md exists and starts with well-formed YAML frontmatter
+   - The frontmatter contains the required `name` and `description` fields
+   - The name is hyphen-case (lowercase letters, digits, and hyphens; no leading, trailing, or consecutive hyphens)
+   - The description contains no angle brackets
+
+   It does not inspect bundled resources or the body of SKILL.md, so review those manually against the guidance in this document.
 
 2. **Package** the skill if validation passes, creating a zip file named after the skill (e.g., `my-skill.zip`) that includes all files and maintains the proper directory structure for distribution.
 
