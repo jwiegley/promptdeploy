@@ -125,7 +125,8 @@ def render_settings(
         result = apply_merge_patch(result, exact)
 
     result = strip_keys(result, MANAGED_ELSEWHERE)
-    return strip_nulls(result)
+    rendered: Dict[str, Any] = strip_nulls(result)
+    return rendered
 
 
 def render_pre_exact(
@@ -142,4 +143,5 @@ def render_pre_exact(
     """
     result = _apply_group_overrides(doc, target_id, config)
     result = strip_keys(result, MANAGED_ELSEWHERE)
-    return strip_nulls(result)
+    rendered: Dict[str, Any] = strip_nulls(result)
+    return rendered

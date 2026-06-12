@@ -23,7 +23,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import yaml
 from jinja2 import (
@@ -51,7 +51,7 @@ class PoetTurn:
 class PoetDocument:
     """Parsed Poet document with optional comment-frontmatter metadata."""
 
-    frontmatter: dict = field(default_factory=dict)
+    frontmatter: dict[str, Any] = field(default_factory=dict)
     turns: List[PoetTurn] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
 
@@ -60,7 +60,7 @@ class PoetError(ValueError):
     """Raised when a .poet file cannot be parsed."""
 
 
-def extract_comment_frontmatter(content: bytes) -> dict:
+def extract_comment_frontmatter(content: bytes) -> dict[str, Any]:
     """Extract leading ``# key: value`` comment frontmatter from content.
 
     Reads contiguous comment/blank lines from the very top of the file.
@@ -73,7 +73,7 @@ def extract_comment_frontmatter(content: bytes) -> dict:
     Returns an empty dict when no comment frontmatter is present.
     """
     text = content.decode("utf-8", errors="replace")
-    metadata: dict = {}
+    metadata: dict[str, Any] = {}
     for line in text.splitlines():
         stripped = line.strip()
         if not stripped:
@@ -227,7 +227,7 @@ def _render_template(
     body: str,
     *,
     source_path: Optional[Path],
-    vars: dict,
+    vars: dict[str, Any],
     missing: List[str],
 ) -> str:
     loader: Optional[FileSystemLoader] = None
@@ -271,7 +271,7 @@ def parse_poet(
     content: bytes,
     *,
     source_path: Optional[Path] = None,
-    vars: Optional[dict] = None,
+    vars: Optional[dict[str, Any]] = None,
 ) -> PoetDocument:
     """Parse a YAML+Jinja Poet file into a :class:`PoetDocument`.
 
@@ -288,7 +288,7 @@ def parse_poet(
     comment_block, body = _split_comment_frontmatter(text)
     frontmatter = extract_comment_frontmatter(comment_block.encode("utf-8"))
 
-    template_vars: dict = {
+    template_vars: dict[str, Any] = {
         "current_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
     if vars:
@@ -478,7 +478,7 @@ def render_for_gptel(doc: PoetDocument) -> bytes:
     """Render a poet document as the JSON array gptel-prompts.el consumes."""
     payload = []
     for t in doc.turns:
-        entry: dict = {"role": t.role, "content": t.content}
+        entry: dict[str, Any] = {"role": t.role, "content": t.content}
         if t.name is not None:
             entry["name"] = t.name
         payload.append(entry)

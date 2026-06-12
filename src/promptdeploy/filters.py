@@ -1,6 +1,6 @@
 """Environment filtering for selective deployment."""
 
-from typing import List, Optional, Set
+from typing import Any, List, Optional, Set
 
 from .config import Config
 
@@ -69,7 +69,7 @@ def _filetags_match(
 
 def should_deploy_to(
     target_id: str,
-    metadata: Optional[dict],
+    metadata: Optional[dict[str, Any]],
     config: Config,
     source_path: str,
     filetags: Optional[List[str]] = None,

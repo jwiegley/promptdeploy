@@ -8,7 +8,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Literal, Optional, Set
+from typing import Any, List, Literal, Optional, Set
 
 from .config import Config, load_anthropic_default_model
 from .envsubst import _ENV_PATTERN
@@ -73,7 +73,9 @@ class DeployAction:
     warnings: list[str] = field(default_factory=list)
 
 
-def _apply_provider_overrides(prov: dict, target_id: str, config: Config) -> dict:
+def _apply_provider_overrides(
+    prov: dict[str, Any], target_id: str, config: Config
+) -> dict[str, Any]:
     """Shallow-merge per-target ``overrides`` onto a provider dict.
 
     The ``overrides`` field maps a target ID or group name to a partial
@@ -101,7 +103,9 @@ def _apply_provider_overrides(prov: dict, target_id: str, config: Config) -> dic
     return result
 
 
-def _filter_models_config(config_dict: dict, target_id: str, config: Config) -> dict:
+def _filter_models_config(
+    config_dict: dict[str, Any], target_id: str, config: Config
+) -> dict[str, Any]:
     """Filter a models.yaml config dict, keeping only matching providers/models.
 
     Applies should_deploy_to() at both provider and model level so that
@@ -109,12 +113,12 @@ def _filter_models_config(config_dict: dict, target_id: str, config: Config) -> 
     SourceItem containing many providers and models). Then applies any
     per-target ``overrides`` for the matching provider.
     """
-    filtered_providers: dict = {}
+    filtered_providers: dict[str, Any] = {}
     for prov_key, prov in config_dict.get("providers", {}).items():
         if not should_deploy_to(target_id, prov, config, "models.yaml"):
             continue
         # Filter individual models within the provider
-        filtered_models: dict = {}
+        filtered_models: dict[str, Any] = {}
         for model_id, model in prov.get("models", {}).items():
             if model is None:
                 model = {}
@@ -217,7 +221,7 @@ def _deploy_item(
     target: Target,
     item: SourceItem,
     *,
-    filtered_models_config: Optional[dict] = None,
+    filtered_models_config: Optional[dict[str, Any]] = None,
 ) -> None:
     """Deploy a single source item to a target."""
     if item.item_type == "agent":

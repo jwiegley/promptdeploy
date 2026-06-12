@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, List, Optional
+from typing import Any, Iterator, List, Optional
 
 import yaml
 
@@ -26,7 +26,7 @@ class SourceItem:
     item_type: str  # 'agent', 'command', 'skill', 'mcp', 'models', 'hook', 'marketplace', 'prompt', 'settings'
     name: str
     path: Path
-    metadata: Optional[dict]
+    metadata: Optional[dict[str, Any]]
     content: bytes
     filetags: List[str] = field(default_factory=list)
 
@@ -39,7 +39,7 @@ class DiscoveryError:
     message: str
 
 
-def _resolve_name(metadata: Optional[dict], base_name: str) -> str:
+def _resolve_name(metadata: Optional[dict[str, Any]], base_name: str) -> str:
     """Resolve an item's name from metadata with a string-type guard.
 
     A non-string ``name:`` (e.g. ``name: 123``) would corrupt manifest and

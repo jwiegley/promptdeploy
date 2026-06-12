@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import yaml
 
@@ -16,7 +16,7 @@ class FrontmatterError(Exception):
     """Raised when YAML frontmatter cannot be parsed."""
 
 
-def parse_frontmatter(content: bytes) -> Tuple[Optional[dict], bytes]:
+def parse_frontmatter(content: bytes) -> Tuple[Optional[dict[str, Any]], bytes]:
     """Parse YAML frontmatter from content bytes.
 
     Returns a tuple of (metadata dict or None, body content as bytes).
@@ -46,12 +46,12 @@ def parse_frontmatter(content: bytes) -> Tuple[Optional[dict], bytes]:
     return metadata, body.encode("utf-8")
 
 
-def strip_deployment_fields(metadata: dict) -> dict:
+def strip_deployment_fields(metadata: dict[str, Any]) -> dict[str, Any]:
     """Remove 'only' and 'except' deployment keys from metadata."""
     return {k: v for k, v in metadata.items() if k not in ("only", "except")}
 
 
-def serialize_frontmatter(metadata: dict, body: bytes) -> bytes:
+def serialize_frontmatter(metadata: dict[str, Any], body: bytes) -> bytes:
     """Serialize metadata and body back into frontmatter-formatted bytes."""
     if not metadata:
         return body
@@ -67,7 +67,7 @@ def serialize_frontmatter(metadata: dict, body: bytes) -> bytes:
 
 def transform_for_target(
     content: bytes,
-    inject: Optional[dict] = None,
+    inject: Optional[dict[str, Any]] = None,
 ) -> bytes:
     """Parse frontmatter, strip deployment fields, inject overrides, and re-serialize.
 

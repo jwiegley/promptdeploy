@@ -92,7 +92,7 @@ def expand_env_vars(value: str) -> str:
     """
     missing: list[str] = []
 
-    def _replace(match: re.Match) -> str:
+    def _replace(match: re.Match[str]) -> str:
         var_name = match.group(1)
         resolved = os.environ.get(var_name)
         if resolved is None:
@@ -129,7 +129,7 @@ def expand_env_vars_strict(value: str, *, context: str = "") -> str:
     """
     missing: list[str] = []
 
-    def _replace(match: re.Match) -> str:
+    def _replace(match: re.Match[str]) -> str:
         var_name = match.group(1)
         resolved = os.environ.get(var_name)
         if resolved is None:

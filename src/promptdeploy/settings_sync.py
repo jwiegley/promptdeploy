@@ -20,7 +20,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
 from ruamel.yaml.scalarstring import ScalarString, SingleQuotedScalarString
 
-from .config import Config
+from .config import Config, TargetConfig
 from .settings import (
     MANAGED_ELSEWHERE,
     generate_merge_patch,
@@ -50,7 +50,7 @@ def _yaml() -> YAML:
     return y
 
 
-def load_settings_doc(path: Path):
+def load_settings_doc(path: Path) -> Any:
     """Load settings.yaml as a round-trip mapping ({} if absent/empty)."""
     if not path.exists():
         return _yaml().load("{}\n")
@@ -82,7 +82,7 @@ def _quote_yaml11_booleans(node: Any) -> Any:
     return node
 
 
-def dump_settings_doc(doc, path: Path) -> None:
+def dump_settings_doc(doc: Any, path: Path) -> None:
     """Atomically write a round-trip doc back to settings.yaml.
 
     Boolean-like plain strings are quoted in place (see
@@ -115,7 +115,7 @@ def dump_settings_doc(doc, path: Path) -> None:
         raise
 
 
-def read_live_settings(target_config) -> Dict[str, Any]:
+def read_live_settings(target_config: TargetConfig) -> Dict[str, Any]:
     """Return a target's live settings.json minus the MANAGED_ELSEWHERE keys
     (``hooks``/``mcpServers``/``extraKnownMarketplaces``/``enabledPlugins``)
     and any explicit ``null`` values.
@@ -132,7 +132,8 @@ def read_live_settings(target_config) -> Dict[str, Any]:
         raw = target.read_settings_json()
     finally:
         target.cleanup()
-    return strip_nulls(strip_keys(raw, _MANAGED_ELSEWHERE))
+    live: Dict[str, Any] = strip_nulls(strip_keys(raw, _MANAGED_ELSEWHERE))
+    return live
 
 
 def _claude_target_ids(config: Config, target_ids: List[str]) -> List[str]:

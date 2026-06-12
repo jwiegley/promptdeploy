@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import Any, List
 
 import yaml
 
@@ -210,7 +210,7 @@ def validate_settings(config: Config) -> List[ValidationIssue]:
         "enabledPlugins": "marketplaces/",
     }
 
-    def _check_section(section: dict, where: str) -> None:
+    def _check_section(section: dict[str, Any], where: str) -> None:
         for key, source_dir in _managed_by.items():
             if key in section:
                 issues.append(

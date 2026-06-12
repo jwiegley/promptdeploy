@@ -14,7 +14,7 @@ def _load_config_or_exit() -> Config:
         sys.exit(1)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         prog="promptdeploy",
         description="Deploy prompts, agents, skills, and MCP servers to multiple tools.",
@@ -132,7 +132,7 @@ def main():
             _run_settings_reconcile(args)
 
 
-def _run_deploy(args):
+def _run_deploy(args: argparse.Namespace) -> None:
     from .deploy import deploy
     from .filters import FilterError
     from .output import Output, Verbosity
@@ -216,7 +216,7 @@ def _run_deploy(args):
     )
 
 
-def _run_validate():
+def _run_validate() -> None:
     from .validate import validate_all
 
     config = _load_config_or_exit()
@@ -238,7 +238,7 @@ def _run_validate():
         sys.exit(1)
 
 
-def _run_status(args):
+def _run_status(args: argparse.Namespace) -> None:
     from .frontmatter import FrontmatterError
     from .status import get_status
 
@@ -270,7 +270,7 @@ def _run_status(args):
         print(f"  {symbol}  {entry.item_type:8s} {entry.name:30s} -> {entry.target_id}")
 
 
-def _run_list(args):
+def _run_list(args: argparse.Namespace) -> None:
     from .manifest import load_manifest
     from .targets import create_target
 
@@ -336,7 +336,7 @@ def _run_list(args):
             target.cleanup()
 
 
-def _run_settings_init(args):
+def _run_settings_init(args: argparse.Namespace) -> None:
     from .settings_sync import init_settings
 
     config = _load_config_or_exit()
@@ -356,7 +356,7 @@ def _run_settings_init(args):
     print(f"Wrote {out_path}")
 
 
-def _run_settings_reconcile(args):
+def _run_settings_reconcile(args: argparse.Namespace) -> None:
     from .settings_sync import reconcile_settings
 
     config = _load_config_or_exit()
