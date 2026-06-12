@@ -13,6 +13,7 @@ from .config import (
     load_anthropic_default_model,
     load_anthropic_known_models,
 )
+from .envsubst import find_env_refs, read_env_example_keys
 from .filetags import parse_filetags
 from .frontmatter import FrontmatterError, parse_frontmatter
 from .poet import POET_EXTENSIONS, PoetError, parse_poet
@@ -33,6 +34,11 @@ def validate_all(config: Config) -> List[ValidationIssue]:
     issues: List[ValidationIssue] = []
     discovery = SourceDiscovery(config.source_root)
 
+    # ${VAR} references in MCP env/headers are checked against .env.example
+    # so a typo'd or undocumented variable surfaces at validate time. None
+    # (no .env.example) disables the check entirely.
+    env_keys = read_env_example_keys(config.source_root / ".env.example")
+
     all_items: List[SourceItem] = []
 
     # Markdown-backed types collect per-file frontmatter errors leniently so
@@ -46,7 +52,7 @@ def validate_all(config: Config) -> List[ValidationIssue]:
         discovery_errors: List[DiscoveryError] = []
         for item in markdown_discover_fn(errors=discovery_errors):
             all_items.append(item)
-            issues.extend(validate_item(item, config))
+            issues.extend(validate_item(item, config, env_example_keys=env_keys))
         for err in discovery_errors:
             issues.append(
                 ValidationIssue(
@@ -67,7 +73,7 @@ def validate_all(config: Config) -> List[ValidationIssue]:
     ):
         for item in discover_fn():
             all_items.append(item)
-            issues.extend(validate_item(item, config))
+            issues.extend(validate_item(item, config, env_example_keys=env_keys))
 
     # A committed skill that is a broken symlink silently vanishes from
     # discovery (and therefore from every target); surface it here.
@@ -287,8 +293,19 @@ def validate_settings(config: Config) -> List[ValidationIssue]:
     return issues
 
 
-def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
-    """Validate a single source item."""
+def validate_item(
+    item: SourceItem,
+    config: Config,
+    *,
+    env_example_keys: set[str] | None = None,
+) -> List[ValidationIssue]:
+    """Validate a single source item.
+
+    ``env_example_keys`` is the set of variable names declared in
+    ``.env.example``; when provided, MCP ``${VAR}`` references in
+    ``env``/``headers`` that are not declared there produce warnings.
+    ``None`` skips that check.
+    """
     issues: List[ValidationIssue] = []
 
     _VALID_HOOK_EVENTS = frozenset(
@@ -488,6 +505,22 @@ def validate_item(item: SourceItem, config: Config) -> List[ValidationIssue]:
                     file_path=item.path,
                 )
             )
+        if env_example_keys is not None:
+            refs = find_env_refs(metadata.get("env")) | find_env_refs(
+                metadata.get("headers")
+            )
+            for var in sorted(refs - env_example_keys):
+                issues.append(
+                    ValidationIssue(
+                        level="warning",
+                        message=(
+                            f"MCP references ${{{var}}} which is not declared "
+                            f"in .env.example; an unset variable expands to "
+                            f"empty at runtime"
+                        ),
+                        file_path=item.path,
+                    )
+                )
 
     # Skill-specific validations (documented Agent Skills limits)
     if item.item_type == "skill":

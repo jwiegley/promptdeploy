@@ -38,6 +38,51 @@ def load_dotenv(path: Path) -> None:
             os.environ[key] = value
 
 
+def find_env_refs(data: object) -> set[str]:
+    """Collect every ``${VAR}`` variable name referenced in nested data.
+
+    Recurses through strings, dict values, and list elements; any other
+    scalar (int, bool, None, ...) contributes nothing.
+    """
+    refs: set[str] = set()
+    if isinstance(data, str):
+        refs.update(_ENV_PATTERN.findall(data))
+    elif isinstance(data, dict):
+        for value in data.values():
+            refs |= find_env_refs(value)
+    elif isinstance(data, list):
+        for element in data:
+            refs |= find_env_refs(element)
+    return refs
+
+
+def read_env_example_keys(path: Path) -> set[str] | None:
+    """Return the variable names declared in a ``.env``-style file.
+
+    Mirrors the line rules of :func:`load_dotenv` (blank lines, ``#``
+    comments, shell-style ``export`` prefixes, lines without ``=``)
+    without touching ``os.environ``.  Returns ``None`` when the file
+    does not exist so callers can distinguish "no declarations file"
+    from "declares nothing".
+    """
+    if not path.is_file():
+        return None
+    keys: set[str] = set()
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
+        if "=" not in line:
+            continue
+        key, _, _ = line.partition("=")
+        key = key.strip()
+        if key:
+            keys.add(key)
+    return keys
+
+
 def expand_env_vars(value: str) -> str:
     """Replace ${VAR} references with values from os.environ.
 

@@ -8,7 +8,9 @@ from promptdeploy.envsubst import (
     EnvVarError,
     expand_env_vars,
     expand_env_vars_strict,
+    find_env_refs,
     load_dotenv,
+    read_env_example_keys,
 )
 
 
@@ -123,6 +125,72 @@ class TestLoadDotenv:
         assert os.environ.get("DOTENV_EXPORTED") == "val"
         assert "export DOTENV_EXPORTED" not in os.environ
         monkeypatch.delenv("DOTENV_EXPORTED")
+
+
+class TestFindEnvRefs:
+    def test_string_with_ref(self):
+        assert find_env_refs("${FOO}") == {"FOO"}
+
+    def test_string_without_ref(self):
+        assert find_env_refs("plain text") == set()
+
+    def test_multiple_refs_in_one_string(self):
+        assert find_env_refs("${A}:${B}") == {"A", "B"}
+
+    def test_nested_dict_and_list(self):
+        data = {
+            "env": {"KEY": "${ONE}"},
+            "args": ["${TWO}", {"deep": "x ${THREE} y"}],
+        }
+        assert find_env_refs(data) == {"ONE", "TWO", "THREE"}
+
+    def test_non_string_scalars_ignored(self):
+        assert find_env_refs({"a": 1, "b": None, "c": True, "d": 2.5}) == set()
+
+    def test_duplicate_refs_deduplicated(self):
+        assert find_env_refs(["${X}", {"k": "${X}"}]) == {"X"}
+
+    def test_none_input(self):
+        assert find_env_refs(None) == set()
+
+
+class TestReadEnvExampleKeys:
+    def test_missing_file_returns_none(self, tmp_path: Path):
+        assert read_env_example_keys(tmp_path / ".env.example") is None
+
+    def test_basic_keys(self, tmp_path: Path):
+        path = tmp_path / ".env.example"
+        path.write_text("FOO=bar\nBAZ=qux\n")
+        assert read_env_example_keys(path) == {"FOO", "BAZ"}
+
+    def test_skips_comments_and_blanks(self, tmp_path: Path):
+        path = tmp_path / ".env.example"
+        path.write_text("# comment\n\n  \nREAL=yes\n")
+        assert read_env_example_keys(path) == {"REAL"}
+
+    def test_export_prefix_stripped(self, tmp_path: Path):
+        path = tmp_path / ".env.example"
+        path.write_text("export EXPORTED=val\n")
+        assert read_env_example_keys(path) == {"EXPORTED"}
+
+    def test_skips_lines_without_equals(self, tmp_path: Path):
+        path = tmp_path / ".env.example"
+        path.write_text("no-equals-here\nGOOD=ok\n")
+        assert read_env_example_keys(path) == {"GOOD"}
+
+    def test_empty_key_skipped(self, tmp_path: Path):
+        path = tmp_path / ".env.example"
+        path.write_text("=value\n")
+        assert read_env_example_keys(path) == set()
+
+    def test_does_not_touch_environ(self, tmp_path: Path, monkeypatch):
+        import os
+
+        monkeypatch.delenv("ENV_EXAMPLE_PROBE", raising=False)
+        path = tmp_path / ".env.example"
+        path.write_text("ENV_EXAMPLE_PROBE=value\n")
+        read_env_example_keys(path)
+        assert "ENV_EXAMPLE_PROBE" not in os.environ
 
 
 class TestExpandEnvVarsStrict:
