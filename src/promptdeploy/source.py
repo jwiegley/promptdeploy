@@ -152,7 +152,7 @@ class SourceDiscovery:
         skills_dir = self.source_root / "skills"
         if not skills_dir.is_dir():
             return
-        skip_names = {"README.md", "agent_skills_spec.md"}
+        skip_names = {"README.md"}
         for entry in sorted(skills_dir.iterdir()):
             if entry.name.startswith(".") or entry.name in skip_names:
                 continue
