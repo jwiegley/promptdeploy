@@ -2,8 +2,10 @@
 description: Run the forge skill's multi-phase, multi-model collaborative workflow on the stated problem
 ---
 
-Use the forge skill to perform a comprehensive multi-model collaborative workflow on the following problem:
+Invoke the forge skill on the following problem, passed through verbatim:
 
 $ARGUMENTS
 
-Follow the forge skill's workflow exactly as written — it defines the phases, the models used in each phase, and where to pause for user approval.
+The forge skill defines the entire workflow -- the phases, the models used in
+each phase, and where to pause for user approval. Follow it exactly as
+written; do not restate, abbreviate, or modify it here.

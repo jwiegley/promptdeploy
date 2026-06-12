@@ -4,7 +4,7 @@ description: Security-focused code review
 argument-hint: [files, directories, commit range, or branch]
 ---
 
-# Security Review
+# Security Audit
 
 You are coordinating a security-focused code review.
 
