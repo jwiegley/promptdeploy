@@ -282,6 +282,20 @@ class TestDeploySkill:
         target.deploy_skill("s", src_v2)
         assert (tmp_path / ".droid" / "skills" / "s" / "SKILL.md").read_bytes() == b"v2"
 
+    def test_skill_without_skill_md_copied_verbatim(self, tmp_path: Path):
+        # A source directory lacking SKILL.md is still copied; there is
+        # simply no frontmatter to transform.
+        target = _make_target(tmp_path)
+        src = tmp_path / "bare-skill"
+        src.mkdir()
+        (src / "helper.py").write_text("print('hi')")
+
+        target.deploy_skill("bare", src)
+
+        dest = tmp_path / ".droid" / "skills" / "bare"
+        assert (dest / "helper.py").read_text() == "print('hi')"
+        assert not (dest / "SKILL.md").exists()
+
     def test_overwrites_symlinked_skill(self, tmp_path: Path):
         target = _make_target(tmp_path)
 

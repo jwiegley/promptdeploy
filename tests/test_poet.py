@@ -133,6 +133,14 @@ class TestParsePoet:
         # Placeholder is preserved literally so user can see what's missing.
         assert "{{ missing }}" in doc.turns[0].content
 
+    def test_jinja_duplicate_undefined_var_recorded_once(self):
+        # Referencing the same missing variable twice keeps both literal
+        # placeholders but reports the name only once.
+        content = b"- role: system\n  content: 'a {{ missing }} b {{ missing }}'\n"
+        doc = parse_poet(content)
+        assert doc.warnings == ["Undefined Jinja variable: missing"]
+        assert doc.turns[0].content == "a {{ missing }} b {{ missing }}"
+
     def test_jinja_user_supplied_vars(self):
         content = b"- role: system\n  content: 'hi {{ who }}'\n"
         doc = parse_poet(content, vars={"who": "world"})

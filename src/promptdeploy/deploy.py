@@ -236,6 +236,10 @@ def _deploy_item(
         target.deploy_marketplace(item.name, item.metadata or {})
     elif item.item_type == "prompt":
         target.deploy_prompt(item.name, item.content, item.path)
+    else:
+        # "settings" is dispatched through Target.deploy_settings in
+        # deploy(); anything else here is a programming error.
+        raise ValueError(f"unsupported item type for deploy: {item.item_type!r}")
 
 
 def _drain_warnings(target: Target) -> dict[str, list[str]]:

@@ -645,6 +645,29 @@ class TestHostGroupInjection:
         assert config.groups["hera"] == ["opencode-hera"]
         assert set(config.groups["clio"]) == {"opencode-clio", "droid"}
 
+    def test_no_host_group_injected_when_hostname_undetectable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An undetectable hostname injects no host group at all.
+
+        When gethostname() yields an empty string and PROMPTDEPLOY_HOST is
+        unset, host-less targets must not be registered under a group keyed
+        by the empty string.
+        """
+        monkeypatch.delenv("PROMPTDEPLOY_HOST", raising=False)
+        monkeypatch.setattr("socket.gethostname", lambda: "")
+        data = {
+            "source_root": ".",
+            "targets": {
+                "droid": {"type": "droid", "path": "~/.factory"},
+            },
+        }
+        config_path = tmp_path / "deploy.yaml"
+        with open(config_path, "w") as f:
+            yaml.dump(data, f)
+        config = load_config(config_path)
+        assert "" not in config.groups
+
 
 class TestExpandTargetArg:
     def test_none_returns_all(self, config: Config) -> None:

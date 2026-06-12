@@ -9,6 +9,7 @@ from promptdeploy.config import Config, TargetConfig
 from promptdeploy.deploy import (
     _CLI_TYPE_TO_ITEM_TYPE,
     _TYPE_TO_CATEGORY,
+    _deploy_item,
     deploy,
 )
 from promptdeploy.manifest import (
@@ -288,6 +289,30 @@ class TestRemoval:
         manifest = load_manifest(tc.path / MANIFEST_FILENAME)
         assert "helper" not in manifest.items.get("agents", {})
 
+    def test_unknown_manifest_category_dropped_gracefully(self, tmp_path: Path):
+        """A manifest from a newer promptdeploy may hold unknown categories.
+
+        The stale-removal pass must not crash on one: there is nothing to
+        unlink on the target, so it reports a remove and drops the entry
+        from the manifest.
+        """
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        deploy(config)
+        manifest_path = tc.path / MANIFEST_FILENAME
+        manifest = load_manifest(manifest_path)
+        manifest.items["widgets"] = {"gizmo": ManifestItem(source_hash="sha256:0")}
+        save_manifest(manifest, manifest_path)
+
+        actions = deploy(config)
+        removes = [a for a in actions if a.action == "remove"]
+        assert [(a.item_type, a.name) for a in removes] == [("widgets", "gizmo")]
+
+        manifest = load_manifest(manifest_path)
+        assert "widgets" not in manifest.items
+
 
 class TestDryRun:
     """Dry run computes actions without writing."""
@@ -373,6 +398,26 @@ class TestOnlyType:
         # Other types should be preserved (not removed)
         assert "fix" in manifest.items["commands"]
         assert "my-skill" in manifest.items["skills"]
+
+    def test_only_type_removes_stale_items_of_matching_type(self, tmp_path: Path):
+        """--only-type still removes stale items of the selected type."""
+        src = _make_source(tmp_path)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+
+        deploy(config)
+        (src / "agents" / "helper.md").unlink()
+
+        actions = deploy(config, item_types=["agents"])
+        removes = [a for a in actions if a.action == "remove"]
+        assert [(a.item_type, a.name) for a in removes] == [("agent", "helper")]
+        assert not (tc.path / "agents" / "helper.md").exists()
+
+        manifest = load_manifest(tc.path / MANIFEST_FILENAME)
+        assert "helper" not in manifest.items.get("agents", {})
+        # Items of unselected types stay deployed and tracked.
+        assert "fix" in manifest.items["commands"]
+        assert (tc.path / "commands" / "fix.md").exists()
 
 
 class TestEnvironmentFilters:
@@ -1393,6 +1438,23 @@ class TestCacheInvalidation:
         actions = deploy(config)
         non_skips = [a for a in actions if a.action != "skip"]
         assert non_skips == []
+
+
+class TestDeployItemDispatch:
+    """_deploy_item dispatches on item type and rejects anything else."""
+
+    def test_settings_item_type_rejected(self, tmp_path: Path):
+        # settings items are dispatched through Target.deploy_settings in
+        # deploy(), never through _deploy_item; reaching it with one (or any
+        # unknown type) is a programming error and must fail loudly instead
+        # of silently deploying nothing.
+        from promptdeploy.source import SourceItem
+        from promptdeploy.targets.claude import ClaudeTarget
+
+        target = ClaudeTarget("t", tmp_path)
+        item = SourceItem("settings", "settings", tmp_path / "settings.yaml", {}, b"")
+        with pytest.raises(ValueError, match="settings"):
+            _deploy_item(target, item)
 
 
 class TestTypeMappings:

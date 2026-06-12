@@ -242,6 +242,31 @@ def test_init_settings_factors_base_and_overrides(tmp_path):
     assert "claude-personal" not in doc.get("overrides", {})
 
 
+def test_init_settings_identical_hosts_omit_overrides(tmp_path):
+    # When every selected host matches the reference exactly, the generated
+    # settings.yaml carries only `base` -- no empty `overrides` block and no
+    # empty per-target entries.
+    from promptdeploy.config import Config
+    from promptdeploy.settings_sync import init_settings, load_settings_doc
+
+    p = _claude_tc(tmp_path, "claude-personal", {"effortLevel": "low"})
+    q = _claude_tc(tmp_path, "claude-positron", {"effortLevel": "low"})
+    config = Config(source_root=tmp_path, targets={p.id: p, q.id: q}, groups={})
+    out = tmp_path / "settings.yaml"
+
+    init_settings(
+        config,
+        ["claude-personal", "claude-positron"],
+        from_ref="claude-personal",
+        out_path=out,
+        force=False,
+    )
+
+    doc = load_settings_doc(out)
+    assert doc["base"] == {"effortLevel": "low"}
+    assert "overrides" not in doc
+
+
 def test_init_settings_refuses_existing_without_force(tmp_path):
     import pytest
     from promptdeploy.config import Config

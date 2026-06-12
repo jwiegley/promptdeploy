@@ -300,6 +300,45 @@ class TestValidateItemModels:
         assert any("'base_url'" in m for m in messages)
         assert any("'api_key'" in m for m in messages)
 
+    def test_credentialed_droid_provider_has_no_missing_field_errors(
+        self, config: Config
+    ) -> None:
+        # A droid: provider that does declare base_url and api_key passes the
+        # required-field check.
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "sk-test",
+                        "droid": {"type": "openai"},
+                        "models": {"m": {"display_name": "M"}},
+                    },
+                },
+            }
+        )
+        issues = validate_item(item, config)
+        assert not any("missing required field" in i.message for i in issues)
+
+    def test_models_not_a_mapping_reports_no_models(self, config: Config) -> None:
+        # `models: null` (or any non-mapping) reports the no-models error and
+        # skips model-level validation instead of crashing.
+        item = self._make_models_item(
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://acme.com",
+                        "api_key": "key",
+                        "models": None,
+                    },
+                },
+            }
+        )
+        issues = validate_item(item, config)
+        assert any("no models defined" in i.message for i in issues)
+
     def test_empty_models_in_provider(self, config: Config) -> None:
         item = self._make_models_item(
             {
@@ -1399,6 +1438,15 @@ def test_validate_settings_non_dict_overrides_errors(tmp_path):
         i.level == "error" and "'overrides' must be a mapping" in i.message
         for i in validate_all(cfg)
     )
+
+
+def test_validate_settings_null_override_value_allowed(tmp_path):
+    # An override entry with a null value (an empty placeholder) is accepted:
+    # it is neither a shape error nor recursed into.
+    from promptdeploy.validate import validate_all
+
+    cfg = _cfg_with(tmp_path, "base: {}\noverrides:\n  claude-positron: null\n")
+    assert [i for i in validate_all(cfg) if "settings.yaml" in str(i.file_path)] == []
 
 
 def test_validate_settings_non_dict_override_value_errors(tmp_path):

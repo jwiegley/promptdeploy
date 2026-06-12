@@ -123,10 +123,12 @@ def main():
         _run_status(args)
     elif args.command == "list":
         _run_list(args)
-    elif args.command == "settings":
+    else:
+        # args.command == "settings": both subparsers are declared with
+        # required=True, so argparse guarantees the command names.
         if args.settings_command == "init":
             _run_settings_init(args)
-        elif args.settings_command == "reconcile":
+        else:
             _run_settings_reconcile(args)
 
 

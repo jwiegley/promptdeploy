@@ -197,6 +197,20 @@ class TestDeploySkill:
             tmp_path / ".opencode" / "skills" / "s" / "SKILL.md"
         ).read_bytes() == b"v2"
 
+    def test_skill_without_skill_md_copied_verbatim(self, tmp_path: Path):
+        # A source directory lacking SKILL.md is still copied; there is
+        # simply nothing to transform.
+        target = _make_target(tmp_path)
+        src = tmp_path / "bare-skill"
+        src.mkdir()
+        (src / "helper.py").write_text("print('hi')")
+
+        target.deploy_skill("bare", src)
+
+        dest = tmp_path / ".opencode" / "skills" / "bare"
+        assert (dest / "helper.py").read_text() == "print('hi')"
+        assert not (dest / "SKILL.md").exists()
+
     def test_overwrites_symlinked_skill(self, tmp_path: Path):
         target = _make_target(tmp_path)
 
@@ -300,6 +314,19 @@ class TestDeployMcpServer:
         assert oc_path.exists()
         result = json.loads(oc_path.read_text())
         assert "srv" in result["mcp"]
+
+    def test_server_without_command_or_url_written_bare(self, tmp_path: Path):
+        # Neither `command` nor `url`: there is no transport to infer, so the
+        # entry is written without `type` or `command`.  (validate flags such
+        # configs as errors; the target itself stays lenient.)
+        target = _make_target(tmp_path)
+        target.deploy_mcp_server("srv", {"env": {"K": "v"}})
+
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
+        srv = result["mcp"]["srv"]
+        assert "type" not in srv
+        assert "command" not in srv
+        assert srv["environment"] == {"K": "v"}
 
     def test_disabled_server_not_written(self, tmp_path: Path):
         target = _make_target(tmp_path)
@@ -582,6 +609,48 @@ class TestDeployModels:
         model = result["provider"]["prov"]["models"]["m"]
         assert model["limit"]["context"] == 64000
         assert "output" not in model["limit"]
+
+    def test_model_with_only_output_limit(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "prov": {
+                    "display_name": "Prov",
+                    "base_url": "https://prov.com",
+                    "api_key": "key",
+                    "opencode": {"npm": "@ai-sdk/openai-compatible"},
+                    "models": {
+                        "m": {"output_limit": 8192},
+                    },
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
+        model = result["provider"]["prov"]["models"]["m"]
+        assert model["limit"]["output"] == 8192
+        assert "context" not in model["limit"]
+
+    def test_provider_with_no_models_omitted(self, tmp_path: Path):
+        # A provider with an opencode: section but no models contributes no
+        # entry at all -- OpenCode has nothing to select from it.
+        target = _make_target(tmp_path)
+        config = {
+            "providers": {
+                "prov": {
+                    "display_name": "Prov",
+                    "base_url": "https://prov.com",
+                    "api_key": "key",
+                    "opencode": {"npm": "@ai-sdk/openai-compatible"},
+                    "models": {},
+                },
+            },
+        }
+        target.deploy_models(config)
+
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
+        assert result["provider"] == {}
 
     def test_model_without_limits_has_no_limit_key(self, tmp_path: Path):
         target = _make_target(tmp_path)
