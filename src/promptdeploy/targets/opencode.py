@@ -8,7 +8,7 @@ import re
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ..frontmatter import (
     parse_frontmatter,
@@ -57,7 +57,7 @@ _MCP_TOOL_RE = re.compile(r"^mcp__([^_].*?)__(.+)$")
 
 
 def _convert_claude_tools(
-    tools_value: object, warnings: Optional[list[str]] = None
+    tools_value: object, warnings: list[str] | None = None
 ) -> dict[str, bool]:
     """Convert a Claude Code ``tools`` value to an OpenCode tools object.
 
@@ -123,9 +123,7 @@ def _convert_claude_tools(
     return result
 
 
-def _transform_for_opencode(
-    content: bytes, warnings: Optional[list[str]] = None
-) -> bytes:
+def _transform_for_opencode(content: bytes, warnings: list[str] | None = None) -> bytes:
     """Transform frontmatter for OpenCode targets.
 
     In addition to stripping deployment fields (``only``/``except``), this:
@@ -199,8 +197,8 @@ class OpenCodeTarget(Target):
         self,
         item_type: str,
         name: str,
-        content: Optional[bytes] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        content: bytes | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         return item_type in ("hook", "settings", "marketplace")
 
@@ -392,7 +390,7 @@ class OpenCodeTarget(Target):
     def remove_command(self, name: str) -> None:
         self._remove_file(self._config_path / "commands" / f"{name}.md")
 
-    def remove_prompt(self, name: str, target_path: Optional[Path] = None) -> None:
+    def remove_prompt(self, name: str, target_path: Path | None = None) -> None:
         # OpenCode prompts always land at ``commands/{name}.md``; the manifest
         # ``target_path`` is informational and ignored here.
         self._remove_file(self._config_path / "commands" / f"{name}.md")
@@ -445,8 +443,8 @@ class OpenCodeTarget(Target):
         item_type: str,
         name: str,
         content: bytes,
-        source_path: Optional[Path] = None,
-    ) -> Optional[bytes]:
+        source_path: Path | None = None,
+    ) -> bytes | None:
         if item_type in ("agent", "command"):
             return _transform_for_opencode(content)
         if item_type == "prompt":
@@ -464,7 +462,7 @@ class OpenCodeTarget(Target):
             return render_for_command(doc)
         return None
 
-    def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
+    def read_deployed_bytes(self, item_type: str, name: str) -> bytes | None:
         if item_type == "agent":
             path = self._config_path / "agents" / f"{name}.md"
         elif item_type in ("command", "prompt"):

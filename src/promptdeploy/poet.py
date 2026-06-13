@@ -23,7 +23,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
 import yaml
 from jinja2 import (
@@ -44,7 +44,7 @@ class PoetTurn:
 
     role: str
     content: str
-    name: Optional[str] = None
+    name: str | None = None
 
 
 @dataclass
@@ -52,8 +52,8 @@ class PoetDocument:
     """Parsed Poet document with optional comment-frontmatter metadata."""
 
     frontmatter: dict[str, Any] = field(default_factory=dict)
-    turns: List[PoetTurn] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    turns: list[PoetTurn] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
 
 class PoetError(ValueError):
@@ -103,7 +103,7 @@ def extract_comment_frontmatter(content: bytes) -> dict[str, Any]:
     return metadata
 
 
-def _make_undefined_class(missing: List[str]) -> type[Undefined]:
+def _make_undefined_class(missing: list[str]) -> type[Undefined]:
     """Build a Jinja Undefined subclass that records missing names per-render.
 
     Each render gets its own subclass so the captured ``missing`` list is
@@ -141,7 +141,7 @@ def _make_undefined_class(missing: List[str]) -> type[Undefined]:
         def __str__(self) -> str:  # type: ignore[override]
             return self._record()
 
-        def __getattr__(self, attr: str) -> "CapturingUndefined":
+        def __getattr__(self, attr: str) -> CapturingUndefined:
             # Skip dunders so internal attribute lookups don't get hijacked.
             if attr.startswith("_"):
                 raise AttributeError(attr)
@@ -189,12 +189,12 @@ def _make_undefined_class(missing: List[str]) -> type[Undefined]:
 
         def __call__(  # type: ignore[override]
             self, *args: object, **kwargs: object
-        ) -> "CapturingUndefined":
+        ) -> CapturingUndefined:
             # Calling an undefined degrades to the undefined itself so the
             # eventual use of the result records the placeholder.
             return self
 
-        def __getitem__(self, key: object) -> "CapturingUndefined":  # type: ignore[override]
+        def __getitem__(self, key: object) -> CapturingUndefined:  # type: ignore[override]
             # Subscripts chain like attribute access, so ``{{ foo['bar'] }}``
             # degrades to the placeholder ``{{ foo['bar'] }}``.
             base_name = self._undefined_name or "<unknown>"
@@ -210,7 +210,7 @@ def _make_undefined_class(missing: List[str]) -> type[Undefined]:
 
         def _degrade_arithmetic(
             self, *args: object, **kwargs: object
-        ) -> "CapturingUndefined":
+        ) -> CapturingUndefined:
             # Arithmetic degrades to the undefined itself; the eventual use
             # of the result records the placeholder.
             return self
@@ -226,11 +226,11 @@ def _make_undefined_class(missing: List[str]) -> type[Undefined]:
 def _render_template(
     body: str,
     *,
-    source_path: Optional[Path],
+    source_path: Path | None,
     vars: dict[str, Any],
-    missing: List[str],
+    missing: list[str],
 ) -> str:
-    loader: Optional[FileSystemLoader] = None
+    loader: FileSystemLoader | None = None
     if source_path is not None:
         loader = FileSystemLoader(str(source_path.parent))
     env = Environment(
@@ -270,8 +270,8 @@ def _split_comment_frontmatter(text: str) -> tuple[str, str]:
 def parse_poet(
     content: bytes,
     *,
-    source_path: Optional[Path] = None,
-    vars: Optional[dict[str, Any]] = None,
+    source_path: Path | None = None,
+    vars: dict[str, Any] | None = None,
 ) -> PoetDocument:
     """Parse a YAML+Jinja Poet file into a :class:`PoetDocument`.
 
@@ -294,7 +294,7 @@ def parse_poet(
     if vars:
         template_vars.update(vars)
 
-    missing: List[str] = []
+    missing: list[str] = []
     rendered = _render_template(
         body,
         source_path=source_path,
@@ -319,7 +319,7 @@ def parse_poet(
         raise PoetError(f"Invalid YAML in poet body: {exc}{hint}") from exc
 
     if data is None:
-        turns: List[PoetTurn] = []
+        turns: list[PoetTurn] = []
     elif not isinstance(data, list):
         raise PoetError("Poet body must be a YAML list of role/content turns")
     else:
@@ -383,9 +383,7 @@ def _clean(text: str) -> str:
     return "\n".join(line.rstrip() for line in text.splitlines()).strip("\n")
 
 
-def render_for_command(
-    doc: PoetDocument, *, description: Optional[str] = None
-) -> bytes:
+def render_for_command(doc: PoetDocument, *, description: str | None = None) -> bytes:
     """Render a poet document as a slash-command Markdown file.
 
     The output structure is::
@@ -438,7 +436,7 @@ def render_for_command(
 
     # If the dialog ends with an unpaired user turn (no following assistant),
     # treat that user content as a *task prefix* rather than an example.
-    trailing_user: Optional[PoetTurn] = None
+    trailing_user: PoetTurn | None = None
     if dialog_turns and dialog_turns[-1].role == "user":
         trailing_user = dialog_turns[-1]
         dialog_turns = dialog_turns[:-1]

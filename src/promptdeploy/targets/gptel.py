@@ -16,7 +16,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ..manifest import MANIFEST_FILENAME
 from ..poet import POET_EXTENSIONS, parse_poet, render_for_gptel
@@ -49,8 +49,8 @@ class GptelTarget(Target):
         self,
         item_type: str,
         name: str,
-        content: Optional[bytes] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        content: bytes | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         return item_type != "prompt"
 
@@ -106,7 +106,7 @@ class GptelTarget(Target):
         # Track the file we just wrote so the manifest can record it.
         self._last_deployed[name] = dest.relative_to(self._config_path)
 
-    def deployed_artifact_path(self, item_type: str, name: str) -> Optional[Path]:
+    def deployed_artifact_path(self, item_type: str, name: str) -> Path | None:
         if item_type != "prompt":
             return None
         return self._last_deployed.get(name)
@@ -138,7 +138,7 @@ class GptelTarget(Target):
     # Remove
     # ------------------------------------------------------------------
 
-    def remove_prompt(self, name: str, target_path: Optional[Path] = None) -> None:
+    def remove_prompt(self, name: str, target_path: Path | None = None) -> None:
         # When the manifest recorded the exact deployed path, unlink only
         # that file. This avoids destroying user-authored prompts that
         # happen to share the prompt's stem (e.g. an unrelated ``foo.md``).
@@ -192,8 +192,8 @@ class GptelTarget(Target):
         item_type: str,
         name: str,
         content: bytes,
-        source_path: Optional[Path] = None,
-    ) -> Optional[bytes]:
+        source_path: Path | None = None,
+    ) -> bytes | None:
         if item_type != "prompt" or source_path is None:
             return None
         # Remember which artifact the source extension maps to so that a
@@ -205,7 +205,7 @@ class GptelTarget(Target):
             return render_for_gptel(doc)
         return content
 
-    def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
+    def read_deployed_bytes(self, item_type: str, name: str) -> bytes | None:
         if item_type != "prompt":
             return None
         # Prefer the artifact recorded by the most recent

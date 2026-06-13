@@ -5,7 +5,6 @@ from __future__ import annotations
 import sys
 import time
 from enum import IntEnum
-from typing import Optional
 
 
 class Verbosity(IntEnum):
@@ -19,12 +18,12 @@ class Output:
 
     def __init__(self, verbosity: Verbosity = Verbosity.NORMAL) -> None:
         self.verbosity = verbosity
-        self._start_time: Optional[float] = None
+        self._start_time: float | None = None
 
     def start_timer(self) -> None:
         self._start_time = time.monotonic()
 
-    def elapsed(self) -> Optional[float]:
+    def elapsed(self) -> float | None:
         if self._start_time is None:
             return None
         return time.monotonic() - self._start_time

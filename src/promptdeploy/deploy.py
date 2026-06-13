@@ -6,9 +6,9 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, List, Literal, Optional, Set
+from typing import Any, Literal
 
 from .config import Config, load_anthropic_default_model
 from .envsubst import _ENV_PATTERN
@@ -66,7 +66,7 @@ class DeployAction:
     item_type: str
     name: str
     target_id: str
-    source_path: Optional[str] = None
+    source_path: str | None = None
     # Warnings produced while computing this action's rendered output (e.g.
     # undefined Jinja variables in a .poet prompt). Empty for items without
     # template rendering.
@@ -177,7 +177,7 @@ def _expand_env_for_hash(value: object) -> object:
 
 
 def compute_item_hash(
-    item: SourceItem, target: Target, config: Optional[Config] = None
+    item: SourceItem, target: Target, config: Config | None = None
 ) -> str:
     """Hash that reflects the effective deployed output, not just source bytes.
 
@@ -221,7 +221,7 @@ def _deploy_item(
     target: Target,
     item: SourceItem,
     *,
-    filtered_models_config: Optional[dict[str, Any]] = None,
+    filtered_models_config: dict[str, Any] | None = None,
 ) -> None:
     """Deploy a single source item to a target."""
     if item.item_type == "agent":
@@ -278,8 +278,8 @@ def _remove_item(
     target: Target,
     category: str,
     name: str,
-    target_path: Optional[Path] = None,
-    managed_keys: Optional[list[str]] = None,
+    target_path: Path | None = None,
+    managed_keys: list[str] | None = None,
 ) -> None:
     """Remove a single item from a target by manifest category.
 
@@ -309,12 +309,12 @@ def _remove_item(
 
 def deploy(
     config: Config,
-    target_ids: Optional[List[str]] = None,
+    target_ids: list[str] | None = None,
     dry_run: bool = False,
     verbose: bool = False,
-    item_types: Optional[List[str]] = None,
+    item_types: list[str] | None = None,
     force: bool = False,
-) -> List[DeployAction]:
+) -> list[DeployAction]:
     """Deploy source items to targets.
 
     Args:
@@ -333,7 +333,7 @@ def deploy(
         target_ids = list(config.targets.keys())
 
     # Resolve --only-type filter to singular item_type values
-    allowed_types: Optional[Set[str]] = None
+    allowed_types: set[str] | None = None
     if item_types:
         allowed_types = {_CLI_TYPE_TO_ITEM_TYPE[t] for t in item_types}
 
@@ -345,7 +345,7 @@ def deploy(
     # injected `model` frontmatter field (overridable per-target).
     global_model = load_anthropic_default_model(config.source_root / "models.yaml")
 
-    actions: List[DeployAction] = []
+    actions: list[DeployAction] = []
 
     for target_id in target_ids:
         target_config = config.targets[target_id]
@@ -353,7 +353,7 @@ def deploy(
         try:
             target.prepare(verbose=verbose)
             manifest = load_manifest(target.manifest_path())
-            new_manifest = Manifest(deployed_at=datetime.now(timezone.utc).isoformat())
+            new_manifest = Manifest(deployed_at=datetime.now(UTC).isoformat())
 
             # Track which (category, name) pairs we process for stale detection
             deployed_names: set[tuple[str, str]] = set()
@@ -572,7 +572,7 @@ def deploy(
                     # removal can target the exact file the previous deploy
                     # wrote.
                     prev_item = items_dict.get(name)
-                    target_path: Optional[Path] = None
+                    target_path: Path | None = None
                     if prev_item is not None and prev_item.target_path is not None:
                         target_path = Path(prev_item.target_path)
 

@@ -11,7 +11,7 @@ import sys
 def wire_nodes(flow_path, source_id, target_id, output_port=0):
     """Wire two nodes together in a flow."""
     try:
-        with open(flow_path, "r") as f:
+        with open(flow_path) as f:
             flow_data = json.load(f)
     except (json.JSONDecodeError, FileNotFoundError) as e:
         print(f"Error loading flow: {e}")

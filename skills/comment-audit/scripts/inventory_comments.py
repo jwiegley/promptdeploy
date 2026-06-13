@@ -37,9 +37,9 @@ import subprocess
 import sys
 import tempfile
 import tokenize
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Iterable, Optional
+from datetime import UTC, datetime
 
 MANIFEST_VERSION = 1
 DEFAULT_MANIFEST = os.path.join(".comment-audit", "manifest.json")
@@ -414,7 +414,7 @@ def merge_consecutive_line_comments(comments: list[Comment]) -> list[Comment]:
     return merged
 
 
-def spec_for(path: str) -> Optional[LangSpec]:
+def spec_for(path: str) -> LangSpec | None:
     base = os.path.basename(path)
     if base in BASENAME_SPECS:
         return BASENAME_SPECS[base]
@@ -437,7 +437,7 @@ def extract_comments(path: str, src: str) -> list[Comment]:
 # --- Git helpers -------------------------------------------------------------
 
 
-def _run_git(args: list[str], root: str) -> Optional[str]:
+def _run_git(args: list[str], root: str) -> str | None:
     try:
         out = subprocess.run(
             ["git", *args],
@@ -458,7 +458,7 @@ def is_git_repo(root: str) -> bool:
     return out is not None and out.strip() == "true"
 
 
-def git_tracked_files(root: str) -> Optional[list[str]]:
+def git_tracked_files(root: str) -> list[str] | None:
     out = _run_git(["ls-files"], root)
     if out is None:
         return None
@@ -516,7 +516,7 @@ def is_probably_binary(data: bytes) -> bool:
     return False
 
 
-def read_text(root: str, rel: str) -> Optional[str]:
+def read_text(root: str, rel: str) -> str | None:
     full = os.path.join(root, rel)
     try:
         with open(full, "rb") as f:
@@ -540,7 +540,7 @@ def read_text(root: str, rel: str) -> Optional[str]:
 def comment_id(path: str, start_line: int, text: str) -> str:
     h = hashlib.sha1()
     norm = " ".join(text.split())
-    h.update(f"{path}:{start_line}:{norm}".encode("utf-8"))
+    h.update(f"{path}:{start_line}:{norm}".encode())
     return h.hexdigest()[:12]
 
 
@@ -557,7 +557,7 @@ def atomic_write_json(path: str, obj: dict) -> None:
             os.remove(tmp)
 
 
-def load_manifest(path: str) -> Optional[dict]:
+def load_manifest(path: str) -> dict | None:
     if not os.path.exists(path):
         return None
     try:
@@ -643,7 +643,7 @@ def build_inventory(args: argparse.Namespace) -> int:
     comments = sorted(new_comments.values(), key=lambda c: (c["path"], c["start_line"]))
     manifest = {
         "manifest_version": MANIFEST_VERSION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "root": root,
         "scope": scope,
         "diff_base": args.diff_base,
@@ -831,7 +831,7 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "command", None):

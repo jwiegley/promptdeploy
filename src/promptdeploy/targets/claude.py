@@ -7,7 +7,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ..frontmatter import transform_for_target
 from ..manifest import MANIFEST_FILENAME
@@ -35,7 +35,7 @@ class ClaudeTarget(Target):
         target_id: str,
         config_path: Path,
         *,
-        model: Optional[str] = None,
+        model: str | None = None,
     ) -> None:
         self._id = target_id
         self._config_path = config_path.expanduser().resolve()
@@ -127,12 +127,12 @@ class ClaudeTarget(Target):
         self,
         item_type: str,
         name: str,
-        content: Optional[bytes] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        content: bytes | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         return item_type == "models"
 
-    def content_fingerprint(self, item_type: str) -> Optional[str]:
+    def content_fingerprint(self, item_type: str) -> str | None:
         if self._injected is not None and item_type in ("agent", "skill"):
             return f"model={self._model}"
         return None
@@ -295,7 +295,7 @@ class ClaudeTarget(Target):
     def remove_command(self, name: str) -> None:
         self._remove_file(self._config_path / "commands" / f"{name}.md")
 
-    def remove_prompt(self, name: str, target_path: Optional[Path] = None) -> None:
+    def remove_prompt(self, name: str, target_path: Path | None = None) -> None:
         # Claude prompts always land at ``commands/{name}.md``; the manifest
         # ``target_path`` is informational and ignored here.
         self._remove_file(self._config_path / "commands" / f"{name}.md")
@@ -389,8 +389,8 @@ class ClaudeTarget(Target):
         item_type: str,
         name: str,
         content: bytes,
-        source_path: Optional[Path] = None,
-    ) -> Optional[bytes]:
+        source_path: Path | None = None,
+    ) -> bytes | None:
         if item_type == "agent":
             return transform_for_target(content, inject=self._injected)
         if item_type == "command":
@@ -410,7 +410,7 @@ class ClaudeTarget(Target):
             return render_for_command(doc)
         return None
 
-    def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
+    def read_deployed_bytes(self, item_type: str, name: str) -> bytes | None:
         if item_type == "agent":
             path = self._config_path / "agents" / f"{name}.md"
         elif item_type in ("command", "prompt"):

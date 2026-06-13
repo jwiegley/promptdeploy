@@ -8,9 +8,8 @@ import os
 import sys
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 MANIFEST_VERSION = 1
 MANIFEST_FILENAME = ".prompt-deploy-manifest.json"
@@ -21,8 +20,8 @@ class ManifestItem:
     """Tracks a single deployed item."""
 
     source_hash: str
-    target_path: Optional[str] = None
-    managed_keys: Optional[list[str]] = None
+    target_path: str | None = None
+    managed_keys: list[str] | None = None
 
 
 @dataclass
@@ -34,9 +33,7 @@ class Manifest:
     """
 
     version: int = MANIFEST_VERSION
-    deployed_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    deployed_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     items: dict[str, dict[str, ManifestItem]] = field(default_factory=dict)
 
 

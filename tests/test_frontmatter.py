@@ -45,12 +45,12 @@ class TestParseFrontmatter:
         content = (
             "---\ntitle: \u6d4b\u8bd5\nauthor: \u00e9l\u00e8ve\n---\n"
             "Body with \u00fcnicode.\n"
-        ).encode("utf-8")
+        ).encode()
         metadata, body = parse_frontmatter(content)
         assert metadata is not None
         assert metadata["title"] == "\u6d4b\u8bd5"
         assert metadata["author"] == "\u00e9l\u00e8ve"
-        assert "Body with \u00fcnicode.".encode("utf-8") in body
+        assert "Body with \u00fcnicode.".encode() in body
 
     def test_invalid_yaml_raises_error(self):
         content = b"---\ninvalid: yaml: content: [broken\n---\nBody.\n"
@@ -143,7 +143,7 @@ class TestSerializeFrontmatter:
         metadata = {"title": "\u6d4b\u8bd5"}
         body = b"Body.\n"
         result = serialize_frontmatter(metadata, body)
-        assert "\u6d4b\u8bd5".encode("utf-8") in result
+        assert "\u6d4b\u8bd5".encode() in result
 
     def test_round_trip(self):
         original_meta = {"name": "test", "tags": ["a", "b"]}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 class Target(ABC):
@@ -62,8 +62,8 @@ class Target(ABC):
         self,
         item_type: str,
         name: str,
-        content: Optional[bytes] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        content: bytes | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Return True if this target would no-op the deploy for this item.
 
@@ -73,7 +73,7 @@ class Target(ABC):
         """
         return False
 
-    def content_fingerprint(self, item_type: str) -> Optional[str]:
+    def content_fingerprint(self, item_type: str) -> str | None:
         """Return a string describing target-side transform inputs, or None.
 
         The deploy loop folds this value into the manifest hash so that a
@@ -123,7 +123,7 @@ class Target(ABC):
     def remove_hook(self, name: str) -> None: ...
 
     @abstractmethod
-    def remove_prompt(self, name: str, target_path: Optional[Path] = None) -> None:
+    def remove_prompt(self, name: str, target_path: Path | None = None) -> None:
         """Remove a deployed prompt by ``name``.
 
         ``target_path`` is the relative path that was recorded in the manifest
@@ -135,7 +135,7 @@ class Target(ABC):
         """
         ...
 
-    def deployed_artifact_path(self, item_type: str, name: str) -> Optional[Path]:
+    def deployed_artifact_path(self, item_type: str, name: str) -> Path | None:
         """Return the relative path the most recent deploy wrote, if any.
 
         The deploy loop calls this after a successful deploy and stores the
@@ -169,8 +169,8 @@ class Target(ABC):
         item_type: str,
         name: str,
         content: bytes,
-        source_path: Optional[Path] = None,
-    ) -> Optional[bytes]:
+        source_path: Path | None = None,
+    ) -> bytes | None:
         """Return the bytes this target would write for a single-file artifact.
 
         Used by the deploy loop to decide whether a pre-existing on-disk
@@ -183,7 +183,7 @@ class Target(ABC):
         """
         return None
 
-    def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
+    def read_deployed_bytes(self, item_type: str, name: str) -> bytes | None:
         """Read the bytes currently on disk for a single-file artifact.
 
         Mirrors :meth:`would_deploy_bytes` so the deploy loop can compare

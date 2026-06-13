@@ -8,7 +8,8 @@ RFC 7396 (JSON Merge Patch); ``render_settings`` composes ``base`` with the
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from .config import Config
 
@@ -26,7 +27,7 @@ def apply_merge_patch(base: Any, patch: Any) -> Any:
     """Apply an RFC 7396 JSON Merge Patch. Pure; inputs are never mutated."""
     if not isinstance(patch, dict):
         return copy.deepcopy(patch)
-    result: Dict[str, Any] = copy.deepcopy(base) if isinstance(base, dict) else {}
+    result: dict[str, Any] = copy.deepcopy(base) if isinstance(base, dict) else {}
     for key, value in patch.items():
         if value is None:
             result.pop(key, None)
@@ -38,8 +39,8 @@ def apply_merge_patch(base: Any, patch: Any) -> Any:
 
 
 def generate_merge_patch(
-    base: Dict[str, Any], target: Dict[str, Any]
-) -> Dict[str, Any]:
+    base: dict[str, Any], target: dict[str, Any]
+) -> dict[str, Any]:
     """Return the minimal patch ``P`` with ``apply_merge_patch(base, P) == target``.
 
     ``base`` and ``target`` are both dicts (the settings domain). Keys dropped
@@ -53,7 +54,7 @@ def generate_merge_patch(
     feed null-free targets (``render_settings`` and ``read_live_settings``
     both strip nulls for this reason).
     """
-    patch: Dict[str, Any] = {}
+    patch: dict[str, Any] = {}
     for key in base:
         if key not in target:
             patch[key] = None
@@ -71,7 +72,7 @@ def generate_merge_patch(
     return patch
 
 
-def strip_keys(d: Dict[str, Any], keys: Iterable[str]) -> Dict[str, Any]:
+def strip_keys(d: dict[str, Any], keys: Iterable[str]) -> dict[str, Any]:
     """Return a shallow copy of ``d`` without the named top-level keys."""
     drop = set(keys)
     return {k: v for k, v in d.items() if k not in drop}
@@ -89,15 +90,15 @@ def strip_nulls(value: Any) -> Any:
 
 
 def _apply_group_overrides(
-    doc: Dict[str, Any], target_id: str, config: Config
-) -> Dict[str, Any]:
+    doc: dict[str, Any], target_id: str, config: Config
+) -> dict[str, Any]:
     """Return ``base`` with every matching group/label override applied.
 
     Overrides apply as merge patches in file order; the exact ``target_id``
     entry is NOT applied. Nothing is stripped — this is the raw intermediate.
     """
     base = doc.get("base") or {}
-    result: Dict[str, Any] = copy.deepcopy(dict(base))
+    result: dict[str, Any] = copy.deepcopy(dict(base))
     overrides = doc.get("overrides") or {}
     for key, patch in overrides.items():
         if patch is None or key == target_id:
@@ -108,8 +109,8 @@ def _apply_group_overrides(
 
 
 def render_settings(
-    doc: Dict[str, Any], target_id: str, config: Config
-) -> Dict[str, Any]:
+    doc: dict[str, Any], target_id: str, config: Config
+) -> dict[str, Any]:
     """Render the concrete managed settings for one target.
 
     Starts from ``doc['base']`` and applies every matching ``overrides`` entry as
@@ -125,13 +126,13 @@ def render_settings(
         result = apply_merge_patch(result, exact)
 
     result = strip_keys(result, MANAGED_ELSEWHERE)
-    rendered: Dict[str, Any] = strip_nulls(result)
+    rendered: dict[str, Any] = strip_nulls(result)
     return rendered
 
 
 def render_pre_exact(
-    doc: Dict[str, Any], target_id: str, config: Config
-) -> Dict[str, Any]:
+    doc: dict[str, Any], target_id: str, config: Config
+) -> dict[str, Any]:
     """Render one target's settings as if its exact override did not exist.
 
     Same pipeline as :func:`render_settings` minus the final exact
@@ -143,5 +144,5 @@ def render_pre_exact(
     """
     result = _apply_group_overrides(doc, target_id, config)
     result = strip_keys(result, MANAGED_ELSEWHERE)
-    rendered: Dict[str, Any] = strip_nulls(result)
+    rendered: dict[str, Any] = strip_nulls(result)
     return rendered

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ..ssh import ssh_exists, ssh_pull, ssh_push
 from .base import Target
@@ -74,12 +74,12 @@ class RemoteTarget(Target):
         self,
         item_type: str,
         name: str,
-        content: Optional[bytes] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        content: bytes | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         return self._inner.should_skip(item_type, name, content, metadata)
 
-    def content_fingerprint(self, item_type: str) -> Optional[str]:
+    def content_fingerprint(self, item_type: str) -> str | None:
         return self._inner.content_fingerprint(item_type)
 
     def deploy_agent(self, name: str, content: bytes) -> None:
@@ -127,10 +127,10 @@ class RemoteTarget(Target):
     def remove_marketplace(self, name: str) -> None:
         self._inner.remove_marketplace(name)
 
-    def remove_prompt(self, name: str, target_path: Optional[Path] = None) -> None:
+    def remove_prompt(self, name: str, target_path: Path | None = None) -> None:
         self._inner.remove_prompt(name, target_path)
 
-    def deployed_artifact_path(self, item_type: str, name: str) -> Optional[Path]:
+    def deployed_artifact_path(self, item_type: str, name: str) -> Path | None:
         return self._inner.deployed_artifact_path(item_type, name)
 
     def consume_warnings(self) -> list[tuple[str, list[str]]]:
@@ -144,11 +144,11 @@ class RemoteTarget(Target):
         item_type: str,
         name: str,
         content: bytes,
-        source_path: Optional[Path] = None,
-    ) -> Optional[bytes]:
+        source_path: Path | None = None,
+    ) -> bytes | None:
         return self._inner.would_deploy_bytes(item_type, name, content, source_path)
 
-    def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
+    def read_deployed_bytes(self, item_type: str, name: str) -> bytes | None:
         return self._inner.read_deployed_bytes(item_type, name)
 
     def deploy_settings(

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator, List, Optional
+from typing import Any
 
 import yaml
 
@@ -28,9 +29,9 @@ class SourceItem:
     item_type: str
     name: str
     path: Path
-    metadata: Optional[dict[str, Any]]
+    metadata: dict[str, Any] | None
     content: bytes
-    filetags: List[str] = field(default_factory=list)
+    filetags: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -41,7 +42,7 @@ class DiscoveryError:
     message: str
 
 
-def _resolve_name(metadata: Optional[dict[str, Any]], base_name: str) -> str:
+def _resolve_name(metadata: dict[str, Any] | None, base_name: str) -> str:
     """Resolve an item's name from metadata with a string-type guard.
 
     A non-string ``name:`` (e.g. ``name: 123``) would corrupt manifest and
@@ -101,7 +102,7 @@ class SourceDiscovery:
             )
 
     def discover_agents(
-        self, errors: Optional[List[DiscoveryError]] = None
+        self, errors: list[DiscoveryError] | None = None
     ) -> Iterator[SourceItem]:
         """Discover agent definitions from agents/*.md.
 
@@ -123,7 +124,7 @@ class SourceDiscovery:
                 errors.append(DiscoveryError(path=path, message=str(exc)))
 
     def discover_commands(
-        self, errors: Optional[List[DiscoveryError]] = None
+        self, errors: list[DiscoveryError] | None = None
     ) -> Iterator[SourceItem]:
         """Discover command prompts from commands/*.md.
 
@@ -144,7 +145,7 @@ class SourceDiscovery:
                 errors.append(DiscoveryError(path=path, message=str(exc)))
 
     def discover_skills(
-        self, errors: Optional[List[DiscoveryError]] = None
+        self, errors: list[DiscoveryError] | None = None
     ) -> Iterator[SourceItem]:
         """Discover skills from skills/*/SKILL.md.
 
@@ -185,7 +186,7 @@ class SourceDiscovery:
                 filetags=tags,
             )
 
-    def broken_skill_symlinks(self) -> List[Path]:
+    def broken_skill_symlinks(self) -> list[Path]:
         """Return skills/ entries that are symlinks to nonexistent targets.
 
         :meth:`discover_skills` necessarily skips these (``entry.is_dir()``

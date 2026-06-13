@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from typing import List, Tuple
-
 # Filetags separator: space-dash-dash-space
 _SEPARATOR = " -- "
 
 
-def parse_filetags(name: str) -> Tuple[str, List[str]]:
+def parse_filetags(name: str) -> tuple[str, list[str]]:
     """Parse filetags from a name string.
 
     The filetags utility embeds labels in filenames using the format:

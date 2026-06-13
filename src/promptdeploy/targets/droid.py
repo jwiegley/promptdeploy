@@ -7,7 +7,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ..frontmatter import (
     parse_frontmatter,
@@ -59,8 +59,8 @@ class DroidTarget(Target):
         self,
         item_type: str,
         name: str,
-        content: Optional[bytes] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        content: bytes | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         if item_type == "settings":
             return True
@@ -246,7 +246,7 @@ class DroidTarget(Target):
         elif dest.exists():
             shutil.rmtree(dest)
 
-    def remove_prompt(self, name: str, target_path: Optional[Path] = None) -> None:
+    def remove_prompt(self, name: str, target_path: Path | None = None) -> None:
         # Droid prompts deploy as a ``skills/{name}/`` directory; ``target_path``
         # is informational and not needed here.
         dest = self._config_path / "skills" / name
@@ -294,8 +294,8 @@ class DroidTarget(Target):
         item_type: str,
         name: str,
         content: bytes,
-        source_path: Optional[Path] = None,
-    ) -> Optional[bytes]:
+        source_path: Path | None = None,
+    ) -> bytes | None:
         # Droid writes a single ``.md`` file only for agents -- commands are
         # either skipped entirely or wrapped as a ``skills/{name}/SKILL.md``
         # directory artifact, and prompts also become skill directories.
@@ -304,7 +304,7 @@ class DroidTarget(Target):
             return transform_for_target(content)
         return None
 
-    def read_deployed_bytes(self, item_type: str, name: str) -> Optional[bytes]:
+    def read_deployed_bytes(self, item_type: str, name: str) -> bytes | None:
         if item_type != "agent":
             return None
         path = self._config_path / "droids" / f"{name}.md"

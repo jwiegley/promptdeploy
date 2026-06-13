@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Optional, Tuple
+from typing import Any
 
 import yaml
 
@@ -16,7 +16,7 @@ class FrontmatterError(Exception):
     """Raised when YAML frontmatter cannot be parsed."""
 
 
-def parse_frontmatter(content: bytes) -> Tuple[Optional[dict[str, Any]], bytes]:
+def parse_frontmatter(content: bytes) -> tuple[dict[str, Any] | None, bytes]:
     """Parse YAML frontmatter from content bytes.
 
     Returns a tuple of (metadata dict or None, body content as bytes).
@@ -67,7 +67,7 @@ def serialize_frontmatter(metadata: dict[str, Any], body: bytes) -> bytes:
 
 def transform_for_target(
     content: bytes,
-    inject: Optional[dict[str, Any]] = None,
+    inject: dict[str, Any] | None = None,
 ) -> bytes:
     """Parse frontmatter, strip deployment fields, inject overrides, and re-serialize.
 

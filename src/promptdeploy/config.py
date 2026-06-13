@@ -2,7 +2,6 @@ import os
 import socket
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import yaml
 
@@ -28,9 +27,9 @@ class TargetConfig:
     id: str
     type: str  # 'claude', 'droid', 'opencode'
     path: Path
-    host: Optional[str] = None
-    labels: List[str] = None  # type: ignore[assignment]
-    model: Optional[str] = None
+    host: str | None = None
+    labels: list[str] = None  # type: ignore[assignment]
+    model: str | None = None
 
     def __post_init__(self) -> None:
         if self.labels is None:
@@ -40,11 +39,11 @@ class TargetConfig:
 @dataclass
 class Config:
     source_root: Path
-    targets: Dict[str, TargetConfig]
-    groups: Dict[str, List[str]]
+    targets: dict[str, TargetConfig]
+    groups: dict[str, list[str]]
 
 
-def find_config_file(start_dir: Optional[Path] = None) -> Path:
+def find_config_file(start_dir: Path | None = None) -> Path:
     if start_dir is None:
         start_dir = Path.cwd()
     current = start_dir.resolve()
@@ -58,10 +57,10 @@ def find_config_file(start_dir: Optional[Path] = None) -> Path:
     )
 
 
-def load_config(config_path: Optional[Path] = None) -> Config:
+def load_config(config_path: Path | None = None) -> Config:
     if config_path is None:
         config_path = find_config_file()
-    with open(config_path, "r", encoding="utf-8") as f:
+    with open(config_path, encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     if not isinstance(data, dict):
         raise ValueError(
@@ -94,7 +93,7 @@ def load_config(config_path: Optional[Path] = None) -> Config:
             model=model,
         )
 
-    groups: Dict[str, List[str]] = {
+    groups: dict[str, list[str]] = {
         name: list(members or [])
         for name, members in (data.get("groups") or {}).items()
     }
@@ -181,7 +180,7 @@ def remap_targets_to_root(config: Config, root: Path) -> Config:
     )
 
 
-def expand_target_arg(targets_arg: Optional[List[str]], config: Config) -> List[str]:
+def expand_target_arg(targets_arg: list[str] | None, config: Config) -> list[str]:
     if targets_arg is None:
         return list(config.targets.keys())
     result = []
@@ -197,7 +196,7 @@ def expand_target_arg(targets_arg: Optional[List[str]], config: Config) -> List[
     return list(dict.fromkeys(result))
 
 
-def load_anthropic_default_model(models_yaml_path: Path) -> Optional[str]:
+def load_anthropic_default_model(models_yaml_path: Path) -> str | None:
     """Read ``providers.anthropic.claude.default_model`` from a models.yaml.
 
     Returns ``None`` when the file is missing, YAML cannot be parsed, any
@@ -229,7 +228,7 @@ def load_anthropic_default_model(models_yaml_path: Path) -> Optional[str]:
     return default_model
 
 
-def load_anthropic_known_models(models_yaml_path: Path) -> Optional[set[str]]:
+def load_anthropic_known_models(models_yaml_path: Path) -> set[str] | None:
     """Return the set of keys under ``providers.anthropic.models`` in a models.yaml.
 
     Returns ``None`` when the file is missing, cannot be parsed, the top-level

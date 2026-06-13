@@ -11,7 +11,7 @@ import sys
 def validate_flow(flow_path):
     """Validate a Node-RED flow file for common issues."""
     try:
-        with open(flow_path, "r") as f:
+        with open(flow_path) as f:
             flow_data = json.load(f)
     except json.JSONDecodeError as e:
         return False, f"Invalid JSON: {e}"

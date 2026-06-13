@@ -1,6 +1,6 @@
 """Environment filtering for selective deployment."""
 
-from typing import Any, List, Optional, Set
+from typing import Any
 
 from .config import Config
 
@@ -9,25 +9,25 @@ class FilterError(Exception):
     """Raised when environment filtering configuration is invalid."""
 
 
-def expand_group(env_id: str, config: Config) -> List[str]:
+def expand_group(env_id: str, config: Config) -> list[str]:
     """Expand a group ID to its member environments using config.groups."""
     if env_id in config.groups:
         return config.groups[env_id]
     return [env_id]
 
 
-def expand_list(env_list: Optional[List[str]], config: Config) -> Set[str]:
+def expand_list(env_list: list[str] | None, config: Config) -> set[str]:
     """Expand a list of environment IDs, resolving any groups."""
     if env_list is None:
         return set()
-    result: Set[str] = set()
+    result: set[str] = set()
     for env_id in env_list:
         result.update(expand_group(env_id, config))
     return result
 
 
 def validate_environments(
-    env_list: Optional[List[str]], config: Config, source_path: str
+    env_list: list[str] | None, config: Config, source_path: str
 ) -> None:
     """Validate all environment IDs are valid targets or groups."""
     if env_list is None:
@@ -43,7 +43,7 @@ def validate_environments(
 
 def _filetags_match(
     target_id: str,
-    filetags: List[str],
+    filetags: list[str],
     config: Config,
     source_path: str,
 ) -> bool:
@@ -69,10 +69,10 @@ def _filetags_match(
 
 def should_deploy_to(
     target_id: str,
-    metadata: Optional[dict[str, Any]],
+    metadata: dict[str, Any] | None,
     config: Config,
     source_path: str,
-    filetags: Optional[List[str]] = None,
+    filetags: list[str] | None = None,
 ) -> bool:
     """Determine if an item should be deployed to a target.
 

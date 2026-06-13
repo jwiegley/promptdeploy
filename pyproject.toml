@@ -36,6 +36,7 @@ select = [
     "F",   # pyflakes
     "W",   # pycodestyle warnings
     "I",   # isort
+    "UP",  # pyupgrade
     "C4",  # flake8-comprehensions
 ]
 

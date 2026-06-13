@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 import yaml
 
@@ -29,9 +29,9 @@ class ValidationIssue:
     file_path: Path
 
 
-def validate_all(config: Config) -> List[ValidationIssue]:
+def validate_all(config: Config) -> list[ValidationIssue]:
     """Validate all discoverable source items against the config."""
-    issues: List[ValidationIssue] = []
+    issues: list[ValidationIssue] = []
     discovery = SourceDiscovery(config.source_root)
 
     # ${VAR} references in MCP env/headers are checked against .env.example
@@ -39,7 +39,7 @@ def validate_all(config: Config) -> List[ValidationIssue]:
     # (no .env.example) disables the check entirely.
     env_keys = read_env_example_keys(config.source_root / ".env.example")
 
-    all_items: List[SourceItem] = []
+    all_items: list[SourceItem] = []
 
     # Markdown-backed types collect per-file frontmatter errors leniently so
     # one bad file aborts neither the rest of its directory nor
@@ -49,7 +49,7 @@ def validate_all(config: Config) -> List[ValidationIssue]:
         discovery.discover_commands,
         discovery.discover_skills,
     ):
-        discovery_errors: List[DiscoveryError] = []
+        discovery_errors: list[DiscoveryError] = []
         for item in markdown_discover_fn(errors=discovery_errors):
             all_items.append(item)
             issues.extend(validate_item(item, config, env_example_keys=env_keys))
@@ -177,12 +177,12 @@ def validate_all(config: Config) -> List[ValidationIssue]:
     return issues
 
 
-def validate_settings(config: Config) -> List[ValidationIssue]:
+def validate_settings(config: Config) -> list[ValidationIssue]:
     """Validate settings.yaml structure and override targeting."""
     path = config.source_root / "settings.yaml"
     if not path.exists():
         return []
-    issues: List[ValidationIssue] = []
+    issues: list[ValidationIssue] = []
     try:
         doc = yaml.safe_load(path.read_text("utf-8"))
     except yaml.YAMLError as exc:
@@ -298,7 +298,7 @@ def validate_item(
     config: Config,
     *,
     env_example_keys: set[str] | None = None,
-) -> List[ValidationIssue]:
+) -> list[ValidationIssue]:
     """Validate a single source item.
 
     ``env_example_keys`` is the set of variable names declared in
@@ -306,7 +306,7 @@ def validate_item(
     ``env``/``headers`` that are not declared there produce warnings.
     ``None`` skips that check.
     """
-    issues: List[ValidationIssue] = []
+    issues: list[ValidationIssue] = []
 
     _VALID_HOOK_EVENTS = frozenset(
         {

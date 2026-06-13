@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
 
 from .config import Config, load_anthropic_default_model
 from .deploy import _TYPE_TO_CATEGORY, compute_item_hash, item_selected
@@ -26,8 +25,8 @@ _CATEGORY_TO_TYPE = {v: k for k, v in _TYPE_TO_CATEGORY.items()}
 
 
 def get_status(
-    config: Config, target_ids: Optional[List[str]] = None
-) -> List[StatusEntry]:
+    config: Config, target_ids: list[str] | None = None
+) -> list[StatusEntry]:
     """Compare source items against deployed manifests for each target.
 
     Item selection and hashing are shared with :func:`promptdeploy.deploy.deploy`
@@ -38,7 +37,7 @@ def get_status(
     if target_ids is None:
         target_ids = list(config.targets.keys())
 
-    entries: List[StatusEntry] = []
+    entries: list[StatusEntry] = []
     discovery = SourceDiscovery(config.source_root)
     items = list(discovery.discover_all())
 

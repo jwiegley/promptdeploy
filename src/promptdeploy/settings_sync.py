@@ -14,7 +14,7 @@ import stat
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap
@@ -115,7 +115,7 @@ def dump_settings_doc(doc: Any, path: Path) -> None:
         raise
 
 
-def read_live_settings(target_config: TargetConfig) -> Dict[str, Any]:
+def read_live_settings(target_config: TargetConfig) -> dict[str, Any]:
     """Return a target's live settings.json minus the MANAGED_ELSEWHERE keys
     (``hooks``/``mcpServers``/``extraKnownMarketplaces``/``enabledPlugins``)
     and any explicit ``null`` values.
@@ -132,19 +132,19 @@ def read_live_settings(target_config: TargetConfig) -> Dict[str, Any]:
         raw = target.read_settings_json()
     finally:
         target.cleanup()
-    live: Dict[str, Any] = strip_nulls(strip_keys(raw, _MANAGED_ELSEWHERE))
+    live: dict[str, Any] = strip_nulls(strip_keys(raw, _MANAGED_ELSEWHERE))
     return live
 
 
-def _claude_target_ids(config: Config, target_ids: List[str]) -> List[str]:
+def _claude_target_ids(config: Config, target_ids: list[str]) -> list[str]:
     return [tid for tid in target_ids if config.targets[tid].type == "claude"]
 
 
 def init_settings(
     config: Config,
-    target_ids: List[str],
+    target_ids: list[str],
     *,
-    from_ref: Optional[str],
+    from_ref: str | None,
     out_path: Path,
     force: bool,
 ) -> None:
@@ -164,7 +164,7 @@ def init_settings(
 
     live = {tid: read_live_settings(config.targets[tid]) for tid in claude_ids}
     base = live[ref]
-    overrides: Dict[str, Any] = {}
+    overrides: dict[str, Any] = {}
     for tid in claude_ids:
         if tid == ref:
             continue
@@ -191,9 +191,9 @@ class SettingsDiff:
 
 
 def _diff_target(
-    target_id: str, host: Dict[str, Any], rendered: Dict[str, Any]
-) -> List[SettingsDiff]:
-    diffs: List[SettingsDiff] = []
+    target_id: str, host: dict[str, Any], rendered: dict[str, Any]
+) -> list[SettingsDiff]:
+    diffs: list[SettingsDiff] = []
     for k in sorted(set(host) | set(rendered)):
         in_host, in_rend = k in host, k in rendered
         if in_host and not in_rend:
@@ -207,11 +207,11 @@ def _diff_target(
 
 def reconcile_settings(
     config: Config,
-    target_ids: List[str],
+    target_ids: list[str],
     *,
     settings_path: Path,
     apply: bool,
-) -> List[SettingsDiff]:
+) -> list[SettingsDiff]:
     """Diff each claude target's live settings against settings.yaml.
 
     With ``apply``, fold every reported diff into that target's exact
@@ -232,7 +232,7 @@ def reconcile_settings(
     doc = load_settings_doc(settings_path)
     claude_ids = _claude_target_ids(config, target_ids)
 
-    all_diffs: List[SettingsDiff] = []
+    all_diffs: list[SettingsDiff] = []
     changed = False
     for tid in claude_ids:
         host = read_live_settings(config.targets[tid])

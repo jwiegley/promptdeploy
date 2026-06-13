@@ -6,8 +6,8 @@ import shlex
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Sequence
 
 # SSH options that prevent interactive hangs:
 # - BatchMode=yes: fail immediately instead of prompting for passwords/keys
@@ -74,7 +74,7 @@ def ssh_exists(host: str, remote_path: Path) -> bool:
     return result.returncode == 0
 
 
-def _rsync_filter_args(includes: Optional[Sequence[str]]) -> list[str]:
+def _rsync_filter_args(includes: Sequence[str] | None) -> list[str]:
     """Build rsync include/exclude filter arguments."""
     if not includes:
         return []
@@ -91,7 +91,7 @@ def ssh_pull(
     local_path: Path,
     *,
     verbose: bool = False,
-    includes: Optional[Sequence[str]] = None,
+    includes: Sequence[str] | None = None,
 ) -> None:
     """Sync a remote directory to a local staging directory.
 
@@ -135,7 +135,7 @@ def ssh_push(
     local_path: Path,
     *,
     verbose: bool = False,
-    includes: Optional[Sequence[str]] = None,
+    includes: Sequence[str] | None = None,
 ) -> None:
     """Sync a local staging directory to a remote directory.
 

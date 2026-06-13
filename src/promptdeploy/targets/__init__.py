@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING
 
 from .base import Target
 from .claude import ClaudeTarget
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
 
 
 def create_target(
-    target_config: TargetConfig, *, global_model: Optional[str] = None
+    target_config: TargetConfig, *, global_model: str | None = None
 ) -> Target:
     """Create a Target instance from a TargetConfig.
 
