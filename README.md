@@ -26,7 +26,7 @@ Any item can use `only`/`except` in its frontmatter to control which targets it 
 
 ```bash
 promptdeploy deploy [--dry-run] [--force] [--target TARGET] [--target-root DIR] [--only-type TYPE] [--verbose|--quiet]
-promptdeploy validate    # check for YAML errors, missing fields
+promptdeploy validate    # check for YAML errors, missing fields, undeclared ${VAR} refs
 promptdeploy status      # show what's changed since last deploy
 promptdeploy list        # show managed items per target
 promptdeploy settings init [--from REF] [--target T] [--force]  # bootstrap settings.yaml from live hosts
@@ -38,6 +38,8 @@ The deploy pipeline works like this: discover all source items, filter by target
 ### Targets
 
 Targets are defined in `deploy.yaml`. Each has a type (`claude`, `droid`, `opencode`, or `gptel`) and a path. Remote targets add a `host:` field and deploy via rsync over SSH. The `gptel` type receives only prompts, rendered as JSON for Emacs' gptel-prompts; the other types receive the full content set.
+
+One Claude Code quirk worth knowing: Claude Code does not read the `mcpServers` key that promptdeploy writes into `settings.json`. On my hosts the deployed servers take effect because my `ai` launcher wrapper (in a separate scripts repository) passes `--mcp-config "$CLAUDE_CONFIG_DIR/settings.json"` on every launch where that file exists. To see what a profile actually serves, run `claude --strict-mcp-config --mcp-config=<profile>/settings.json -p "Say ok" --output-format json --max-turns 1`.
 
 ```yaml
 source_root: .
@@ -61,7 +63,7 @@ groups:
 
 ### Environment variables
 
-API keys and other secrets use `${VAR}` syntax in MCP and model definitions, resolved at deploy time from your shell environment plus a `.env` file at the repo root (which never overrides exported variables). How strictly they are expanded depends on the target: Claude targets expand only the `env` block of MCP servers, leaving unset variables as literal `${VAR}`; Droid expands model `api_key` values the same lenient way and copies MCP definitions verbatim; OpenCode expands both model `api_key` and MCP `env` values strictly -- a missing variable aborts the deploy -- since OpenCode runs from a directory where your shell variables won't be set. See `.env.example` for the full list.
+API keys and other secrets use `${VAR}` syntax in MCP and model definitions, resolved from your shell environment plus a `.env` file at the repo root (which never overrides exported variables). When and how strictly they expand depends on the target. Claude Code targets deploy MCP `env` and `headers` values verbatim: the `${VAR}` references expand at runtime, when the launcher hands the deployed `settings.json` to `claude --mcp-config`, so no secrets are ever written into deployed files. Droid also copies MCP definitions verbatim and leniently expands only model `api_key` values -- an unset variable stays as literal `${VAR}` with a warning. OpenCode expands model `api_key` and MCP `env`/`headers` values strictly at deploy time -- a missing variable aborts the deploy -- since OpenCode runs from a directory where your shell variables won't be set. `promptdeploy validate` warns when an MCP definition references a variable not declared in `.env.example`. See `.env.example` for the full list.
 
 ### Single-source settings.yaml
 
@@ -119,7 +121,7 @@ nix build
 
 ## Development
 
-The test suite enforces 100% code coverage. Pre-commit hooks run formatting, linting, type checking, tests, and the full Nix build -- all in parallel via lefthook.
+The test suite enforces 100% line and branch coverage, mypy runs in strict mode, and ruff enforces a curated lint baseline. Pre-commit hooks run formatting, linting, type checking, tests, and the full Nix build -- all in parallel via lefthook.
 
 ```bash
 # Run tests

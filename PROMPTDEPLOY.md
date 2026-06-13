@@ -33,7 +33,7 @@ promptdeploy settings reconcile [--target TARGET] [--apply]
 ```
 
 - **deploy** -- Copy every managed item type (agents, commands, skills, prompts, MCP servers, models, hooks, marketplaces, settings) to target environments. Items unchanged since the last deploy are skipped. Items removed from the source are cleaned up from targets.
-- **validate** -- Check all source items for YAML errors, invalid environment IDs, and missing required fields.
+- **validate** -- Check all source items for YAML errors, invalid environment IDs, and missing required fields. Also warns when an MCP server's `env` or `headers` references a `${VAR}` not declared in `.env.example` (the check is skipped when no `.env.example` exists).
 - **status** -- Compare source items against deployed manifests. Shows new (A), modified (M), deleted (D), and current items.
 - **list** -- Show all items currently managed by promptdeploy in each target.
 - **settings init** -- Bootstrap `settings.yaml` from live Claude hosts: shared values become `base`, per-host differences become `overrides`.
@@ -69,6 +69,23 @@ only:
 ### Filetags
 
 Labels can also be embedded in the filename itself using the filetags convention: `basename -- tag1 tag2.md`. The separator is ` -- ` (space-dash-dash-space); if it appears more than once, only the rightmost occurrence splits tags from the basename. The item deploys under `basename` (unless a `name:` in its metadata overrides it), and each tag acts as an implicit `only` label with AND semantics -- the target must match *every* tag. Filetags compose with frontmatter `only`/`except`: both filters must pass. They work on agents, commands, prompts, MCP servers, hooks, and marketplaces (file stems) as well as skills (directory names). `promptdeploy validate` rejects tags that are not valid target, group, or label names.
+
+## MCP Servers (Claude targets): the launcher bridge
+
+`promptdeploy` merges MCP server definitions into each Claude target's `settings.json` under a top-level `mcpServers` key. Claude Code does not read that key on its own: its MCP read surfaces are `~/.claude.json` (user/local scopes), project `.mcp.json`, plugin-provided servers, claude.ai connectors, enterprise `managed-mcp.json`, and the per-invocation `--mcp-config` flag.
+
+The deployed key becomes effective through a launcher bridge that lives *outside* this repository: the `ai` wrapper (`~/src/scripts/ai`) appends `--mcp-config "$CLAUDE_CONFIG_DIR/settings.json"` to every `claude` invocation when that file exists. It does not pass `--strict-mcp-config`, so plugins, claude.ai connectors, and project `.mcp.json` continue to load alongside the deployed servers. The bridge is load-bearing: a Claude launch that bypasses the wrapper gets no promptdeploy-managed MCP servers.
+
+Because expansion happens at runtime on the `--mcp-config` surface, `${VAR}` references in `env` and `headers` are deployed verbatim -- no secrets are baked into `settings.json` (which matters for remote targets, whose files are rsynced). An unset variable expands to *empty* at runtime rather than failing, which is why `promptdeploy validate` warns about `${VAR}` references missing from `.env.example`.
+
+To verify a profile's MCP deployment end to end, run the standard headless probe:
+
+```bash
+claude --strict-mcp-config --mcp-config=<profile>/settings.json -p "Say ok" \
+  --output-format json --max-turns 1
+```
+
+`--strict-mcp-config` excludes every other MCP source, so the probe reports exactly the servers loaded from that `settings.json`. Design history: `docs/superpowers/specs/2026-06-12-mcp-launcher-bridge-design.md`.
 
 ## Model Injection (Claude targets)
 
@@ -107,19 +124,13 @@ providers:
     claude:
       default_model: claude-fable-5
     models:
-      claude-haiku-4-5-20251001:
-        display_name: "Claude Haiku 4.5"
-      claude-sonnet-4-6:
-        display_name: "Claude Sonnet 4.6"
-      claude-opus-4-8:
-        display_name: "Claude Opus 4.8"
       claude-fable-5:
         display_name: "Claude Fable 5"
 ```
 
-The `anthropic` provider itself is scoped to claude targets via `only: [claude]` (the auto-generated label group) so it does not leak into Droid or OpenCode configuration. The `models:` dict is informational -- it lets `promptdeploy validate` warn when a per-target `model:` references a model not listed here (typo detection). `models:` entries require no credentials; `base_url` and `api_key` are only required when a provider deploys to Droid or OpenCode.
+The `anthropic` provider itself is scoped to claude targets via `only: [claude]` (the auto-generated label group) so it does not leak into Droid or OpenCode configuration. The `models:` dict is informational -- `promptdeploy validate` warns when a claude target's effective model is neither listed there nor one of the always-accepted aliases (`fable`, `opus`, `sonnet`, `haiku`, `inherit`), catching typos. `models:` entries require no credentials; `base_url` and `api_key` are only required when a provider deploys to Droid or OpenCode.
 
-The block above is an example, not a copy of the current configuration: the repository's `models.yaml` presently defines no `anthropic` provider, and `deploy.yaml` sets no per-target `model:`, so model injection is currently inactive. Adding `providers.anthropic.claude.default_model` to `models.yaml` (or a per-target `model:` to `deploy.yaml`) activates it.
+The block above mirrors the repository's current `models.yaml`, so model injection is active: every agent and skill deployed to a claude target gets `model: claude-fable-5` injected (no target in `deploy.yaml` currently sets a per-target `model:` override).
 
 ## Settings (Claude targets)
 
@@ -168,6 +179,10 @@ promptdeploy settings reconcile [--target TARGET] [--apply]
 ```
 
 `settings init` reads live `settings.json` from each selected target, factors the values shared across all of them into `base`, and records per-target differences as `overrides` (use `--from` to pick which target seeds the base, `--force` to overwrite an existing file). `settings reconcile` compares each host against the rendered settings and reports drift; with `--apply` it writes that drift back into `overrides`. Write-back uses ruamel.yaml, so existing comments and formatting in `settings.yaml` are preserved.
+
+### statusline-command.sh
+
+The `statusLine` entries in `settings.yaml` point each host at its own local copy of `statusline-command.sh` (per-host absolute paths). The script is host-managed: `promptdeploy` does not deploy it, and the copy at the repository root is a reference master kept in sync by hand.
 
 ## Marketplaces (Claude targets)
 
@@ -233,7 +248,7 @@ pytest --cov=promptdeploy --cov-report=term-missing
 pytest tests/test_deploy.py -v
 ```
 
-Coverage is enforced at 100% via `pyproject.toml` (`fail_under = 100`); the test run fails if any line goes uncovered.
+Coverage is enforced at 100% with branch measurement enabled (`branch = true`, `fail_under = 100` in `pyproject.toml`); the run fails if any line *or branch* goes uncovered. mypy runs in strict mode for the package (relaxed for `tests.*`), and ruff enforces a curated lint baseline (`E`, `F`, `W`, `I`, `UP`, `B`, `SIM`, `C4`, `RUF`).
 
 ### Project layout
 
@@ -306,7 +321,7 @@ Rebuild your system to install `promptdeploy` to the Nix profile.
 2. **Filtering** -- Evaluates filename filetags and `only`/`except` frontmatter against each target, expanding group names.
 3. **Change detection** -- Computes SHA256 hashes and compares against the manifest from the last deploy. Unchanged items are skipped (unless `--force`).
 4. **Deployment** -- Writes each item in the format the target expects:
-   - Claude Code: agents/, commands/, skills/ directories (agents and skills get `model:` injection when configured); prompts render to `commands/{name}.md`; MCP merges into settings.json; hooks merge into settings.json with `_source` tagging; marketplaces merge into top-level `extraKnownMarketplaces`/`enabledPlugins`; `settings.yaml` keys gently merge into settings.json; models are skipped.
+   - Claude Code: agents/, commands/, skills/ directories (agents and skills get `model:` injection when configured); prompts render to `commands/{name}.md`; MCP merges into settings.json's `mcpServers` with `${VAR}` references deployed verbatim (read by Claude Code only via the launcher bridge's `--mcp-config`, see above); hooks merge into settings.json with `_source` tagging; marketplaces merge into top-level `extraKnownMarketplaces`/`enabledPlugins`; `settings.yaml` keys gently merge into settings.json; models are skipped.
    - Factory Droid: agents go to droids/; commands are skipped (unless `droid_deploy: skill`); prompts and skills become `skills/{name}/` directories; MCP merges into mcp.json with a `type` field; models go to settings.json `customModels`; hooks, marketplaces, and settings are skipped.
    - OpenCode: agents/, commands/, skills/ layout; prompts render to `commands/{name}.md`; MCP merges into opencode.json with `command` as an array and `environment` instead of `env`; models go under opencode.json's `provider` key; hooks, marketplaces, and settings are skipped.
    - gptel: prompts only -- Poet/Jinja sources render to `{name}.json` (an array of role/content turns read by gptel-prompts.el); plain prompts are copied verbatim; every other item type is skipped.
