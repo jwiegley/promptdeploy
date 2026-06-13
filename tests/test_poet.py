@@ -576,7 +576,7 @@ class TestNonUtf8Prompts:
 
     def test_parse_poet_non_utf8_names_source_path(self, tmp_path: Path):
         path = tmp_path / "bad.poet"
-        with pytest.raises(PoetError, match="bad.poet"):
+        with pytest.raises(PoetError, match=r"bad\.poet"):
             parse_poet(b"\xff\xfe", source_path=path)
 
     def test_parse_plain_non_utf8_raises_poet_error(self):

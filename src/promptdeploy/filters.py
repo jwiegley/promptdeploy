@@ -58,8 +58,7 @@ def _filetags_match(
         if (
             tag == target_id
             or tag in target_labels
-            or tag in config.groups
-            and target_id in expand_list([tag], config)
+            or (tag in config.groups and target_id in expand_list([tag], config))
         ):
             continue
         # Tag doesn't match this target

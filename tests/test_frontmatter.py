@@ -59,7 +59,7 @@ class TestParseFrontmatter:
 
     def test_frontmatter_with_boolean_and_numeric(self):
         content = b"---\nenabled: true\ncount: 42\nratio: 3.14\n---\nBody.\n"
-        metadata, body = parse_frontmatter(content)
+        metadata, _body = parse_frontmatter(content)
         assert metadata is not None
         assert metadata["enabled"] is True
         assert metadata["count"] == 42

@@ -1177,7 +1177,7 @@ class TestTransformForOpencode:
     def test_strips_model_field(self):
         content = b"---\nname: agent\nmodel: sonnet\n---\nBody.\n"
         result = _transform_for_opencode(content)
-        meta, body = parse_frontmatter(result)
+        meta, _body = parse_frontmatter(result)
         assert meta is not None
         assert "model" not in meta
         assert meta["name"] == "agent"
@@ -1185,14 +1185,14 @@ class TestTransformForOpencode:
     def test_strips_deployment_fields(self):
         content = b"---\nname: agent\nonly:\n  - opencode\n---\nBody.\n"
         result = _transform_for_opencode(content)
-        meta, body = parse_frontmatter(result)
+        meta, _body = parse_frontmatter(result)
         assert meta is not None
         assert "only" not in meta
 
     def test_tools_already_object_preserved(self):
         content = b"---\nname: agent\ntools:\n  bash: false\n  read: true\n---\nBody.\n"
         result = _transform_for_opencode(content)
-        meta, body = parse_frontmatter(result)
+        meta, _body = parse_frontmatter(result)
         assert meta is not None
         # Object-valued tools should pass through unchanged.
         assert meta["tools"] == {"bash": False, "read": True}
@@ -1209,7 +1209,7 @@ class TestTransformForOpencode:
             b"---\nBody.\n"
         )
         result = _transform_for_opencode(content)
-        meta, body = parse_frontmatter(result)
+        meta, _body = parse_frontmatter(result)
         assert meta is not None
         assert _enabled(meta["tools"]) == {
             "perplexity_perplexity_search_web",
@@ -1226,7 +1226,7 @@ class TestTransformForOpencode:
             b"---\nBody.\n"
         )
         result = _transform_for_opencode(content)
-        meta, body = parse_frontmatter(result)
+        meta, _body = parse_frontmatter(result)
         assert meta is not None
         assert _enabled(meta["tools"]) == {"read", "bash", "foo_bar"}
 
@@ -1235,7 +1235,7 @@ class TestTransformForOpencode:
         # OpenCode's schema validator does not reject it.
         content = b"---\nname: agent\ntools: []\n---\nBody.\n"
         result = _transform_for_opencode(content)
-        meta, body = parse_frontmatter(result)
+        meta, _body = parse_frontmatter(result)
         assert meta is not None
         assert "tools" not in meta
 
@@ -1253,7 +1253,7 @@ class TestTransformForOpencode:
     def test_no_tools_or_model_unchanged(self):
         content = b"---\nname: agent\ndescription: test\n---\nBody.\n"
         result = _transform_for_opencode(content)
-        meta, body = parse_frontmatter(result)
+        meta, _body = parse_frontmatter(result)
         assert meta is not None
         assert meta == {"name": "agent", "description": "test"}
 
@@ -1287,7 +1287,7 @@ class TestDeployAgentTransformation:
         target.deploy_command("cmd", content)
 
         dest = tmp_path / ".opencode" / "commands" / "cmd.md"
-        meta, body = parse_frontmatter(dest.read_bytes())
+        meta, _body = parse_frontmatter(dest.read_bytes())
         assert meta is not None
         assert isinstance(meta["tools"], dict)
         assert "model" not in meta
@@ -1302,7 +1302,7 @@ class TestDeployAgentTransformation:
         target.deploy_skill("sk", src)
 
         dest = tmp_path / ".opencode" / "skills" / "sk" / "SKILL.md"
-        meta, body = parse_frontmatter(dest.read_bytes())
+        meta, _body = parse_frontmatter(dest.read_bytes())
         assert meta is not None
         assert isinstance(meta["tools"], dict)
         assert _enabled(meta["tools"]) == {"read", "grep"}

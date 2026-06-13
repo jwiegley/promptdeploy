@@ -209,7 +209,7 @@ class TestExpandEnvVarsStrict:
 
     def test_error_includes_context(self, monkeypatch):
         monkeypatch.delenv("STRICT_MISSING", raising=False)
-        with pytest.raises(EnvVarError, match="my.location") as info:
+        with pytest.raises(EnvVarError, match=r"my\.location") as info:
             expand_env_vars_strict("${STRICT_MISSING}", context="my.location")
         assert "STRICT_MISSING" in str(info.value)
 

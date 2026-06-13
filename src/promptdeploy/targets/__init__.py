@@ -65,11 +65,11 @@ def create_target(
 
 
 __all__ = [
-    "Target",
     "ClaudeTarget",
     "DroidTarget",
     "GptelTarget",
     "OpenCodeTarget",
     "RemoteTarget",
+    "Target",
     "create_target",
 ]

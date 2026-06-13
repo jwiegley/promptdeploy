@@ -119,7 +119,7 @@ def main():
         print("Usage: python validate_flow.py <flow.json>")
         sys.exit(1)
 
-    is_valid, message = validate_flow(sys.argv[1])
+    is_valid, _message = validate_flow(sys.argv[1])
     if not is_valid:
         sys.exit(1)
 

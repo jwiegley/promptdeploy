@@ -98,7 +98,7 @@ class TestValidateEnvironments:
         assert "opencode" in msg
 
     def test_error_includes_source_path(self, config: Config) -> None:
-        with pytest.raises(FilterError, match="agents/foo.md"):
+        with pytest.raises(FilterError, match=r"agents/foo\.md"):
             validate_environments(["bad"], config, "agents/foo.md")
 
 
@@ -128,7 +128,7 @@ class TestShouldDeployTo:
     def test_except_single_target(self, config: Config) -> None:
         metadata = {"except": ["droid"]}
         assert should_deploy_to("droid", metadata, config, "t.md") is False
-        for target in CLAUDE_TARGETS + ["opencode"]:
+        for target in [*CLAUDE_TARGETS, "opencode"]:
             assert should_deploy_to(target, metadata, config, "t.md") is True
 
     def test_except_group_excludes_all_members(self, config: Config) -> None:

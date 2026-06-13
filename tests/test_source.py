@@ -898,7 +898,7 @@ class TestDiscoveryErrorHandling:
         agents_dir = tmp_path / "agents"
         agents_dir.mkdir()
         (agents_dir / "bad.md").write_bytes(self.BAD)
-        with pytest.raises(FrontmatterError, match="bad.md"):
+        with pytest.raises(FrontmatterError, match=r"bad\.md"):
             list(SourceDiscovery(tmp_path).discover_agents())
 
     def test_command_frontmatter_error_includes_path(self, tmp_path):
@@ -907,7 +907,7 @@ class TestDiscoveryErrorHandling:
         commands_dir = tmp_path / "commands"
         commands_dir.mkdir()
         (commands_dir / "bad.md").write_bytes(self.BAD)
-        with pytest.raises(FrontmatterError, match="bad.md"):
+        with pytest.raises(FrontmatterError, match=r"bad\.md"):
             list(SourceDiscovery(tmp_path).discover_commands())
 
     def test_skill_frontmatter_error_includes_path(self, tmp_path):
@@ -916,7 +916,7 @@ class TestDiscoveryErrorHandling:
         skill_dir = tmp_path / "skills" / "broken"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_bytes(self.BAD)
-        with pytest.raises(FrontmatterError, match="SKILL.md"):
+        with pytest.raises(FrontmatterError, match=r"SKILL\.md"):
             list(SourceDiscovery(tmp_path).discover_skills())
 
     def test_agents_lenient_mode_collects_errors_and_continues(self, tmp_path):

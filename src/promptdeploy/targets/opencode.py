@@ -341,7 +341,7 @@ class OpenCodeTarget(Target):
                 oc_config["type"] = "local"
             # command is an array: command + args combined.
             if cmd is not None:
-                oc_config["command"] = [cmd] + list(args)
+                oc_config["command"] = [cmd, *list(args)]
             # "environment" key, not "env".  Expand ${VAR} at deploy time
             # since OpenCode runs from a directory that won't have these
             # vars set; an unresolved reference raises EnvVarError.

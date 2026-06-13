@@ -115,7 +115,7 @@ class TestSSHExists:
         )
         with (
             patch("promptdeploy.ssh.subprocess.run", return_value=result),
-            pytest.raises(SSHError, match="SSH connection to .* failed"),
+            pytest.raises(SSHError, match=r"SSH connection to .* failed"),
         ):
             ssh_exists("user@host", Path("/remote/path"))
 
@@ -279,7 +279,7 @@ class TestSSHPull:
         with patch("promptdeploy.ssh.subprocess.run") as mock_run:
             mock_run.side_effect = [exists_result, rsync_result]
             with pytest.raises(
-                SSHError, match="rsync pull.*failed.*connection refused"
+                SSHError, match=r"rsync pull.*failed.*connection refused"
             ):
                 ssh_pull("user@host", Path("/remote/path"), local)
 
@@ -417,7 +417,9 @@ class TestSSHPush:
 
         with patch("promptdeploy.ssh.subprocess.run") as mock_run:
             mock_run.side_effect = [mkdir_result, rsync_result]
-            with pytest.raises(SSHError, match="rsync push.*failed.*permission denied"):
+            with pytest.raises(
+                SSHError, match=r"rsync push.*failed.*permission denied"
+            ):
                 ssh_push("user@host", Path("/remote/path"), local)
 
     def test_raises_on_mkdir_failure(

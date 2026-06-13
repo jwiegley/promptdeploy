@@ -23,7 +23,7 @@ _SSH_OPTS = [
 ]
 
 # rsync uses -e to pass SSH options
-_RSYNC_SSH = ["ssh"] + _SSH_OPTS
+_RSYNC_SSH = ["ssh", *_SSH_OPTS]
 
 
 class SSHError(Exception):

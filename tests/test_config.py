@@ -208,7 +208,7 @@ class TestFindConfigFile:
     def test_raises_when_not_found(self, tmp_path: Path) -> None:
         empty = tmp_path / "empty"
         empty.mkdir()
-        with pytest.raises(FileNotFoundError, match="Could not find deploy.yaml"):
+        with pytest.raises(FileNotFoundError, match=r"Could not find deploy\.yaml"):
             find_config_file(empty)
 
     def test_defaults_to_cwd(self, config_dir: Path, monkeypatch) -> None:

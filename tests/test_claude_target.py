@@ -935,7 +935,7 @@ class TestLoadJsonError:
 
         target = _make_target(tmp_path)
         (tmp_path / ".claude" / "settings.json").write_text("{not json")
-        with pytest.raises(JsonConfigError, match="settings.json"):
+        with pytest.raises(JsonConfigError, match=r"settings\.json"):
             target.read_settings_json()
 
     def test_json_config_error_is_value_error(self):

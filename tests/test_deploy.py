@@ -1694,16 +1694,16 @@ class TestDeploySettingsItem:
         config = _make_config(src, {tc.id: tc})
 
         a1 = deploy(config)
-        assert [a for a in a1 if a.item_type == "settings"][0].action == "create"
+        assert next(a for a in a1 if a.item_type == "settings").action == "create"
         data = json.loads((tc.path / "settings.json").read_text())
         assert data["effortLevel"] == "low"
 
         a2 = deploy(config)
-        assert [a for a in a2 if a.item_type == "settings"][0].action == "skip"
+        assert next(a for a in a2 if a.item_type == "settings").action == "skip"
 
         (src / "settings.yaml").write_text("base:\n  effortLevel: high\n")
         a3 = deploy(config)
-        s3 = [a for a in a3 if a.item_type == "settings"][0]
+        s3 = next(a for a in a3 if a.item_type == "settings")
         assert s3.action == "update"
         assert (
             json.loads((tc.path / "settings.json").read_text())["effortLevel"] == "high"
@@ -1801,7 +1801,7 @@ class TestDeploySettingsItem:
         # Same settings.yaml, but the target has left the 'fast' group.
         ungrouped = Config(source_root=src, targets={tc.id: tc}, groups={})
         actions = deploy(ungrouped)
-        s = [a for a in actions if a.item_type == "settings"][0]
+        s = next(a for a in actions if a.item_type == "settings")
         assert s.action == "update"
         data = json.loads((tc.path / "settings.json").read_text())
         assert data["effortLevel"] == "low"
@@ -1847,7 +1847,7 @@ class TestDeploySettingsItem:
         save_manifest(manifest, mp)
 
         actions = deploy(config)
-        assert [a for a in actions if a.item_type == "settings"][0].action == "skip"
+        assert next(a for a in actions if a.item_type == "settings").action == "skip"
         m2 = load_manifest(mp)
         assert set(m2.items["settings"]["settings"].managed_keys or []) == {
             "effortLevel",

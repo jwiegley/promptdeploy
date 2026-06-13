@@ -133,7 +133,7 @@ class TestGetStatusWithManifest:
             },
         )
         entries = get_status(config)
-        alpha = [e for e in entries if e.name == "alpha"][0]
+        alpha = next(e for e in entries if e.name == "alpha")
         assert alpha.state == "changed"
 
     def test_pending_removal(self, config: Config, target_path: Path) -> None:
