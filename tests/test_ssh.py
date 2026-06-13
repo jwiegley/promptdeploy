@@ -113,9 +113,11 @@ class TestSSHExists:
         result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(
             args=[], returncode=255, stderr=b"Could not resolve hostname"
         )
-        with patch("promptdeploy.ssh.subprocess.run", return_value=result):
-            with pytest.raises(SSHError, match="SSH connection to .* failed"):
-                ssh_exists("user@host", Path("/remote/path"))
+        with (
+            patch("promptdeploy.ssh.subprocess.run", return_value=result),
+            pytest.raises(SSHError, match="SSH connection to .* failed"),
+        ):
+            ssh_exists("user@host", Path("/remote/path"))
 
     def test_quotes_path_with_spaces(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Remote paths are shell-quoted in the ssh command line (B32)."""
@@ -430,9 +432,11 @@ class TestSSHPush:
             args=[], returncode=1, stderr=b"mkdir: permission denied"
         )
 
-        with patch("promptdeploy.ssh.subprocess.run", return_value=mkdir_result):
-            with pytest.raises(SSHError, match="permission denied"):
-                ssh_push("user@host", Path("/remote/path"), local)
+        with (
+            patch("promptdeploy.ssh.subprocess.run", return_value=mkdir_result),
+            pytest.raises(SSHError, match="permission denied"),
+        ):
+            ssh_push("user@host", Path("/remote/path"), local)
 
     def test_mkdir_quotes_tilde_parent(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

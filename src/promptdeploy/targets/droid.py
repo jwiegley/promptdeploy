@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -322,10 +323,8 @@ class DroidTarget(Target):
 
     @staticmethod
     def _remove_file(path: Path) -> None:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             path.unlink()
-        except FileNotFoundError:
-            pass
 
     @staticmethod
     def _load_json(path: Path) -> dict[str, Any]:
@@ -344,8 +343,6 @@ class DroidTarget(Target):
                 f.write("\n")
             os.replace(tmp, path)
         except BaseException:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             raise

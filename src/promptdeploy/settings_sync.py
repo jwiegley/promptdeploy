@@ -7,6 +7,7 @@ Pure rendering/merge logic lives in ``settings.py``.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import io
 import os
@@ -108,10 +109,8 @@ def dump_settings_doc(doc: Any, path: Path) -> None:
         os.chmod(tmp, mode)
         os.replace(tmp, path)
     except BaseException:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
         raise
 
 

@@ -86,9 +86,8 @@ def should_deploy_to(
     - Filetags AND-compose with frontmatter only/except.
     """
     # Check filetags first — they restrict independently of metadata
-    if filetags:
-        if not _filetags_match(target_id, filetags, config, source_path):
-            return False
+    if filetags and not _filetags_match(target_id, filetags, config, source_path):
+        return False
 
     if metadata is None:
         return True

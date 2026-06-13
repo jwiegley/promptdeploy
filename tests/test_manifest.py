@@ -239,9 +239,11 @@ class TestSaveManifestError:
             source_hash="sha256:abc"
         )
 
-        with patch("os.replace", side_effect=OSError("mock failure")):
-            with pytest.raises(OSError, match="mock failure"):
-                save_manifest(manifest, path)
+        with (
+            patch("os.replace", side_effect=OSError("mock failure")),
+            pytest.raises(OSError, match="mock failure"),
+        ):
+            save_manifest(manifest, path)
 
         # Temp file should be cleaned up
         tmp_files = list(tmp_path.glob("*.tmp"))
@@ -264,10 +266,12 @@ class TestSaveManifestError:
                 raise OSError("unlink failed too")
             return original_unlink(p)
 
-        with patch("os.replace", side_effect=OSError("replace failed")):
-            with patch("os.unlink", side_effect=failing_unlink):
-                with pytest.raises(OSError, match="replace failed"):
-                    save_manifest(manifest, path)
+        with (
+            patch("os.replace", side_effect=OSError("replace failed")),
+            patch("os.unlink", side_effect=failing_unlink),
+            pytest.raises(OSError, match="replace failed"),
+        ):
+            save_manifest(manifest, path)
 
 
 class TestRoundTrip:

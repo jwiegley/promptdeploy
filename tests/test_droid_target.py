@@ -476,9 +476,11 @@ class TestSaveJsonError:
 
         target = _make_target(tmp_path)
 
-        with patch("os.replace", side_effect=OSError("mock failure")):
-            with pytest.raises(OSError, match="mock failure"):
-                target.deploy_mcp_server("srv", {"command": "echo"})
+        with (
+            patch("os.replace", side_effect=OSError("mock failure")),
+            pytest.raises(OSError, match="mock failure"),
+        ):
+            target.deploy_mcp_server("srv", {"command": "echo"})
 
         config_dir = tmp_path / ".droid"
         tmp_files = list(config_dir.glob("*.tmp"))
@@ -498,10 +500,12 @@ class TestSaveJsonError:
                 raise OSError("unlink failed")
             return original_unlink(p)
 
-        with patch("os.replace", side_effect=OSError("replace failed")):
-            with patch("os.unlink", side_effect=failing_unlink):
-                with pytest.raises(OSError, match="replace failed"):
-                    target.deploy_mcp_server("srv", {"command": "echo"})
+        with (
+            patch("os.replace", side_effect=OSError("replace failed")),
+            patch("os.unlink", side_effect=failing_unlink),
+            pytest.raises(OSError, match="replace failed"),
+        ):
+            target.deploy_mcp_server("srv", {"command": "echo"})
 
 
 # ------------------------------------------------------------------

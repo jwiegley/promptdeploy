@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -431,10 +432,8 @@ class ClaudeTarget(Target):
 
     @staticmethod
     def _remove_file(path: Path) -> None:
-        try:
+        with contextlib.suppress(FileNotFoundError):
             path.unlink()
-        except FileNotFoundError:
-            pass
 
     @staticmethod
     def _write_bytes(path: Path, data: bytes) -> None:
@@ -446,10 +445,8 @@ class ClaudeTarget(Target):
                 f.write(data)
             os.replace(tmp, path)
         except BaseException:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             raise
 
     @staticmethod
@@ -475,8 +472,6 @@ class ClaudeTarget(Target):
                 f.write("\n")
             os.replace(tmp, path)
         except BaseException:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             raise

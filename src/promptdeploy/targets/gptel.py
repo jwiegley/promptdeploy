@@ -13,6 +13,7 @@ servers, hooks, and models are silently skipped.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import tempfile
 from pathlib import Path
@@ -98,10 +99,8 @@ class GptelTarget(Target):
                 f.write(rendered)
             os.replace(tmp, dest)
         except BaseException:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(tmp)
-            except OSError:
-                pass
             raise
         # Track the file we just wrote so the manifest can record it.
         self._last_deployed[name] = dest.relative_to(self._config_path)
@@ -143,19 +142,15 @@ class GptelTarget(Target):
         # that file. This avoids destroying user-authored prompts that
         # happen to share the prompt's stem (e.g. an unrelated ``foo.md``).
         if target_path is not None:
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 (self._config_path / target_path).unlink()
-            except FileNotFoundError:
-                pass
             return
         # Legacy fallback for manifests written before we tracked
         # ``target_path``: probe each known extension. This preserves
         # cleanup of older deployments at the cost of being less precise.
         for ext in (".json", ".txt", ".md", ".org"):
-            try:
+            with contextlib.suppress(FileNotFoundError):
                 (self._config_path / f"{name}{ext}").unlink()
-            except FileNotFoundError:
-                pass
 
     def remove_agent(self, name: str) -> None:
         pass

@@ -504,9 +504,11 @@ class TestSaveJsonError:
 
         target = _make_target(tmp_path)
 
-        with patch("os.replace", side_effect=OSError("mock failure")):
-            with pytest.raises(OSError, match="mock failure"):
-                target.deploy_mcp_server("srv", {"command": "echo"})
+        with (
+            patch("os.replace", side_effect=OSError("mock failure")),
+            pytest.raises(OSError, match="mock failure"),
+        ):
+            target.deploy_mcp_server("srv", {"command": "echo"})
 
         # No temp files left behind
         config_dir = tmp_path / ".claude"
@@ -527,10 +529,12 @@ class TestSaveJsonError:
                 raise OSError("unlink failed")
             return original_unlink(p)
 
-        with patch("os.replace", side_effect=OSError("replace failed")):
-            with patch("os.unlink", side_effect=failing_unlink):
-                with pytest.raises(OSError, match="replace failed"):
-                    target.deploy_mcp_server("srv", {"command": "echo"})
+        with (
+            patch("os.replace", side_effect=OSError("replace failed")),
+            patch("os.unlink", side_effect=failing_unlink),
+            pytest.raises(OSError, match="replace failed"),
+        ):
+            target.deploy_mcp_server("srv", {"command": "echo"})
 
 
 class TestAtomicArtifactWrites:
@@ -541,9 +545,11 @@ class TestAtomicArtifactWrites:
         from unittest.mock import patch
 
         target = _make_target(tmp_path)
-        with patch("os.replace", side_effect=OSError("disk full")):
-            with pytest.raises(OSError, match="disk full"):
-                target.deploy_agent("helper", b"---\nname: helper\n---\nBody.\n")
+        with (
+            patch("os.replace", side_effect=OSError("disk full")),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            target.deploy_agent("helper", b"---\nname: helper\n---\nBody.\n")
 
         agents_dir = tmp_path / ".claude" / "agents"
         assert list(agents_dir.glob("*.tmp")) == []
@@ -561,10 +567,12 @@ class TestAtomicArtifactWrites:
                 raise OSError("unlink failed")
             return original_unlink(p)
 
-        with patch("os.replace", side_effect=OSError("replace failed")):
-            with patch("os.unlink", side_effect=failing_unlink):
-                with pytest.raises(OSError, match="replace failed"):
-                    target.deploy_agent("helper", b"Body.\n")
+        with (
+            patch("os.replace", side_effect=OSError("replace failed")),
+            patch("os.unlink", side_effect=failing_unlink),
+            pytest.raises(OSError, match="replace failed"),
+        ):
+            target.deploy_agent("helper", b"Body.\n")
 
     def test_agent_write_replaces_symlink(self, tmp_path: Path):
         """An existing symlink at the destination is replaced by the rename,
@@ -585,9 +593,11 @@ class TestAtomicArtifactWrites:
         from unittest.mock import patch
 
         target = _make_target(tmp_path)
-        with patch("os.replace", side_effect=OSError("disk full")):
-            with pytest.raises(OSError, match="disk full"):
-                target.deploy_command("fix", b"Body.\n")
+        with (
+            patch("os.replace", side_effect=OSError("disk full")),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            target.deploy_command("fix", b"Body.\n")
         commands_dir = tmp_path / ".claude" / "commands"
         assert list(commands_dir.glob("*.tmp")) == []
 
@@ -597,9 +607,11 @@ class TestAtomicArtifactWrites:
         target = _make_target(tmp_path)
         src = tmp_path / "demo.md"
         src.write_bytes(b"Prompt body.\n")
-        with patch("os.replace", side_effect=OSError("disk full")):
-            with pytest.raises(OSError, match="disk full"):
-                target.deploy_prompt("demo", b"Prompt body.\n", src)
+        with (
+            patch("os.replace", side_effect=OSError("disk full")),
+            pytest.raises(OSError, match="disk full"),
+        ):
+            target.deploy_prompt("demo", b"Prompt body.\n", src)
         commands_dir = tmp_path / ".claude" / "commands"
         assert list(commands_dir.glob("*.tmp")) == []
 
@@ -626,9 +638,11 @@ class TestAtomicArtifactWrites:
         target.deploy_skill("s", src)
 
         (src / "SKILL.md").write_bytes(b"v2")
-        with patch("shutil.copytree", side_effect=OSError("copy failed")):
-            with pytest.raises(OSError, match="copy failed"):
-                target.deploy_skill("s", src)
+        with (
+            patch("shutil.copytree", side_effect=OSError("copy failed")),
+            pytest.raises(OSError, match="copy failed"),
+        ):
+            target.deploy_skill("s", src)
 
         skills_dir = tmp_path / ".claude" / "skills"
         assert sorted(p.name for p in skills_dir.iterdir()) == ["s"]

@@ -115,9 +115,11 @@ class TestDeployPrompt:
         body = b"- role: system\n  content: x\n"
         src.write_bytes(body)
 
-        with patch("os.replace", side_effect=OSError("mock failure")):
-            with pytest.raises(OSError, match="mock failure"):
-                target.deploy_prompt("demo", body, src)
+        with (
+            patch("os.replace", side_effect=OSError("mock failure")),
+            pytest.raises(OSError, match="mock failure"),
+        ):
+            target.deploy_prompt("demo", body, src)
 
         leftover = list((tmp_path / "prompts").glob("*.tmp"))
         assert leftover == []
@@ -138,10 +140,12 @@ class TestDeployPrompt:
                 raise OSError("unlink failed")
             return original_unlink(p)
 
-        with patch("os.replace", side_effect=OSError("replace failed")):
-            with patch("os.unlink", side_effect=failing_unlink):
-                with pytest.raises(OSError, match="replace failed"):
-                    target.deploy_prompt("demo", body, src)
+        with (
+            patch("os.replace", side_effect=OSError("replace failed")),
+            patch("os.unlink", side_effect=failing_unlink),
+            pytest.raises(OSError, match="replace failed"),
+        ):
+            target.deploy_prompt("demo", body, src)
 
 
 class TestRemovePrompt:

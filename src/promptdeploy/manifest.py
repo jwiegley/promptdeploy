@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -151,10 +152,8 @@ def save_manifest(manifest: Manifest, manifest_path: Path) -> None:
             f.write("\n")
         os.replace(tmp_path, manifest_path)
     except BaseException:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp_path)
-        except OSError:
-            pass
         raise
 
 

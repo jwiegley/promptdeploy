@@ -294,10 +294,7 @@ def scan_generic(src: str, spec: LangSpec) -> list[Comment]:
             if src.startswith(op, i):
                 start_line = line
                 j = src.find(cl, i + len(op))
-                if j == -1:
-                    end = n
-                else:
-                    end = j + len(cl)
+                end = n if j == -1 else j + len(cl)
                 text = src[i:end]
                 line += text.count("\n")
                 comments.append(
@@ -374,15 +371,16 @@ def scan_python(src: str) -> list[Comment]:
                 if not body:
                     continue
                 first = body[0]
-                if isinstance(first, ast.Expr) and isinstance(
-                    first.value, ast.Constant
+                if (
+                    isinstance(first, ast.Expr)
+                    and isinstance(first.value, ast.Constant)
+                    and isinstance(first.value.value, str)
                 ):
-                    if isinstance(first.value.value, str):
-                        seg = ast.get_source_segment(src, first.value)
-                        text = seg if seg is not None else repr(first.value.value)
-                        start = first.value.lineno
-                        end = getattr(first.value, "end_lineno", start)
-                        comments.append(Comment(start, end, "docstring", text))
+                    seg = ast.get_source_segment(src, first.value)
+                    text = seg if seg is not None else repr(first.value.value)
+                    start = first.value.lineno
+                    end = getattr(first.value, "end_lineno", start)
+                    comments.append(Comment(start, end, "docstring", text))
     except (SyntaxError, ValueError):
         pass
     return comments
@@ -511,9 +509,7 @@ def walk_files(root: str) -> Iterable[str]:
 
 
 def is_probably_binary(data: bytes) -> bool:
-    if b"\x00" in data[:8192]:
-        return True
-    return False
+    return b"\x00" in data[:8192]
 
 
 def read_text(root: str, rel: str) -> str | None:
