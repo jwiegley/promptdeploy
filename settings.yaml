@@ -6,7 +6,7 @@ base:
     CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1'
     CLAUDE_CODE_MAX_OUTPUT_TOKENS: '64000'
     CLAUDE_CODE_NO_FLICKER: '1'
-    CLAUDE_CODE_SUBAGENT_MODEL: fable
+    CLAUDE_CODE_SUBAGENT_MODEL: opus
     DISABLE_AUTOUPDATER: '1'
     ENABLE_LSP_TOOL: '1'
     ENABLE_TOOL_SEARCH: '1'
@@ -36,7 +36,7 @@ base:
   preferredNotifChannel: iterm2_with_bell
   remoteControlAtStartup: true
   agentPushNotifEnabled: true
-  model: claude-fable-5
+  model: claude-opus-4-8
   theme: dark
 overrides:
   claude-positron:

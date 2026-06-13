@@ -91,15 +91,15 @@ Design history, including the rejected `--mcp-config` launcher-bridge approach: 
 
 ## Model Injection (Claude targets)
 
-For every agent and skill deployed to a Claude Code target, `promptdeploy` injects a `model:` field into the YAML frontmatter so the deployed copy explicitly pins the model. Injection is applied only to agents and skills -- commands, MCP servers, hooks, and models are not touched.
-
-The effective model is resolved in this order:
+Model injection is **off by default.** When an effective model resolves, `promptdeploy` injects a `model:` field into a deployed agent's or skill's frontmatter; commands, MCP servers, hooks, and models are never touched. The effective model is resolved in this order:
 
 1. **Per-target override** -- `model:` set on a specific target in `deploy.yaml` wins.
-2. **Global default** -- `providers.anthropic.claude.default_model` in `models.yaml`.
+2. **Global default** -- `providers.anthropic.claude.default_model` in `models.yaml`. **No `anthropic` provider is configured today, so there is no global default and nothing is injected unless you set a per-target override.**
 3. **No injection** -- if neither is set, no `model:` field is written.
 
-Injection overwrites any `model:` field authored in the source item. Remove the source `model:` if you want deployed behavior to match source behavior exactly, or set a per-target override when a specific target should use a different model.
+This default-off stance is deliberate (2026-06-13). Claude Code subagents default to `inherit` (they follow your `/model` choice); injecting a model everywhere overrides that. For skills, `model:` is only a *per-turn* override that force-switches the session model whenever the skill runs -- rarely what you want. Leaving injection off lets agents and skills inherit your session model.
+
+When you *do* set a per-target override, **prefer an alias (`fable`, `opus`, `sonnet`, `haiku`, `inherit`) over a full dated ID** -- aliases track the recommended version and survive model retirements. Injection overwrites any `model:` field authored in the source item.
 
 ### Per-target override
 
@@ -110,10 +110,10 @@ targets:
     type: claude
     path: ~/.config/claude/personal
     labels: [claude, personal, local]
-    model: claude-sonnet-4-6
+    model: sonnet
 ```
 
-Accepted values: any model alias accepted by Claude Code's `model:` frontmatter field (e.g., `opus`, `sonnet`, `haiku`, `claude-opus-4-7`, `inherit`). The value is written verbatim. Setting `model:` on a non-claude target is a validation error.
+Accepted values: any model alias accepted by Claude Code's `model:` frontmatter field (`opus`, `sonnet`, `haiku`, `fable`, `inherit`) or a full ID like `claude-opus-4-8`. Aliases are recommended over full IDs (they survive model retirements). The value is written verbatim. Setting `model:` on a non-claude target is a validation error.
 
 ### Global default
 
@@ -124,10 +124,10 @@ providers:
     display_name: "Anthropic"
     only: [claude]
     claude:
-      default_model: claude-fable-5
+      default_model: claude-opus-4-8
     models:
-      claude-fable-5:
-        display_name: "Claude Fable 5"
+      claude-opus-4-8:
+        display_name: "Claude Opus 4.8"
 ```
 
 The `anthropic` provider itself is scoped to claude targets via `only: [claude]` (the auto-generated label group) so it does not leak into Droid or OpenCode configuration. The `models:` dict is informational -- `promptdeploy validate` warns when a claude target's effective model is neither listed there nor one of the always-accepted aliases (`fable`, `opus`, `sonnet`, `haiku`, `inherit`), catching typos. `models:` entries require no credentials; `base_url` and `api_key` are only required when a provider deploys to Droid or OpenCode.

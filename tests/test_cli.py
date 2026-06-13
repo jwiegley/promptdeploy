@@ -1187,7 +1187,7 @@ def test_settings_reconcile_prints_diffs_report_and_apply(
         "targets:\n"
         f"  claude-personal:\n    type: claude\n    path: {p}\n    labels: [claude]\n"
     )
-    (src / "settings.yaml").write_text("base:\n  model: fable\n")
+    (src / "settings.yaml").write_text("base:\n  model: opus\n")
     monkeypatch.chdir(src)
 
     # Report-only: prints '+' (host-only) and '-' (rendered-only) diff lines, then
