@@ -26,6 +26,18 @@ testpaths = ["tests"]
 # flake's src (flakes omit submodule contents), so CI never lints it.
 extend-exclude = ["translate-tool"]
 
+[tool.ruff.lint]
+# Curated baseline. PTH (flake8-use-pathlib) is deliberately omitted: the
+# repo standardizes on tempfile.mkstemp() + os.replace() for atomic writes,
+# and PTH would churn that convention across ~74 sites for no behavioral
+# gain.
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "C4",  # flake8-comprehensions
+]
+
 [tool.mypy]
 # Strict typing for the promptdeploy package (src/). `strict` cannot be set
 # in per-module overrides, so it is enabled globally here and the noisy

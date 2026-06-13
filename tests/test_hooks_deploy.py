@@ -152,7 +152,9 @@ class TestDeployHook:
                         "matcher": "Write|Edit|MultiEdit",
                         "hooks": [
                             {
-                                "command": "git-ai checkpoint claude --hook-input stdin",
+                                "command": (
+                                    "git-ai checkpoint claude --hook-input stdin"
+                                ),
                                 "type": "command",
                             }
                         ],

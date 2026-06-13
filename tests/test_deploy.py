@@ -1040,7 +1040,8 @@ class TestHookDeploy:
         hooks_dir = src / "hooks"
         hooks_dir.mkdir()
         (hooks_dir / "my-hook.yaml").write_bytes(
-            b"name: my-hook\nhooks:\n  PostToolUse:\n    - matcher: 'Write'\n      hooks:\n        - command: 'echo hi'\n          type: command\n"
+            b"name: my-hook\nhooks:\n  PostToolUse:\n    - matcher: 'Write'\n"
+            b"      hooks:\n        - command: 'echo hi'\n          type: command\n"
         )
 
         tc = _make_claude_target(tmp_path)
@@ -1061,7 +1062,8 @@ class TestHookDeploy:
         hooks_dir = src / "hooks"
         hooks_dir.mkdir()
         (hooks_dir / "hook.yaml").write_bytes(
-            b"name: hook\nhooks:\n  Stop:\n    - matcher: ''\n      hooks:\n        - command: 'echo'\n          type: command\n"
+            b"name: hook\nhooks:\n  Stop:\n    - matcher: ''\n"
+            b"      hooks:\n        - command: 'echo'\n          type: command\n"
         )
 
         tc = _make_claude_target(tmp_path)
@@ -1096,7 +1098,8 @@ class TestShouldSkipIntegration:
         hooks = src / "hooks"
         hooks.mkdir()
         (hooks / "my-hook.yaml").write_bytes(
-            b"name: my-hook\nhooks:\n  Stop:\n    - matcher: ''\n      hooks:\n        - command: 'echo'\n          type: command\n"
+            b"name: my-hook\nhooks:\n  Stop:\n    - matcher: ''\n"
+            b"      hooks:\n        - command: 'echo'\n          type: command\n"
         )
 
         target_dir = tmp_path / "droid-target"
@@ -1130,7 +1133,9 @@ class TestShouldSkipIntegration:
 
         # Create a models.yaml
         (src / "models.yaml").write_bytes(
-            b"providers:\n  acme:\n    display_name: Acme\n    base_url: https://acme.com\n    api_key: key\n    models:\n      m1:\n        display_name: Model 1\n"
+            b"providers:\n  acme:\n    display_name: Acme\n"
+            b"    base_url: https://acme.com\n    api_key: key\n"
+            b"    models:\n      m1:\n        display_name: Model 1\n"
         )
 
         tc = _make_claude_target(tmp_path)

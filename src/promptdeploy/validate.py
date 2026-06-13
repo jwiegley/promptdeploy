@@ -470,7 +470,9 @@ def validate_item(
                     issues.append(
                         ValidationIssue(
                             level="error",
-                            message=f"Invalid environment ID '{env_id}' in '{field_name}'",
+                            message=(
+                                f"Invalid environment ID '{env_id}' in '{field_name}'"
+                            ),
                             file_path=item.path,
                         )
                     )
@@ -595,7 +597,9 @@ def validate_item(
             issues.append(
                 ValidationIssue(
                     level="error",
-                    message="Hook group missing or invalid 'hooks' field (must be a dict)",
+                    message=(
+                        "Hook group missing or invalid 'hooks' field (must be a dict)"
+                    ),
                     file_path=item.path,
                 )
             )
@@ -613,7 +617,9 @@ def validate_item(
                     issues.append(
                         ValidationIssue(
                             level="error",
-                            message=f"Hook event '{event_type}' must be a non-empty list",
+                            message=(
+                                f"Hook event '{event_type}' must be a non-empty list"
+                            ),
                             file_path=item.path,
                         )
                     )
@@ -770,7 +776,10 @@ def validate_item(
                     issues.append(
                         ValidationIssue(
                             level="error",
-                            message=f"Provider '{prov_key}' missing required field 'display_name'",
+                            message=(
+                                f"Provider '{prov_key}'"
+                                " missing required field 'display_name'"
+                            ),
                             file_path=item.path,
                         )
                     )
@@ -785,7 +794,10 @@ def validate_item(
                             issues.append(
                                 ValidationIssue(
                                     level="error",
-                                    message=f"Provider '{prov_key}' missing required field '{required}'",
+                                    message=(
+                                        f"Provider '{prov_key}'"
+                                        f" missing required field '{required}'"
+                                    ),
                                     file_path=item.path,
                                 )
                             )
@@ -805,7 +817,10 @@ def validate_item(
                     issues.append(
                         ValidationIssue(
                             level="error",
-                            message=f"Provider '{prov_key}': cannot specify both 'only' and 'except'",
+                            message=(
+                                f"Provider '{prov_key}':"
+                                " cannot specify both 'only' and 'except'"
+                            ),
                             file_path=item.path,
                         )
                     )
@@ -815,7 +830,10 @@ def validate_item(
                             issues.append(
                                 ValidationIssue(
                                     level="error",
-                                    message=f"Provider '{prov_key}': '{field_name}' must be a list",
+                                    message=(
+                                        f"Provider '{prov_key}':"
+                                        f" '{field_name}' must be a list"
+                                    ),
                                     file_path=item.path,
                                 )
                             )
@@ -825,7 +843,11 @@ def validate_item(
                                     issues.append(
                                         ValidationIssue(
                                             level="error",
-                                            message=f"Provider '{prov_key}': invalid environment ID '{env_id}' in '{field_name}'",
+                                            message=(
+                                                f"Provider '{prov_key}':"
+                                                f" invalid environment ID"
+                                                f" '{env_id}' in '{field_name}'"
+                                            ),
                                             file_path=item.path,
                                         )
                                     )
@@ -836,7 +858,10 @@ def validate_item(
                         issues.append(
                             ValidationIssue(
                                 level="error",
-                                message=f"Provider '{prov_key}': 'overrides' must be a mapping",
+                                message=(
+                                    f"Provider '{prov_key}':"
+                                    " 'overrides' must be a mapping"
+                                ),
                                 file_path=item.path,
                             )
                         )
@@ -846,7 +871,11 @@ def validate_item(
                                 issues.append(
                                     ValidationIssue(
                                         level="error",
-                                        message=f"Provider '{prov_key}': invalid environment ID '{env_id}' in 'overrides'",
+                                        message=(
+                                            f"Provider '{prov_key}':"
+                                            f" invalid environment ID"
+                                            f" '{env_id}' in 'overrides'"
+                                        ),
                                         file_path=item.path,
                                     )
                                 )
@@ -854,7 +883,11 @@ def validate_item(
                                 issues.append(
                                     ValidationIssue(
                                         level="error",
-                                        message=f"Provider '{prov_key}': 'overrides.{env_id}' must be a mapping",
+                                        message=(
+                                            f"Provider '{prov_key}':"
+                                            f" 'overrides.{env_id}'"
+                                            " must be a mapping"
+                                        ),
                                         file_path=item.path,
                                     )
                                 )
@@ -869,7 +902,11 @@ def validate_item(
                             issues.append(
                                 ValidationIssue(
                                     level="error",
-                                    message=f"Model '{model_id}' in '{prov_key}': cannot specify both 'only' and 'except'",
+                                    message=(
+                                        f"Model '{model_id}' in '{prov_key}':"
+                                        " cannot specify both 'only'"
+                                        " and 'except'"
+                                    ),
                                     file_path=item.path,
                                 )
                             )
@@ -882,7 +919,12 @@ def validate_item(
                                     issues.append(
                                         ValidationIssue(
                                             level="error",
-                                            message=f"Model '{model_id}' in '{prov_key}': '{field_name}' must be a list",
+                                            message=(
+                                                f"Model '{model_id}'"
+                                                f" in '{prov_key}':"
+                                                f" '{field_name}'"
+                                                " must be a list"
+                                            ),
                                             file_path=item.path,
                                         )
                                     )
@@ -892,7 +934,13 @@ def validate_item(
                                             issues.append(
                                                 ValidationIssue(
                                                     level="error",
-                                                    message=f"Model '{model_id}' in '{prov_key}': invalid environment ID '{env_id}' in '{field_name}'",
+                                                    message=(
+                                                        f"Model '{model_id}'"
+                                                        f" in '{prov_key}':"
+                                                        " invalid environment"
+                                                        f" ID '{env_id}'"
+                                                        f" in '{field_name}'"
+                                                    ),
                                                     file_path=item.path,
                                                 )
                                             )

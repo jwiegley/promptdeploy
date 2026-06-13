@@ -1342,7 +1342,8 @@ def test_validate_settings_ok(tmp_path):
 
     cfg = _cfg_with(
         tmp_path,
-        "base:\n  effortLevel: low\noverrides:\n  claude-positron:\n    model: sonnet\n",
+        "base:\n  effortLevel: low\n"
+        "overrides:\n  claude-positron:\n    model: sonnet\n",
     )
     issues = [i for i in validate_all(cfg) if "settings.yaml" in str(i.file_path)]
     assert issues == []

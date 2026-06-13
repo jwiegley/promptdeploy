@@ -82,7 +82,8 @@ def validate_flow(flow_path):
                         for wire_id in output_wires:
                             if wire_id not in node_ids:
                                 errors.append(
-                                    f"Node {node_id} wires to non-existent node: {wire_id}"
+                                    f"Node {node_id} wires to non-existent"
+                                    f" node: {wire_id}"
                                 )
 
         # Check coordinates (definition nodes have none by design)

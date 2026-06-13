@@ -23,7 +23,9 @@ PROMPT_EXTENSIONS = POET_EXTENSIONS | PLAIN_EXTENSIONS | {".json"}
 class SourceItem:
     """A discovered source item ready for deployment."""
 
-    item_type: str  # 'agent', 'command', 'skill', 'mcp', 'models', 'hook', 'marketplace', 'prompt', 'settings'
+    # 'agent', 'command', 'skill', 'mcp', 'models', 'hook', 'marketplace',
+    # 'prompt', or 'settings'
+    item_type: str
     name: str
     path: Path
     metadata: Optional[dict[str, Any]]

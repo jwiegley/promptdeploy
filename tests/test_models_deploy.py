@@ -664,7 +664,7 @@ class TestModelsDeployIntegration:
         assert len(creates) == 1
 
     def test_remove_models_category(self, tmp_path: Path):
-        """Covers deploy.py lines 117-118: elif category == 'models': target.remove_models()."""
+        """Covers the deploy.py removal branch for the 'models' category."""
         src = tmp_path / "source"
         src.mkdir()
         self._write_models_yaml(

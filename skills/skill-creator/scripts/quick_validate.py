@@ -43,12 +43,14 @@ def validate_skill(skill_path):
         if not re.match(r"^[a-z0-9-]+$", name):
             return (
                 False,
-                f"Name '{name}' should be hyphen-case (lowercase letters, digits, and hyphens only)",
+                f"Name '{name}' should be hyphen-case"
+                " (lowercase letters, digits, and hyphens only)",
             )
         if name.startswith("-") or name.endswith("-") or "--" in name:
             return (
                 False,
-                f"Name '{name}' cannot start/end with hyphen or contain consecutive hyphens",
+                f"Name '{name}' cannot start/end with hyphen"
+                " or contain consecutive hyphens",
             )
 
     # Extract and validate description

@@ -59,7 +59,8 @@ def wire_nodes(flow_path, source_id, target_id, output_port=0):
 def main():
     if len(sys.argv) < 4:
         print(
-            "Usage: python wire_nodes.py <flow.json> <source_id> <target_id> [output_port]"
+            "Usage: python wire_nodes.py"
+            " <flow.json> <source_id> <target_id> [output_port]"
         )
         sys.exit(1)
 

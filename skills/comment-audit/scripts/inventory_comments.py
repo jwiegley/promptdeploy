@@ -714,7 +714,8 @@ def cmd_show(args: argparse.Namespace) -> int:
         )
         print(c["text"])
         print(
-            f"-- status={c['status']} verdict={c['verdict']} confidence={c['confidence']}"
+            f"-- status={c['status']} verdict={c['verdict']}"
+            f" confidence={c['confidence']}"
         )
         print()
     return 0

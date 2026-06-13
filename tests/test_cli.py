@@ -274,7 +274,8 @@ class TestRunDeploy:
         hooks_dir = src / "hooks"
         hooks_dir.mkdir()
         (hooks_dir / "my-hook.yaml").write_bytes(
-            b"name: my-hook\nhooks:\n  Stop:\n    - matcher: ''\n      hooks:\n        - command: echo\n          type: command\n"
+            b"name: my-hook\nhooks:\n  Stop:\n    - matcher: ''\n"
+            b"      hooks:\n        - command: echo\n          type: command\n"
         )
         tc = _make_claude_target(tmp_path)
         config = _make_config(src, {tc.id: tc})

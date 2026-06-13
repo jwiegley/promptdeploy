@@ -177,7 +177,8 @@ class TestParsePoet:
         # the missing name and doesn't raise.
         content = (
             b"- role: system\n"
-            b'  content: "{% for x in maybe %}{{ x }}{% endfor %}|{% if maybe %}y{% endif %}"\n'
+            b'  content: "{% for x in maybe %}{{ x }}{% endfor %}'
+            b'|{% if maybe %}y{% endif %}"\n'
         )
         doc = parse_poet(content)
         assert any("maybe" in w for w in doc.warnings)

@@ -99,7 +99,29 @@ def create_http_api_flow():
             "type": "function",
             "z": tab_id,
             "name": "Process Request",
-            "func": "// Access request data\nconst query = msg.req.query;\nconst headers = msg.req.headers;\n\n// Process the request\nlet response = {\n    status: 'success',\n    timestamp: new Date().toISOString(),\n    data: {\n        // Add your data here\n    }\n};\n\n// Set response\nmsg.payload = response;\nmsg.statusCode = 200;\nmsg.headers = {\n    'Content-Type': 'application/json'\n};\n\nreturn msg;",
+            "func": (
+                "// Access request data\n"
+                "const query = msg.req.query;\n"
+                "const headers = msg.req.headers;\n"
+                "\n"
+                "// Process the request\n"
+                "let response = {\n"
+                "    status: 'success',\n"
+                "    timestamp: new Date().toISOString(),\n"
+                "    data: {\n"
+                "        // Add your data here\n"
+                "    }\n"
+                "};\n"
+                "\n"
+                "// Set response\n"
+                "msg.payload = response;\n"
+                "msg.statusCode = 200;\n"
+                "msg.headers = {\n"
+                "    'Content-Type': 'application/json'\n"
+                "};\n"
+                "\n"
+                "return msg;"
+            ),
             "outputs": 1,
             "noerr": 0,
             "initialize": "",
@@ -161,7 +183,18 @@ def create_data_pipeline_flow():
             "type": "function",
             "z": tab_id,
             "name": "Transform Data",
-            "func": "// Transform array data\nif (Array.isArray(msg.payload)) {\n    msg.payload = msg.payload.map(item => ({\n        value: item,\n        timestamp: Date.now(),\n        processed: true\n    }));\n}\n\nreturn msg;",
+            "func": (
+                "// Transform array data\n"
+                "if (Array.isArray(msg.payload)) {\n"
+                "    msg.payload = msg.payload.map(item => ({\n"
+                "        value: item,\n"
+                "        timestamp: Date.now(),\n"
+                "        processed: true\n"
+                "    }));\n"
+                "}\n"
+                "\n"
+                "return msg;"
+            ),
             "outputs": 1,
             "noerr": 0,
             "initialize": "",
@@ -175,7 +208,16 @@ def create_data_pipeline_flow():
             "type": "function",
             "z": tab_id,
             "name": "Filter Results",
-            "func": "// Filter processed data\nif (Array.isArray(msg.payload)) {\n    msg.payload = msg.payload.filter(item => \n        item.processed && item.value > 2\n    );\n}\n\nreturn msg;",
+            "func": (
+                "// Filter processed data\n"
+                "if (Array.isArray(msg.payload)) {\n"
+                "    msg.payload = msg.payload.filter(item => \n"
+                "        item.processed && item.value > 2\n"
+                "    );\n"
+                "}\n"
+                "\n"
+                "return msg;"
+            ),
             "outputs": 1,
             "noerr": 0,
             "x": 510,
@@ -240,7 +282,25 @@ def create_error_handler_flow():
             "type": "function",
             "z": tab_id,
             "name": "Try Operation",
-            "func": "try {\n    // Simulate operation that might fail\n    if (Math.random() > 0.5) {\n        throw new Error('Random failure occurred');\n    }\n    \n    msg.payload = {\n        status: 'success',\n        result: 'Operation completed'\n    };\n    \n    return msg;\n} catch (error) {\n    // Trigger catch node\n    node.error(error.message, msg);\n    return null;\n}",
+            "func": (
+                "try {\n"
+                "    // Simulate operation that might fail\n"
+                "    if (Math.random() > 0.5) {\n"
+                "        throw new Error('Random failure occurred');\n"
+                "    }\n"
+                "    \n"
+                "    msg.payload = {\n"
+                "        status: 'success',\n"
+                "        result: 'Operation completed'\n"
+                "    };\n"
+                "    \n"
+                "    return msg;\n"
+                "} catch (error) {\n"
+                "    // Trigger catch node\n"
+                "    node.error(error.message, msg);\n"
+                "    return null;\n"
+                "}"
+            ),
             "outputs": 1,
             "noerr": 0,
             "initialize": "",
@@ -265,7 +325,26 @@ def create_error_handler_flow():
             "type": "function",
             "z": tab_id,
             "name": "Log & Recover",
-            "func": "// Log error details\nconst errorDetails = {\n    timestamp: new Date().toISOString(),\n    error: msg.error.message,\n    source: msg.error.source.name || msg.error.source.id,\n    original_payload: msg.payload\n};\n\nnode.warn('Error caught: ' + JSON.stringify(errorDetails));\n\n// Attempt recovery or send alert\nmsg.payload = {\n    status: 'error',\n    details: errorDetails,\n    recovery: 'Attempting fallback operation...'\n};\n\nreturn msg;",
+            "func": (
+                "// Log error details\n"
+                "const errorDetails = {\n"
+                "    timestamp: new Date().toISOString(),\n"
+                "    error: msg.error.message,\n"
+                "    source: msg.error.source.name || msg.error.source.id,\n"
+                "    original_payload: msg.payload\n"
+                "};\n"
+                "\n"
+                "node.warn('Error caught: ' + JSON.stringify(errorDetails));\n"
+                "\n"
+                "// Attempt recovery or send alert\n"
+                "msg.payload = {\n"
+                "    status: 'error',\n"
+                "    details: errorDetails,\n"
+                "    recovery: 'Attempting fallback operation...'\n"
+                "};\n"
+                "\n"
+                "return msg;"
+            ),
             "outputs": 1,
             "noerr": 0,
             "x": 300,

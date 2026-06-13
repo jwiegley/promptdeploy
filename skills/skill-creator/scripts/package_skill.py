@@ -22,7 +22,8 @@ def package_skill(skill_path, output_dir=None):
 
     Args:
         skill_path: Path to the skill folder
-        output_dir: Optional output directory for the zip file (defaults to current directory)
+        output_dir: Optional output directory for the zip file
+            (defaults to current directory)
 
     Returns:
         Path to the created zip file, or None if error
@@ -85,7 +86,8 @@ def package_skill(skill_path, output_dir=None):
 def main():
     if len(sys.argv) < 2:
         print(
-            "Usage: python scripts/package_skill.py <path/to/skill-folder> [output-directory]"
+            "Usage: python scripts/package_skill.py"
+            " <path/to/skill-folder> [output-directory]"
         )
         print("\nExample:")
         print("  python scripts/package_skill.py skills/public/my-skill")

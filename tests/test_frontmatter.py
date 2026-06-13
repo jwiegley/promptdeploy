@@ -31,7 +31,10 @@ class TestParseFrontmatter:
         assert body == b"Body after empty frontmatter.\n"
 
     def test_multiline_yaml_values(self):
-        content = b"---\ndescription: |\n  This is a\n  multi-line value.\ntags:\n  - one\n  - two\n---\nBody.\n"
+        content = (
+            b"---\ndescription: |\n  This is a\n  multi-line value.\n"
+            b"tags:\n  - one\n  - two\n---\nBody.\n"
+        )
         metadata, body = parse_frontmatter(content)
         assert metadata is not None
         assert metadata["description"] == "This is a\nmulti-line value.\n"
@@ -39,9 +42,10 @@ class TestParseFrontmatter:
         assert body == b"Body.\n"
 
     def test_unicode_content(self):
-        content = "---\ntitle: \u6d4b\u8bd5\nauthor: \u00e9l\u00e8ve\n---\nBody with \u00fcnicode.\n".encode(
-            "utf-8"
-        )
+        content = (
+            "---\ntitle: \u6d4b\u8bd5\nauthor: \u00e9l\u00e8ve\n---\n"
+            "Body with \u00fcnicode.\n"
+        ).encode("utf-8")
         metadata, body = parse_frontmatter(content)
         assert metadata is not None
         assert metadata["title"] == "\u6d4b\u8bd5"

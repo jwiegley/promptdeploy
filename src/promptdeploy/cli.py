@@ -17,7 +17,9 @@ def _load_config_or_exit() -> Config:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="promptdeploy",
-        description="Deploy prompts, agents, skills, and MCP servers to multiple tools.",
+        description=(
+            "Deploy prompts, agents, skills, and MCP servers to multiple tools."
+        ),
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -58,7 +60,10 @@ def main() -> None:
         "--target-root",
         type=Path,
         metavar="DIR",
-        help="Redirect all deployment output under DIR (using target IDs as subdirectories)",
+        help=(
+            "Redirect all deployment output under DIR"
+            " (using target IDs as subdirectories)"
+        ),
     )
 
     # validate subcommand
@@ -73,7 +78,10 @@ def main() -> None:
         "--target-root",
         type=Path,
         metavar="DIR",
-        help="Redirect all deployment output under DIR (using target IDs as subdirectories)",
+        help=(
+            "Redirect all deployment output under DIR"
+            " (using target IDs as subdirectories)"
+        ),
     )
 
     # list subcommand
@@ -85,7 +93,10 @@ def main() -> None:
         "--target-root",
         type=Path,
         metavar="DIR",
-        help="Redirect all deployment output under DIR (using target IDs as subdirectories)",
+        help=(
+            "Redirect all deployment output under DIR"
+            " (using target IDs as subdirectories)"
+        ),
     )
 
     # settings subcommand group
