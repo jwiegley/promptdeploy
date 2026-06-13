@@ -213,7 +213,7 @@ class TestParsePoet:
         cls = _make_undefined_class([])
         u = cls(name="foo")
         with pytest.raises(AttributeError):
-            getattr(u, "_private")
+            _ = u._private
 
 
 class TestParsePlain:

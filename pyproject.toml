@@ -37,8 +37,16 @@ select = [
     "W",   # pycodestyle warnings
     "I",   # isort
     "UP",  # pyupgrade
+    "B",   # flake8-bugbear
     "C4",  # flake8-comprehensions
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# The Target ABC deliberately ships empty-bodied lifecycle/settings methods
+# (prepare/finalize/cleanup/deploy_settings/...) as no-op defaults so that
+# local and non-Claude targets need no boilerplate overrides; marking them
+# @abstractmethod would force every target to implement no-ops.
+"src/promptdeploy/targets/base.py" = ["B027"]
 
 [tool.mypy]
 # Strict typing for the promptdeploy package (src/). `strict` cannot be set
