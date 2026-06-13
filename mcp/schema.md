@@ -43,8 +43,8 @@ Exactly one transport must be specified:
 target type:
 
 - **Claude Code** -- deployed VERBATIM, in both `env` and `headers`. Expansion
-  happens at runtime on the `--mcp-config` surface (see the next section), so
-  secrets are never baked into deployed `settings.json` files. Caveat: an
+  happens at runtime when Claude Code reads `.claude.json` (see the next
+  section), so secrets are never baked into deployed config. Caveat: an
   unset variable expands to *empty* at runtime rather than failing.
 - **Factory Droid** -- `env` and `headers` are copied verbatim into
   `mcp.json`; promptdeploy expands nothing in MCP definitions for this target
@@ -60,26 +60,34 @@ target type:
 
 ## How Deployed Servers Reach Claude Code
 
-promptdeploy merges MCP servers into each Claude target's `settings.json`
-under a top-level `mcpServers` key -- but Claude Code does not read that key
-on its own (its MCP read surfaces are `~/.claude.json`, project `.mcp.json`,
-plugins, claude.ai connectors, enterprise `managed-mcp.json`, and the
-`--mcp-config` flag). The deployed key takes effect through a launcher bridge
-that lives outside this repository: the `ai` wrapper (`~/src/scripts/ai`)
-appends `--mcp-config "$CLAUDE_CONFIG_DIR/settings.json"` to every `claude`
-invocation when that file exists. A launch that bypasses the wrapper gets no
-promptdeploy-managed servers.
+promptdeploy merges each MCP server into the Claude target's
+`$CLAUDE_CONFIG_DIR/.claude.json` under the top-level `mcpServers` key -- the
+user-scope surface Claude Code reads natively (its other MCP read surfaces are
+project `.mcp.json`, plugins, claude.ai connectors, enterprise
+`managed-mcp.json`, and the `--mcp-config` flag; it does **not** read
+`settings.json`). The merge is surgical: only the named server keys are
+written, and every other key in the app-owned file is preserved. Plain
+`claude` picks the servers up with no wrapper or flags.
 
-To verify a profile's deployed MCP servers end to end, run the standard
-headless probe:
+Two consequences:
+
+- **Local profiles only.** `.claude.json` is machine-specific (OAuth session,
+  caches, per-project state) and must never be rsynced, so remote claude
+  targets skip MCP entirely (`manage_mcp=False`). Manage MCP for remote hosts
+  on those hosts directly if needed.
+- **Deploy with sessions closed.** A running `claude` session rewrites
+  `.claude.json` wholesale from memory with no locking, so an MCP deploy
+  concurrent with a live session can be lost (or lose the session's changes).
+  This is the same constraint `claude mcp add` operates under.
+
+To verify a profile's deployed MCP servers end to end, run a headless probe
+and inspect the init event's `mcp_servers`:
 
 ```bash
-claude --strict-mcp-config --mcp-config=<profile>/settings.json -p "Say ok" \
-  --output-format json --max-turns 1
+claude -p "Say ok" --output-format json --max-turns 1
 ```
 
-`--strict-mcp-config` excludes every other MCP source, so the probe reports
-exactly the servers loaded from that `settings.json`. Design history:
+Design history, including the rejected `--mcp-config` launcher-bridge approach:
 `docs/superpowers/specs/2026-06-12-mcp-launcher-bridge-design.md`.
 
 ## Example

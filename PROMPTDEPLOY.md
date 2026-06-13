@@ -70,22 +70,24 @@ only:
 
 Labels can also be embedded in the filename itself using the filetags convention: `basename -- tag1 tag2.md`. The separator is ` -- ` (space-dash-dash-space); if it appears more than once, only the rightmost occurrence splits tags from the basename. The item deploys under `basename` (unless a `name:` in its metadata overrides it), and each tag acts as an implicit `only` label with AND semantics -- the target must match *every* tag. Filetags compose with frontmatter `only`/`except`: both filters must pass. They work on agents, commands, prompts, MCP servers, hooks, and marketplaces (file stems) as well as skills (directory names). `promptdeploy validate` rejects tags that are not valid target, group, or label names.
 
-## MCP Servers (Claude targets): the launcher bridge
+## MCP Servers (Claude targets): `.claude.json`
 
-`promptdeploy` merges MCP server definitions into each Claude target's `settings.json` under a top-level `mcpServers` key. Claude Code does not read that key on its own: its MCP read surfaces are `~/.claude.json` (user/local scopes), project `.mcp.json`, plugin-provided servers, claude.ai connectors, enterprise `managed-mcp.json`, and the per-invocation `--mcp-config` flag.
+`promptdeploy` merges MCP server definitions into each local Claude target's `$CLAUDE_CONFIG_DIR/.claude.json` under the top-level `mcpServers` key -- the user-scope surface Claude Code reads natively. (Claude Code does **not** read `mcpServers` from `settings.json`; its MCP read surfaces are `.claude.json`, project `.mcp.json`, plugin-provided servers, claude.ai connectors, enterprise `managed-mcp.json`, and the per-invocation `--mcp-config` flag.) The merge is surgical -- only the named server keys are written, and every other key in the app-owned file (OAuth session, caches, per-project state) is preserved -- so plain `claude` picks the servers up with no wrapper or flags.
 
-The deployed key becomes effective through a launcher bridge that lives *outside* this repository: the `ai` wrapper (`~/src/scripts/ai`) appends `--mcp-config "$CLAUDE_CONFIG_DIR/settings.json"` to every `claude` invocation when that file exists. It does not pass `--strict-mcp-config`, so plugins, claude.ai connectors, and project `.mcp.json` continue to load alongside the deployed servers. The bridge is load-bearing: a Claude launch that bypasses the wrapper gets no promptdeploy-managed MCP servers.
+Two consequences shape the deploy model:
 
-Because expansion happens at runtime on the `--mcp-config` surface, `${VAR}` references in `env` and `headers` are deployed verbatim -- no secrets are baked into `settings.json` (which matters for remote targets, whose files are rsynced). An unset variable expands to *empty* at runtime rather than failing, which is why `promptdeploy validate` warns about `${VAR}` references missing from `.env.example`.
+- **Local profiles only.** `.claude.json` is machine-specific and must never be rsynced, so remote Claude targets skip MCP (`create_target` builds them with `manage_mcp=False`, and `ClaudeTarget.should_skip("mcp")` returns True). Manage MCP for a remote host on that host directly.
+- **Deploy with sessions closed.** A live `claude` session rewrites `.claude.json` wholesale from memory with no locking, so an MCP deploy run alongside an open session can be lost (or clobber the session's own changes). This is exactly the constraint `claude mcp add` operates under.
 
-To verify a profile's MCP deployment end to end, run the standard headless probe:
+Because expansion happens at runtime when Claude Code reads `.claude.json`, `${VAR}` references in `env` and `headers` are deployed verbatim -- no secrets are baked into deployed files. An unset variable expands to *empty* at runtime rather than failing, which is why `promptdeploy validate` warns about `${VAR}` references missing from `.env.example`.
+
+To verify a profile's MCP servers end to end, run a headless probe and inspect the init event's `mcp_servers`:
 
 ```bash
-claude --strict-mcp-config --mcp-config=<profile>/settings.json -p "Say ok" \
-  --output-format json --max-turns 1
+claude -p "Say ok" --output-format json --max-turns 1
 ```
 
-`--strict-mcp-config` excludes every other MCP source, so the probe reports exactly the servers loaded from that `settings.json`. Design history: `docs/superpowers/specs/2026-06-12-mcp-launcher-bridge-design.md`.
+Design history, including the rejected `--mcp-config` launcher-bridge approach: `docs/superpowers/specs/2026-06-12-mcp-launcher-bridge-design.md`.
 
 ## Model Injection (Claude targets)
 
@@ -321,7 +323,7 @@ Rebuild your system to install `promptdeploy` to the Nix profile.
 2. **Filtering** -- Evaluates filename filetags and `only`/`except` frontmatter against each target, expanding group names.
 3. **Change detection** -- Computes SHA256 hashes and compares against the manifest from the last deploy. Unchanged items are skipped (unless `--force`).
 4. **Deployment** -- Writes each item in the format the target expects:
-   - Claude Code: agents/, commands/, skills/ directories (agents and skills get `model:` injection when configured); prompts render to `commands/{name}.md`; MCP merges into settings.json's `mcpServers` with `${VAR}` references deployed verbatim (read by Claude Code only via the launcher bridge's `--mcp-config`, see above); hooks merge into settings.json with `_source` tagging; marketplaces merge into top-level `extraKnownMarketplaces`/`enabledPlugins`; `settings.yaml` keys gently merge into settings.json; models are skipped.
+   - Claude Code: agents/, commands/, skills/ directories (agents and skills get `model:` injection when configured); prompts render to `commands/{name}.md`; MCP merges into `.claude.json`'s `mcpServers` with `${VAR}` references deployed verbatim (local profiles only -- see above); hooks merge into settings.json with `_source` tagging; marketplaces merge into top-level `extraKnownMarketplaces`/`enabledPlugins`; `settings.yaml` keys gently merge into settings.json; models are skipped.
    - Factory Droid: agents go to droids/; commands are skipped (unless `droid_deploy: skill`); prompts and skills become `skills/{name}/` directories; MCP merges into mcp.json with a `type` field; models go to settings.json `customModels`; hooks, marketplaces, and settings are skipped.
    - OpenCode: agents/, commands/, skills/ layout; prompts render to `commands/{name}.md`; MCP merges into opencode.json with `command` as an array and `environment` instead of `env`; models go under opencode.json's `provider` key; hooks, marketplaces, and settings are skipped.
    - gptel: prompts only -- Poet/Jinja sources render to `{name}.json` (an array of role/content turns read by gptel-prompts.el); plain prompts are copied verbatim; every other item type is skipped.

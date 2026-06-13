@@ -1,9 +1,27 @@
 # MCP Launcher Bridge — Design
 
 **Date:** 2026-06-12
-**Status:** Approved (pending implementation plan)
+**Status:** SUPERSEDED (2026-06-13) — the launcher bridge was implemented, then
+reverted in favour of writing MCP servers directly into `.claude.json`. See
+the banner below; the rest of this document is retained as design history.
 **Owner:** John Wiegley
 **Supersedes:** the June 2026 audit's "Do now" item 1 ("MCP deployment to Claude targets is ineffective")
+
+> **SUPERSEDED — read this first.** The bridge described below (keep
+> `settings.json` canonical; have the `ai` wrapper pass it to Claude via
+> `--mcp-config`) was built and worked, but it made MCP depend on a
+> load-bearing wrapper outside the repo. On reflection the maintainer chose the
+> simpler model: **`ClaudeTarget` writes the `mcpServers` key straight into
+> `$CLAUDE_CONFIG_DIR/.claude.json`**, the user-scope surface plain `claude`
+> reads with no wrapper. The empirical findings below still hold (settings.json
+> `mcpServers` is unread; `${VAR}` expands at runtime in `env` **and**
+> `headers`) — and were re-verified on the `.claude.json` surface, which also
+> expands `${VAR}`. Trade-offs accepted with the pivot: `.claude.json` is
+> machine-specific so **remote** claude targets skip MCP (`manage_mcp=False`),
+> and because a live session rewrites the file, deploys happen with sessions
+> closed. The `--mcp-config` wrapper patch was reverted. Implementation landed
+> in `ClaudeTarget.deploy_mcp_server`/`remove_mcp_server`/`should_skip` and
+> `create_target`.
 
 ## Problem
 

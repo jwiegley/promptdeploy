@@ -1,5 +1,15 @@
 # MCP Launcher Bridge Implementation Plan
 
+> **SUPERSEDED (2026-06-13).** This plan's tasks were executed (commits through
+> `3a4e4bc`), then the launcher-bridge approach was reverted: MCP servers now
+> deploy directly into `.claude.json` instead of `settings.json` + `--mcp-config`
+> (commit `f02153e`; wrapper revert `8e23316` in `~/src/scripts`). The Task 1–4
+> in-repo changes (`${VAR}` verbatim passthrough, the `.env.example` validate
+> warning, the context7 HTTP form, headers handling) all carried forward
+> unchanged and remain valid. What changed is only the *write surface* and the
+> wrapper dependency. See the spec's superseding banner for the rationale.
+> Retained as history.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make promptdeploy's MCP deployment to claude targets effective by keeping `settings.json` canonical and passing it to Claude Code via `--mcp-config`, with `${VAR}` secrets passthrough.
