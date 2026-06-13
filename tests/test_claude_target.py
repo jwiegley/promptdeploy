@@ -368,12 +368,16 @@ class TestRemoveModelsNoop:
 # ------------------------------------------------------------------
 
 
+def _claude_json(tmp_path: Path) -> Path:
+    return tmp_path / ".claude" / ".claude.json"
+
+
 class TestDeployMcpServer:
-    def test_merges_into_settings_json(self, tmp_path: Path):
+    def test_merges_into_claude_json(self, tmp_path: Path):
         target = _make_target(tmp_path)
-        # Pre-populate settings with another key.
-        settings_path = tmp_path / ".claude" / "settings.json"
-        settings_path.write_text(json.dumps({"allowedTools": ["Edit"]}))
+        # Pre-populate .claude.json with unrelated app-owned state.
+        cj_path = _claude_json(tmp_path)
+        cj_path.write_text(json.dumps({"oauthAccount": {"id": "x"}}))
 
         config = {
             "name": "my-server",
@@ -386,8 +390,9 @@ class TestDeployMcpServer:
         }
         target.deploy_mcp_server("my-server", config)
 
-        result = json.loads(settings_path.read_text())
-        assert result["allowedTools"] == ["Edit"]
+        result = json.loads(cj_path.read_text())
+        # Unrelated keys in the app-owned file are preserved.
+        assert result["oauthAccount"] == {"id": "x"}
         assert "my-server" in result["mcpServers"]
         srv = result["mcpServers"]["my-server"]
         assert srv == {
@@ -399,21 +404,28 @@ class TestDeployMcpServer:
         for key in ("name", "description", "scope", "enabled", "only", "except"):
             assert key not in srv
 
-    def test_creates_settings_if_missing(self, tmp_path: Path):
+    def test_does_not_write_settings_json(self, tmp_path: Path):
+        # MCP servers must land in .claude.json, never settings.json -- Claude
+        # Code does not read mcpServers from settings.json.
+        target = _make_target(tmp_path)
+        target.deploy_mcp_server("srv", {"command": "echo"})
+        assert not (tmp_path / ".claude" / "settings.json").exists()
+
+    def test_creates_claude_json_if_missing(self, tmp_path: Path):
         target = _make_target(tmp_path)
         target.deploy_mcp_server("srv", {"command": "echo", "args": []})
 
-        settings_path = tmp_path / ".claude" / "settings.json"
-        assert settings_path.exists()
-        result = json.loads(settings_path.read_text())
+        cj_path = _claude_json(tmp_path)
+        assert cj_path.exists()
+        result = json.loads(cj_path.read_text())
         assert result["mcpServers"]["srv"] == {"command": "echo", "args": []}
 
     def test_disabled_server_not_written(self, tmp_path: Path):
         target = _make_target(tmp_path)
         target.deploy_mcp_server("srv", {"command": "echo", "enabled": False})
 
-        settings_path = tmp_path / ".claude" / "settings.json"
-        result = json.loads(settings_path.read_text())
+        cj_path = _claude_json(tmp_path)
+        result = json.loads(cj_path.read_text()) if cj_path.exists() else {}
         assert "srv" not in result.get("mcpServers", {})
 
     def test_disabled_server_removed_if_exists(self, tmp_path: Path):
@@ -422,27 +434,25 @@ class TestDeployMcpServer:
         target.deploy_mcp_server("srv", {"command": "echo"})
         target.deploy_mcp_server("srv", {"command": "echo", "enabled": False})
 
-        result = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+        result = json.loads(_claude_json(tmp_path).read_text())
         assert "srv" not in result.get("mcpServers", {})
 
     def test_preserves_other_servers(self, tmp_path: Path):
         target = _make_target(tmp_path)
-        settings_path = tmp_path / ".claude" / "settings.json"
-        settings_path.write_text(
+        cj_path = _claude_json(tmp_path)
+        cj_path.write_text(
             json.dumps({"mcpServers": {"existing": {"command": "keep"}}})
         )
 
         target.deploy_mcp_server("new", {"command": "added"})
 
-        result = json.loads(settings_path.read_text())
+        result = json.loads(cj_path.read_text())
         assert result["mcpServers"]["existing"] == {"command": "keep"}
         assert result["mcpServers"]["new"] == {"command": "added"}
 
     def test_env_vars_passed_through_verbatim(self, tmp_path: Path, monkeypatch):
         # Even when the variable IS set, the reference must be written
-        # verbatim: Claude Code expands ${VAR} at runtime via the
-        # --mcp-config launcher bridge (see docs/superpowers/specs/
-        # 2026-06-12-mcp-launcher-bridge-design.md).
+        # verbatim: Claude Code expands ${VAR} in .claude.json at runtime.
         monkeypatch.setenv("MY_API_KEY", "secret123")
         target = _make_target(tmp_path)
         config = {
@@ -452,8 +462,7 @@ class TestDeployMcpServer:
         }
         target.deploy_mcp_server("srv", config)
 
-        settings_path = tmp_path / ".claude" / "settings.json"
-        result = json.loads(settings_path.read_text())
+        result = json.loads(_claude_json(tmp_path).read_text())
         assert result["mcpServers"]["srv"]["env"]["KEY"] == "${MY_API_KEY}"
 
     def test_headers_passed_through_verbatim(self, tmp_path: Path, monkeypatch):
@@ -468,9 +477,18 @@ class TestDeployMcpServer:
         }
         target.deploy_mcp_server("srv", config)
 
-        settings_path = tmp_path / ".claude" / "settings.json"
-        result = json.loads(settings_path.read_text())
+        result = json.loads(_claude_json(tmp_path).read_text())
         assert result["mcpServers"]["srv"]["headers"]["K"] == "${SOME_KEY}"
+
+    def test_local_target_manages_mcp_remote_skips(self, tmp_path: Path):
+        # Local claude targets manage MCP; remote ones cannot (.claude.json is
+        # machine-specific and never rsynced), so they skip mcp items.
+        local = ClaudeTarget("t", tmp_path / "local")
+        assert local.should_skip("mcp", "srv") is False
+        remote_inner = ClaudeTarget("t", tmp_path / "remote", manage_mcp=False)
+        assert remote_inner.should_skip("mcp", "srv") is True
+        # The skip is specific to mcp -- agents still deploy on remote.
+        assert remote_inner.should_skip("agent", "a") is False
 
 
 class TestRemoveMcpServer:
@@ -479,17 +497,27 @@ class TestRemoveMcpServer:
         target.deploy_mcp_server("srv", {"command": "echo"})
         target.remove_mcp_server("srv")
 
-        result = json.loads((tmp_path / ".claude" / "settings.json").read_text())
+        result = json.loads(_claude_json(tmp_path).read_text())
         assert "srv" not in result.get("mcpServers", {})
 
     def test_no_error_if_missing(self, tmp_path: Path):
         target = _make_target(tmp_path)
         target.remove_mcp_server("nonexistent")
 
-    def test_no_error_if_settings_missing(self, tmp_path: Path):
+    def test_no_error_if_claude_json_missing(self, tmp_path: Path):
         target = _make_target(tmp_path)
-        # Remove auto-created .claude dir settings
+        # No .claude.json present yet -- removal must no-op, not raise.
         target.remove_mcp_server("anything")
+
+    def test_no_error_if_no_mcp_servers_key(self, tmp_path: Path):
+        # .claude.json exists but has no mcpServers section -- removal must
+        # leave the file's other keys intact and not raise.
+        target = _make_target(tmp_path)
+        cj_path = _claude_json(tmp_path)
+        cj_path.write_text(json.dumps({"oauthAccount": {"id": "x"}}))
+        target.remove_mcp_server("anything")
+        result = json.loads(cj_path.read_text())
+        assert result == {"oauthAccount": {"id": "x"}}
 
 
 # ------------------------------------------------------------------

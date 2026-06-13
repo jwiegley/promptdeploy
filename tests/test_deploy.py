@@ -504,9 +504,11 @@ class TestMcpDeploy:
         creates = [a for a in actions if a.action == "create"]
         assert any(a.name == "my-server" and a.item_type == "mcp" for a in creates)
 
-        # Verify MCP server was written to settings.json
-        settings = json.loads((tc.path / "settings.json").read_text())
-        assert "my-server" in settings["mcpServers"]
+        # Verify MCP server was written to .claude.json (the surface Claude
+        # Code reads), not settings.json.
+        claude_json = json.loads((tc.path / ".claude.json").read_text())
+        assert "my-server" in claude_json["mcpServers"]
+        assert not (tc.path / "settings.json").exists()
 
     def test_removes_stale_mcp_server(self, tmp_path: Path):
         src = tmp_path / "source"

@@ -46,7 +46,9 @@ def create_target(
     effective_model = target_config.model or global_model
 
     factories: dict[str, Callable[[TargetConfig, Path], Target]] = {
-        "claude": lambda tc, p: ClaudeTarget(tc.id, p, model=effective_model),
+        "claude": lambda tc, p: ClaudeTarget(
+            tc.id, p, model=effective_model, manage_mcp=not is_remote
+        ),
         "droid": lambda tc, p: DroidTarget(tc.id, p),
         "opencode": lambda tc, p: OpenCodeTarget(tc.id, p),
         "gptel": lambda tc, p: GptelTarget(tc.id, p),

@@ -37,11 +37,15 @@ class ClaudeTarget(Target):
         config_path: Path,
         *,
         model: str | None = None,
+        manage_mcp: bool = True,
     ) -> None:
         self._id = target_id
         self._config_path = config_path.expanduser().resolve()
         self._model = model
         self._injected = {"model": model} if model else None
+        # MCP servers deploy into .claude.json, which is machine-specific and
+        # never rsynced; remote claude targets therefore cannot manage MCP.
+        self._manage_mcp = manage_mcp
         # Warnings collected during the most recent deploy_prompt calls;
         # drained via consume_warnings() by the deploy loop.
         self._warnings: list[tuple[str, list[str]]] = []
@@ -131,6 +135,8 @@ class ClaudeTarget(Target):
         content: bytes | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> bool:
+        if item_type == "mcp":
+            return not self._manage_mcp
         return item_type == "models"
 
     def content_fingerprint(self, item_type: str) -> str | None:
@@ -199,17 +205,25 @@ class ClaudeTarget(Target):
         self._save_json(self._settings_path(), settings)
 
     def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:
-        settings = self._load_json(self._settings_path())
+        # MCP servers deploy into .claude.json (user scope) -- the surface
+        # Claude Code actually reads. It never reads settings.json's
+        # mcpServers. ${VAR} references in env/headers expand at runtime, so
+        # they are written verbatim. Only the named server key is touched;
+        # every other key in the app-owned file is preserved.
+        path = self._claude_json_path()
+        data = self._load_json(path)
 
         if not config.get("enabled", True):
-            settings.get("mcpServers", {}).pop(name, None)
+            servers = data.get("mcpServers")
+            if isinstance(servers, dict):
+                servers.pop(name, None)
         else:
             claude_config = {
                 k: v for k, v in config.items() if k not in _MCP_STRIP_KEYS
             }
-            settings.setdefault("mcpServers", {})[name] = claude_config
+            self._ensure_dict(data, "mcpServers")[name] = claude_config
 
-        self._save_json(self._settings_path(), settings)
+        self._save_json(path, data)
 
     @staticmethod
     def _strip_marketplace(settings: dict[str, Any], name: str) -> None:
@@ -333,12 +347,14 @@ class ClaudeTarget(Target):
         self._save_json(path, settings)
 
     def remove_mcp_server(self, name: str) -> None:
-        path = self._settings_path()
+        path = self._claude_json_path()
         if not path.exists():
             return
-        settings = self._load_json(path)
-        settings.get("mcpServers", {}).pop(name, None)
-        self._save_json(path, settings)
+        data = self._load_json(path)
+        servers = data.get("mcpServers")
+        if isinstance(servers, dict):
+            servers.pop(name, None)
+        self._save_json(path, data)
 
     def remove_settings(self, previous_keys: list[str]) -> None:
         path = self._settings_path()
@@ -373,8 +389,9 @@ class ClaudeTarget(Target):
                 e.get("_source") == name for entries in hooks.values() for e in entries
             )
         if item_type == "mcp":
-            settings = self._load_json(self._settings_path())
-            return name in settings.get("mcpServers", {})
+            data = self._load_json(self._claude_json_path())
+            servers = data.get("mcpServers")
+            return isinstance(servers, dict) and name in servers
         if item_type == "marketplace":
             settings = self._load_json(self._settings_path())
             if name in settings.get("extraKnownMarketplaces", {}):
@@ -429,6 +446,9 @@ class ClaudeTarget(Target):
 
     def _settings_path(self) -> Path:
         return self._config_path / "settings.json"
+
+    def _claude_json_path(self) -> Path:
+        return self._config_path / ".claude.json"
 
     @staticmethod
     def _remove_file(path: Path) -> None:
