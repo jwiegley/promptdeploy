@@ -1,7 +1,6 @@
 """Tests for the Claude Code target implementation."""
 
 import json
-
 from pathlib import Path
 
 import pytest

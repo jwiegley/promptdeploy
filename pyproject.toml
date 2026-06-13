@@ -35,6 +35,7 @@ select = [
     "E",   # pycodestyle errors
     "F",   # pyflakes
     "W",   # pycodestyle warnings
+    "I",   # isort
     "C4",  # flake8-comprehensions
 ]
 

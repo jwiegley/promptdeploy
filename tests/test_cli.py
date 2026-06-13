@@ -10,7 +10,6 @@ from promptdeploy.cli import _run_deploy, _run_list, _run_status, _run_validate,
 from promptdeploy.config import Config, TargetConfig
 from promptdeploy.deploy import deploy
 
-
 # ---- helpers ----
 
 
@@ -1076,6 +1075,7 @@ class TestTargetRootList:
 
 def test_settings_init_and_reconcile_cli(tmp_path, monkeypatch, capsys):
     import json
+
     from promptdeploy import cli
 
     # Source tree with deploy.yaml pointing at two local claude targets.
@@ -1137,6 +1137,7 @@ def test_settings_init_bad_target_exits(tmp_path, monkeypatch, capsys):
     # `--target nope` -> expand_target_arg raises ValueError (a CAUGHT type)
     # inside _run_settings_init's try -> ERROR printed + exit 1.
     import pytest
+
     from promptdeploy import cli
 
     _write_settings_deploy_yaml(tmp_path, monkeypatch, with_settings_yaml=False)
@@ -1154,6 +1155,7 @@ def test_settings_reconcile_missing_yaml_exits(tmp_path, monkeypatch, capsys):
     # reconcile_settings raises FileNotFoundError (a CAUGHT type) -> exit 1,
     # message mentions `init`.
     import pytest
+
     from promptdeploy import cli
 
     _write_settings_deploy_yaml(tmp_path, monkeypatch, with_settings_yaml=False)
@@ -1170,6 +1172,7 @@ def test_settings_reconcile_prints_diffs_report_and_apply(
     # Host has drift (autoUpdates) absent from settings.yaml -> reconcile reports
     # a diff. Covers the diff-printing loop and BOTH `if args.apply` arms.
     import json
+
     from promptdeploy import cli
 
     src = tmp_path / "src"

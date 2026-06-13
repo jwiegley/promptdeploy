@@ -354,6 +354,7 @@ def test_managed_keys_roundtrips(tmp_path):
 
 def test_managed_keys_absent_serializes_without_field(tmp_path):
     import json
+
     from promptdeploy.manifest import Manifest, ManifestItem, save_manifest
 
     m = Manifest()

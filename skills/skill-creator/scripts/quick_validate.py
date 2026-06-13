@@ -3,8 +3,8 @@
 Quick validation script for skills - minimal version
 """
 
-import sys
 import re
+import sys
 from pathlib import Path
 
 

@@ -14,7 +14,6 @@ Examples:
 import sys
 from pathlib import Path
 
-
 # Kept on one line in the generated frontmatter (a YAML value), so the
 # placeholder is defined here and injected via str.format below.
 DESCRIPTION_TODO = (

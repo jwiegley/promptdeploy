@@ -2,7 +2,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .config import Config, load_config, expand_target_arg
+from .config import Config, expand_target_arg, load_config
 
 
 def _load_config_or_exit() -> Config:

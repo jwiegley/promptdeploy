@@ -10,9 +10,9 @@ from unittest.mock import call, patch
 import pytest
 
 from promptdeploy.ssh import (
-    SSHError,
-    _SSH_OPTS,
     _RSYNC_SSH,
+    _SSH_OPTS,
+    SSHError,
     _check_tools,
     _quote_remote_path,
     _rsync_filter_args,

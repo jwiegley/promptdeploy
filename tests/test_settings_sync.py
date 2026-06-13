@@ -1,7 +1,7 @@
 # tests/test_settings_sync.py
 """Tests for settings init/reconcile I/O orchestration."""
 
-from promptdeploy.settings_sync import load_settings_doc, dump_settings_doc
+from promptdeploy.settings_sync import dump_settings_doc, load_settings_doc
 
 
 def test_dump_then_load_roundtrips(tmp_path):
@@ -123,6 +123,7 @@ def test_dump_cleans_up_tmp_on_replace_failure(tmp_path, monkeypatch):
     # Drives the `except BaseException -> os.unlink(tmp)` cleanup branch.
     # Mirrors tests/test_manifest.py::test_cleanup_on_replace_failure_unlink_fails.
     import os
+
     import pytest
 
     path = tmp_path / "settings.yaml"
@@ -144,6 +145,7 @@ def test_dump_swallows_unlink_failure_and_reraises(tmp_path, monkeypatch):
     # os.replace raises, then os.unlink ALSO raises -> the unlink OSError is
     # swallowed and the ORIGINAL replace error is re-raised.
     import os
+
     import pytest
 
     path = tmp_path / "settings.yaml"
@@ -164,6 +166,7 @@ def test_dump_swallows_unlink_failure_and_reraises(tmp_path, monkeypatch):
 
 def test_read_live_settings_strips_hooks_and_mcp(tmp_path):
     import json
+
     from promptdeploy.config import TargetConfig
     from promptdeploy.settings_sync import read_live_settings
 
@@ -192,6 +195,7 @@ def test_read_live_settings_strips_nulls(tmp_path):
     # any diffing -- mirroring render_settings. Without this, reconcile
     # --apply could never converge on a host whose settings.json holds nulls.
     import json
+
     from promptdeploy.config import TargetConfig
     from promptdeploy.settings_sync import read_live_settings
 
@@ -206,6 +210,7 @@ def test_read_live_settings_strips_nulls(tmp_path):
 
 def _claude_tc(tmp_path, tid, settings: dict):
     import json
+
     from promptdeploy.config import TargetConfig
 
     d = tmp_path / tid
@@ -269,6 +274,7 @@ def test_init_settings_identical_hosts_omit_overrides(tmp_path):
 
 def test_init_settings_refuses_existing_without_force(tmp_path):
     import pytest
+
     from promptdeploy.config import Config
     from promptdeploy.settings_sync import init_settings
 
@@ -290,7 +296,9 @@ def test_init_settings_no_claude_targets_raises(tmp_path):
     # A selection containing only a non-claude target -> `_claude_target_ids` is
     # empty -> `raise ValueError("no claude targets selected")`.
     import json
+
     import pytest
+
     from promptdeploy.config import Config, TargetConfig
     from promptdeploy.settings_sync import init_settings
 
@@ -308,6 +316,7 @@ def test_init_settings_from_not_among_targets_raises(tmp_path):
     # `--from` names a claude target outside the selected set ->
     # `raise ValueError("--from ... is not among the selected claude targets")`.
     import pytest
+
     from promptdeploy.config import Config
     from promptdeploy.settings_sync import init_settings
 
@@ -348,7 +357,7 @@ def test_reconcile_reports_diff_without_apply(tmp_path):
 
 def test_reconcile_apply_writes_override(tmp_path):
     from promptdeploy.config import Config
-    from promptdeploy.settings_sync import reconcile_settings, load_settings_doc
+    from promptdeploy.settings_sync import load_settings_doc, reconcile_settings
 
     p = _claude_tc(tmp_path, "claude-positron", {"effortLevel": "high"})
     config = Config(source_root=tmp_path, targets={p.id: p}, groups={})
@@ -362,6 +371,7 @@ def test_reconcile_apply_writes_override(tmp_path):
 
 def test_reconcile_requires_existing_yaml(tmp_path):
     import pytest
+
     from promptdeploy.config import Config
     from promptdeploy.settings_sync import reconcile_settings
 
@@ -415,7 +425,7 @@ def test_reconcile_apply_pins_override_when_host_matches_base(tmp_path):
     # override makes rendered differ -> the override key is pinned to the
     # host value rather than popped, and a second reconcile is clean.
     from promptdeploy.config import Config
-    from promptdeploy.settings_sync import reconcile_settings, load_settings_doc
+    from promptdeploy.settings_sync import load_settings_doc, reconcile_settings
 
     p = _claude_tc(tmp_path, "claude-x", {"effortLevel": "low"})  # == base
     config = Config(source_root=tmp_path, targets={p.id: p}, groups={})
@@ -439,7 +449,7 @@ def test_reconcile_apply_converges_under_group_override(tmp_path):
     # diffed against raw base, found no patch entry, popped a nonexistent
     # exact key, and never converged.)
     from promptdeploy.config import Config
-    from promptdeploy.settings_sync import reconcile_settings, load_settings_doc
+    from promptdeploy.settings_sync import load_settings_doc, reconcile_settings
 
     p = _claude_tc(tmp_path, "claude-x", {"effortLevel": "low"})
     config = Config(source_root=tmp_path, targets={p.id: p}, groups={"g": ["claude-x"]})
@@ -467,7 +477,7 @@ def test_reconcile_apply_folds_host_deletion_as_null_override(tmp_path):
     # override, which render_settings strips -> the next reconcile is clean.
     # (The old code skipped '-' diffs entirely and wrote nothing.)
     from promptdeploy.config import Config
-    from promptdeploy.settings_sync import reconcile_settings, load_settings_doc
+    from promptdeploy.settings_sync import load_settings_doc, reconcile_settings
 
     p = _claude_tc(tmp_path, "claude-x", {"effortLevel": "low"})  # no 'theme'
     config = Config(source_root=tmp_path, targets={p.id: p}, groups={})
@@ -490,7 +500,7 @@ def test_reconcile_apply_nulls_key_added_only_by_stale_exact_override(tmp_path):
     # only from the stale exact override): the key is not in the drift patch,
     # so the pin path writes the host's "value" -- an explicit null.
     from promptdeploy.config import Config
-    from promptdeploy.settings_sync import reconcile_settings, load_settings_doc
+    from promptdeploy.settings_sync import load_settings_doc, reconcile_settings
 
     p = _claude_tc(tmp_path, "claude-x", {"effortLevel": "low"})  # no 'theme'
     config = Config(source_root=tmp_path, targets={p.id: p}, groups={})
@@ -511,7 +521,7 @@ def test_reconcile_apply_normalizes_null_override_entry(tmp_path):
     # replace it with a fresh mapping instead of raising TypeError on
     # item assignment.
     from promptdeploy.config import Config
-    from promptdeploy.settings_sync import reconcile_settings, load_settings_doc
+    from promptdeploy.settings_sync import load_settings_doc, reconcile_settings
 
     p = _claude_tc(tmp_path, "claude-x", {"effortLevel": "high"})
     config = Config(source_root=tmp_path, targets={p.id: p}, groups={})
@@ -526,7 +536,7 @@ def test_reconcile_apply_normalizes_null_overrides_block(tmp_path):
     # B9 (sibling case): a bare `overrides:` block loads as None; apply must
     # replace it with a fresh mapping instead of raising AttributeError.
     from promptdeploy.config import Config
-    from promptdeploy.settings_sync import reconcile_settings, load_settings_doc
+    from promptdeploy.settings_sync import load_settings_doc, reconcile_settings
 
     p = _claude_tc(tmp_path, "claude-x", {"effortLevel": "high"})
     config = Config(source_root=tmp_path, targets={p.id: p}, groups={})

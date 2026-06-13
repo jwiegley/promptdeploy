@@ -312,6 +312,7 @@ class TestRemoteTargetDelegation:
 
 def _make_remote(inner):
     from pathlib import Path
+
     from promptdeploy.targets.remote import RemoteTarget
 
     return RemoteTarget(

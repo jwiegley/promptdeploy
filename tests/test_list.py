@@ -136,6 +136,7 @@ class TestRunListIntegration:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         import argparse
+
         from promptdeploy.cli import _run_list
 
         args = argparse.Namespace(target=None, target_root=None)
@@ -167,6 +168,7 @@ class TestRunListIntegration:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         import argparse
+
         from promptdeploy.cli import _run_list
 
         args = argparse.Namespace(target=None, target_root=None)
@@ -188,6 +190,7 @@ class TestRunListIntegration:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         import argparse
+
         from promptdeploy.cli import _run_list
 
         args = argparse.Namespace(target=None, target_root=None)
@@ -215,6 +218,7 @@ class TestRunListIntegration:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         import argparse
+
         from promptdeploy.cli import _run_list
 
         args = argparse.Namespace(target=None, target_root=None)
@@ -232,6 +236,7 @@ class TestRunListIntegration:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         import argparse
+
         from promptdeploy.cli import _run_list
 
         args = argparse.Namespace(target=None, target_root=None)
@@ -247,6 +252,7 @@ class TestRunListIntegration:
         monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
 
         import argparse
+
         from promptdeploy.cli import _run_list
 
         args = argparse.Namespace(target=None, target_root=None)

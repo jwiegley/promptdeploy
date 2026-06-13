@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-
 MANIFEST_VERSION = 1
 MANIFEST_FILENAME = ".prompt-deploy-manifest.json"
 
