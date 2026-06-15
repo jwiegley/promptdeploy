@@ -58,7 +58,9 @@ def test_should_skip_settings_marketplaces_and_non_codex_models(tmp_path: Path):
         "models",
         metadata={"providers": {"p": {"display_name": "P", "codex": {}}}},
     )
-    assert target.content_fingerprint("agent") == "codex-target-v1"
+    assert target.content_fingerprint("agent") == "codex-agent-v2"
+    assert target.content_fingerprint("mcp") == "codex-mcp-v2"
+    assert target.content_fingerprint("models") == "codex-target-v1"
     assert target.content_fingerprint("command") == "codex-command-skill-v1"
     assert target.content_fingerprint("skill") is None
 
@@ -69,6 +71,7 @@ def test_deploy_agent_writes_custom_agent_toml_and_warning(tmp_path: Path):
         b"---\n"
         b"name: reviewer\n"
         b"description: Review code.\n"
+        b"version: v1\n"
         b"only: [other]\n"
         b"tools: Read, Bash\n"
         b"model: gpt-5.5\n"
@@ -90,11 +93,19 @@ def test_deploy_agent_writes_custom_agent_toml_and_warning(tmp_path: Path):
     assert data["mcp_servers"]["context7"]["enabled"] is True
     assert "only" not in data
     assert "tools" not in data
+    assert "version" not in data
     assert target.consume_warnings() == [
         (
             "reviewer",
             ["frontmatter field 'tools' has no Codex custom-agent equivalent; dropped"],
-        )
+        ),
+        (
+            "reviewer",
+            [
+                "frontmatter field 'version' has no Codex custom-agent equivalent; "
+                "dropped"
+            ],
+        ),
     ]
     assert target.item_exists("agent", "reviewer")
     assert target.read_deployed_bytes("agent", "reviewer") == path.read_bytes()
@@ -376,6 +387,29 @@ def test_deploy_mcp_server_preserves_existing_codex_specific_fields(tmp_path: Pa
     assert server["env"] == {"PORT": 123}
     assert server["http_headers"] == {"X.Dot": "static", "X-Number": 5}
     assert server["env_http_headers"] == {"X-Existing": "EXISTING"}
+
+
+def test_deploy_mcp_server_applies_codex_overrides(tmp_path: Path):
+    target = _make_target(tmp_path)
+    target.deploy_mcp_server(
+        "srv",
+        {
+            "command": "/etc/profiles/per-user/johnw/bin/server",
+            "args": ["--old"],
+            "codex": {
+                "command": "server",
+                "args": ["--new"],
+                "env_vars": ["TOKEN"],
+            },
+        },
+    )
+
+    server = _read_toml(tmp_path / ".codex" / "config.toml")["mcp_servers"]["srv"]
+    assert server == {
+        "command": "server",
+        "args": ["--new"],
+        "env_vars": ["TOKEN"],
+    }
 
 
 def test_deploy_mcp_omits_empty_env_and_header_maps(tmp_path: Path):

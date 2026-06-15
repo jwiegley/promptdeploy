@@ -23,7 +23,7 @@ from ..manifest import MANIFEST_FILENAME
 from .base import Target
 
 _MCP_STRIP_KEYS = frozenset(
-    {"name", "description", "scope", "enabled", "only", "except"}
+    {"name", "description", "scope", "enabled", "only", "except", "codex"}
 )
 _MODEL_STRIP_KEYS = frozenset(
     {
@@ -37,7 +37,7 @@ _MODEL_STRIP_KEYS = frozenset(
         "base_url",
     }
 )
-_AGENT_DROP_KEYS = frozenset({"tools"})
+_AGENT_DROP_KEYS = ("tools", "version")
 _ENV_REF_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
 _BEARER_ENV_REF_RE = re.compile(r"^Bearer\s+\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
 _BARE_TOML_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -103,7 +103,11 @@ class CodexTarget(Target):
         return False
 
     def content_fingerprint(self, item_type: str) -> str | None:
-        if item_type in ("agent", "mcp", "models", "hook"):
+        if item_type == "agent":
+            return "codex-agent-v2"
+        if item_type == "mcp":
+            return "codex-mcp-v2"
+        if item_type in ("models", "hook"):
             return "codex-target-v1"
         if item_type in ("command", "prompt"):
             return "codex-command-skill-v1"
@@ -439,6 +443,7 @@ class CodexTarget(Target):
         self._write_bytes(dest / "SKILL.md", content)
 
     def _codex_mcp_entry(self, name: str, config: dict[str, Any]) -> dict[str, Any]:
+        config = self._apply_codex_mcp_overrides(config)
         entry: dict[str, Any] = {}
         env_vars: list[Any] = list(config.get("env_vars", []))
         for key, value in config.items():
@@ -494,6 +499,15 @@ class CodexTarget(Target):
             if env_http_headers:
                 entry["env_http_headers"] = env_http_headers
         return entry
+
+    @staticmethod
+    def _apply_codex_mcp_overrides(config: dict[str, Any]) -> dict[str, Any]:
+        override = config.get("codex")
+        if not isinstance(override, dict):
+            return config
+        merged = {k: v for k, v in config.items() if k != "codex"}
+        merged.update(override)
+        return merged
 
     @staticmethod
     def _codex_model_provider_entry(

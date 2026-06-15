@@ -162,6 +162,25 @@ class TestValidateItemMcp:
             for i in issues
         )
 
+    def test_mcp_codex_override_mapping_accepted(self, config: Config) -> None:
+        content = (
+            b"name: test-mcp\n"
+            b"command: /etc/profiles/per-user/johnw/bin/server\n"
+            b"codex:\n"
+            b"  command: server\n"
+        )
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
+        assert validate_item(item, config) == []
+
+    def test_mcp_codex_override_non_mapping_is_error(self, config: Config) -> None:
+        content = b"name: test-mcp\ncommand: npx\ncodex: true\n"
+        item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
+        issues = validate_item(item, config)
+        assert any(
+            i.level == "error" and "MCP 'codex' override must be a mapping" in i.message
+            for i in issues
+        )
+
     def test_mcp_with_only_filter(self, config: Config) -> None:
         content = b"name: test-mcp\ncommand: npx\nonly:\n  - droid\n"
         item = SourceItem("mcp", "test-mcp", Path("/tmp/mcp/test.yaml"), None, content)
@@ -1855,6 +1874,21 @@ class TestValidateEnvExampleRefs:
         (tmp_path / ".env.example").write_text("DECLARED_KEY=sk-...\n")
         issues = validate_all(self._config(tmp_path))
         assert issues == []
+
+    def test_codex_override_ref_missing_from_env_example_warns(
+        self, tmp_path: Path
+    ) -> None:
+        mcp_dir = tmp_path / "mcp"
+        mcp_dir.mkdir()
+        (mcp_dir / "srv.yaml").write_bytes(
+            b"name: srv\ncommand: npx\ncodex:\n  env:\n"
+            b'    API_KEY: "${UNDECLARED_KEY}"\n'
+        )
+        (tmp_path / ".env.example").write_text("OTHER_KEY=...\n")
+        issues = validate_all(self._config(tmp_path))
+        warnings = [i for i in issues if "UNDECLARED_KEY" in i.message]
+        assert len(warnings) == 1
+        assert warnings[0].level == "warning"
 
     def test_no_env_example_skips_check(self, tmp_path: Path) -> None:
         mcp_dir = tmp_path / "mcp"

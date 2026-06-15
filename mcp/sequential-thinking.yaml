@@ -2,5 +2,7 @@ name: sequential-thinking
 description: Sequential thinking MCP server for structured reasoning
 command: /etc/profiles/per-user/johnw/bin/mcp-server-sequential-thinking
 args: []
+codex:
+  command: mcp-server-sequential-thinking
 scope: user
 enabled: true

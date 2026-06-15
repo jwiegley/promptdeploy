@@ -495,6 +495,15 @@ def validate_item(
                     file_path=item.path,
                 )
             )
+        codex_override = metadata.get("codex")
+        if codex_override is not None and not isinstance(codex_override, dict):
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message="MCP 'codex' override must be a mapping",
+                    file_path=item.path,
+                )
+            )
         enabled = metadata.get("enabled")
         if enabled is not None and not isinstance(enabled, bool):
             # All targets gate on truthiness, so a truthy non-bool (e.g. the
@@ -511,6 +520,10 @@ def validate_item(
             refs = find_env_refs(metadata.get("env")) | find_env_refs(
                 metadata.get("headers")
             )
+            if isinstance(codex_override, dict):
+                refs |= find_env_refs(codex_override.get("env")) | find_env_refs(
+                    codex_override.get("headers")
+                )
             for var in sorted(refs - env_example_keys):
                 issues.append(
                     ValidationIssue(

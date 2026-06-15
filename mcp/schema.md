@@ -41,6 +41,7 @@ endpoint set `type: sse` explicitly; an explicit `type` is always preserved.
 | `enabled` | bool     | `true`  | Set to `false` to disable without deleting the definition    |
 | `only`    | string[] | `[]`    | If non-empty, only include this server for listed profiles   |
 | `except`  | string[] | `[]`    | Exclude this server for listed profiles                      |
+| `codex`   | mapping  | `{}`    | Codex-only field overrides merged before writing `~/.codex/config.toml` |
 
 ## Environment Variable Expansion
 
@@ -71,6 +72,14 @@ target type:
   via `expand_env_vars_strict`: a missing variable raises `EnvVarError` and
   the deploy exits 1, since OpenCode runs from a directory where shell
   variables won't be set.
+- **OpenAI Codex** -- deployed into `~/.codex/config.toml` as
+  `[mcp_servers.<name>]`. A same-name `env` entry such as
+  `TOKEN: "${TOKEN}"` is rendered as `env_vars = ["TOKEN"]` so Codex forwards
+  the variable from the Codex process environment without baking the secret
+  into config. Header references are mapped to Codex's `env_http_headers` or,
+  for `Authorization: "Bearer ${TOKEN}"`, `bearer_token_env_var`. Other
+  Codex-native keys can be supplied directly, or under `codex:` when they
+  should override the shared definition only for Codex.
 
 `promptdeploy validate` warns when an `env` or `headers` value references a
 `${VAR}` that is not declared in `.env.example` (the check is skipped when no
@@ -139,6 +148,8 @@ args:
   - "@example/mcp-server"
 env:
   API_KEY: "${MY_API_KEY}"
+codex:
+  command: my-server
 scope: user
 enabled: true
 only:
