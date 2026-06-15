@@ -65,3 +65,23 @@ class TestCreateTarget:
         target = create_target(tc)
         assert isinstance(target, CodexTarget)
         assert target.id == "cx"
+
+    def test_remote_claude_target_gets_remote_mcp(self, tmp_path: Path) -> None:
+        from promptdeploy.targets.remote import RemoteTarget
+
+        tc = TargetConfig(
+            id="rc", type="claude", path=tmp_path / "rc", host="user@fakehost"
+        )
+        target = create_target(tc)
+        assert isinstance(target, RemoteTarget)
+        assert target.remote_mcp_hash is True
+
+    def test_remote_non_claude_target_no_remote_mcp(self, tmp_path: Path) -> None:
+        from promptdeploy.targets.remote import RemoteTarget
+
+        tc = TargetConfig(
+            id="ro", type="opencode", path=tmp_path / "ro", host="user@fakehost"
+        )
+        target = create_target(tc)
+        assert isinstance(target, RemoteTarget)
+        assert target.remote_mcp_hash is False

@@ -83,6 +83,15 @@ class Target(ABC):
         """
         return None
 
+    @property
+    def remote_mcp_hash(self) -> bool:
+        """True when this target bakes deploy-time-expanded MCP secrets into a
+        remote file, so its mcp manifest hash must fold current env values
+        (mirroring _expand_env_for_hash for models). Default False: local
+        targets ship ${VAR} verbatim, so their mcp hash stays source-bytes-only.
+        """
+        return False
+
     @abstractmethod
     def deploy_agent(self, name: str, content: bytes) -> None: ...
 

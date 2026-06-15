@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from promptdeploy.targets.claude import ClaudeTarget
 from promptdeploy.targets.remote import RemoteTarget
 
 _MOCK_INCLUDES = ["agents/", "agents/**", "settings.json", ".manifest.json"]
@@ -32,6 +34,21 @@ def remote_target(tmp_path: Path, mock_inner: MagicMock) -> RemoteTarget:
         host="user@host",
         remote_path=Path("/remote/target"),
         staging_path=staging,
+    )
+
+
+@pytest.fixture
+def remote_mcp_target(tmp_path: Path) -> RemoteTarget:
+    """A RemoteTarget wrapping a REAL ClaudeTarget with remote_mcp=True."""
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    inner = ClaudeTarget("rc", staging, manage_mcp=False)
+    return RemoteTarget(
+        inner=inner,
+        host="user@host",
+        remote_path=Path("~/.claude"),
+        staging_path=staging,
+        remote_mcp=True,
     )
 
 
@@ -368,3 +385,338 @@ def test_remove_marketplace_delegates_to_inner():
     remote = _make_remote(inner)
     remote.remove_marketplace("acme")
     inner.remove_marketplace.assert_called_once_with("acme")
+
+
+# ----------------------------------------------------------------------
+# Remote MCP (remote_mcp=True): accumulate / flush / hash semantics
+# ----------------------------------------------------------------------
+
+
+class TestRemoteMcpShouldSkip:
+    def test_should_skip_mcp_false_when_remote_mcp(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        assert remote_mcp_target.should_skip("mcp", "x") is False
+
+    def test_should_skip_mcp_delegates_when_not_remote_mcp(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        mock_inner.should_skip.return_value = True
+        assert remote_target.should_skip("mcp", "x") is True
+        mock_inner.should_skip.assert_called_once_with("mcp", "x", None, None)
+
+    def test_should_skip_nonmcp_delegates(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        # agent is not skipped by ClaudeTarget, so this stays False via delegate.
+        assert remote_mcp_target.should_skip("agent", "x") is False
+
+
+class TestRemoteMcpDeployServer:
+    def test_deploy_mcp_server_accumulates_set_op(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        remote_mcp_target.deploy_mcp_server(
+            "srv", {"name": "srv", "command": "npx", "args": ["s"]}
+        )
+        assert remote_mcp_target._mcp_ops == [
+            {"action": "set", "name": "srv", "entry": {"command": "npx", "args": ["s"]}}
+        ]
+        assert "srv" in remote_mcp_target._mcp_seen
+        assert not (remote_mcp_target._staging_path / ".claude.json").exists()
+
+    def test_deploy_mcp_server_url_gets_type_http_in_entry(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        remote_mcp_target.deploy_mcp_server("srv", {"name": "srv", "url": "https://x"})
+        assert remote_mcp_target._mcp_ops[0]["entry"]["type"] == "http"
+
+    def test_deploy_mcp_server_env_headers_strict_expanded(
+        self, remote_mcp_target: RemoteTarget, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("TOK", "secret123")
+        remote_mcp_target.deploy_mcp_server(
+            "srv",
+            {
+                "name": "srv",
+                "url": "https://x",
+                "env": {"K": "${TOK}"},
+                "headers": {"Authorization": "Bearer ${TOK}"},
+            },
+        )
+        entry = remote_mcp_target._mcp_ops[0]["entry"]
+        assert entry["env"]["K"] == "secret123"
+        assert entry["headers"]["Authorization"] == "Bearer secret123"
+
+    def test_deploy_mcp_server_missing_env_raises(
+        self, remote_mcp_target: RemoteTarget, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from promptdeploy.envsubst import EnvVarError
+
+        monkeypatch.delenv("ABSENT", raising=False)
+        with pytest.raises(EnvVarError):
+            remote_mcp_target.deploy_mcp_server(
+                "srv", {"name": "srv", "command": "c", "env": {"K": "${ABSENT}"}}
+            )
+        assert remote_mcp_target._mcp_ops == []
+        assert remote_mcp_target._mcp_seen == set()
+
+    def test_deploy_mcp_server_disabled_queues_pop(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        remote_mcp_target.deploy_mcp_server(
+            "srv", {"name": "srv", "command": "c", "enabled": False}
+        )
+        assert remote_mcp_target._mcp_ops == [
+            {"action": "pop", "name": "srv", "entry": None}
+        ]
+
+    def test_deploy_mcp_server_non_string_env_value_passes_through(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        remote_mcp_target.deploy_mcp_server(
+            "srv", {"name": "srv", "command": "c", "env": {"PORT": 8080}}
+        )
+        assert remote_mcp_target._mcp_ops[0]["entry"]["env"]["PORT"] == 8080
+
+    def test_deploy_mcp_server_no_env_headers(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        remote_mcp_target.deploy_mcp_server("srv", {"name": "srv", "command": "c"})
+        entry = remote_mcp_target._mcp_ops[0]["entry"]
+        assert "env" not in entry
+        assert "headers" not in entry
+
+    def test_deploy_mcp_server_delegates_when_not_remote_mcp(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        cfg = {"command": "npx"}
+        remote_target.deploy_mcp_server("srv", cfg)
+        mock_inner.deploy_mcp_server.assert_called_once_with("srv", cfg)
+        assert remote_target._mcp_ops == []
+
+
+class TestRemoteMcpRemoveServer:
+    def test_remove_mcp_server_accumulates_pop(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        remote_mcp_target.remove_mcp_server("srv")
+        assert remote_mcp_target._mcp_ops == [
+            {"action": "pop", "name": "srv", "entry": None}
+        ]
+        assert "srv" in remote_mcp_target._mcp_seen
+
+    def test_remove_mcp_server_delegates_when_not_remote_mcp(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        remote_target.remove_mcp_server("srv")
+        mock_inner.remove_mcp_server.assert_called_once_with("srv")
+
+
+class TestRemoteMcpItemExists:
+    def test_item_exists_mcp_seen_returns_true(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        remote_mcp_target.deploy_mcp_server("srv", {"name": "srv", "command": "c"})
+        assert remote_mcp_target.item_exists("mcp", "srv") is True
+
+    def test_item_exists_mcp_reads_manifest(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        from promptdeploy.manifest import (
+            Manifest,
+            ManifestItem,
+            save_manifest,
+        )
+
+        save_manifest(
+            Manifest(
+                items={"mcp_servers": {"srv": ManifestItem(source_hash="sha256:x")}}
+            ),
+            remote_mcp_target.manifest_path(),
+        )
+        assert remote_mcp_target.item_exists("mcp", "srv") is True
+
+    def test_item_exists_mcp_absent_manifest_false(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        assert remote_mcp_target.item_exists("mcp", "nope") is False
+
+    def test_item_exists_mcp_manifest_memoized(
+        self, remote_mcp_target: RemoteTarget, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from promptdeploy.manifest import Manifest
+
+        calls = {"n": 0}
+
+        def fake_load(_path: Path) -> Manifest:
+            calls["n"] += 1
+            return Manifest()
+
+        monkeypatch.setattr("promptdeploy.manifest.load_manifest", fake_load)
+        assert remote_mcp_target.item_exists("mcp", "a") is False
+        assert remote_mcp_target.item_exists("mcp", "b") is False
+        assert calls["n"] == 1
+
+    def test_item_exists_nonmcp_delegates(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        # No agents/x.md in staging -> ClaudeTarget reports False.
+        assert remote_mcp_target.item_exists("agent", "x") is False
+
+    def test_item_exists_mcp_delegates_when_not_remote_mcp(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        mock_inner.item_exists.return_value = True
+        assert remote_target.item_exists("mcp", "srv") is True
+        mock_inner.item_exists.assert_called_once_with("mcp", "srv")
+
+
+class TestRemoteMcpHashProperty:
+    def test_remote_mcp_hash_property_true(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        assert remote_mcp_target.remote_mcp_hash is True
+
+    def test_remote_mcp_hash_property_false_when_not_remote_mcp(
+        self, remote_target: RemoteTarget
+    ) -> None:
+        assert remote_target.remote_mcp_hash is False
+
+    def test_base_target_remote_mcp_hash_default_false(self, tmp_path: Path) -> None:
+        target = ClaudeTarget("c", tmp_path)
+        assert target.remote_mcp_hash is False
+
+
+class TestRemoteMcpFlush:
+    def test_flush_remote_mcp_calls_ssh_stdin_with_built_script(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        from promptdeploy.ssh import build_claude_merge_script
+
+        remote_mcp_target.deploy_mcp_server("srv", {"name": "srv", "command": "c"})
+        with patch("promptdeploy.targets.remote.ssh_stdin") as mock_stdin:
+            remote_mcp_target.flush_remote_mcp()
+        expected = build_claude_merge_script(
+            remote_mcp_target._mcp_ops, "~/.claude/.claude.json"
+        )
+        mock_stdin.assert_called_once_with("user@host", expected)
+
+    def test_flush_remote_mcp_noop_when_no_ops(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        with patch("promptdeploy.targets.remote.ssh_stdin") as mock_stdin:
+            remote_mcp_target.flush_remote_mcp()
+        mock_stdin.assert_not_called()
+
+    def test_flush_remote_mcp_noop_when_not_remote_mcp(
+        self, remote_target: RemoteTarget
+    ) -> None:
+        remote_target._mcp_ops = [{"action": "pop", "name": "x", "entry": None}]
+        with patch("promptdeploy.targets.remote.ssh_stdin") as mock_stdin:
+            remote_target.flush_remote_mcp()
+        mock_stdin.assert_not_called()
+
+    def test_flush_remote_mcp_propagates_ssherror(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        from promptdeploy.ssh import SSHError
+
+        remote_mcp_target.deploy_mcp_server("srv", {"name": "srv", "command": "c"})
+        with (
+            patch(
+                "promptdeploy.targets.remote.ssh_stdin",
+                side_effect=SSHError("boom"),
+            ),
+            pytest.raises(SSHError, match="boom"),
+        ):
+            remote_mcp_target.flush_remote_mcp()
+        assert remote_mcp_target._mcp_ops != []
+
+
+class TestRemoteMcpFinalizeCleanup:
+    def test_finalize_pushes_and_clears_ops(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        remote_mcp_target.deploy_mcp_server("srv", {"name": "srv", "command": "c"})
+        remote_mcp_target._mcp_manifest_names = {"old"}
+        with (
+            patch("promptdeploy.targets.remote.ssh_push") as mock_push,
+            patch("promptdeploy.targets.remote.ssh_stdin") as mock_stdin,
+        ):
+            remote_mcp_target.finalize()
+        mock_push.assert_called_once()
+        mock_stdin.assert_not_called()
+        assert remote_mcp_target._mcp_ops == []
+        assert remote_mcp_target._mcp_seen == set()
+        assert remote_mcp_target._mcp_manifest_names is None
+        assert not remote_mcp_target._staging_path.exists()
+
+    def test_finalize_push_failure_propagates_no_clear(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        from promptdeploy.ssh import SSHError
+
+        remote_mcp_target.deploy_mcp_server("srv", {"name": "srv", "command": "c"})
+        with (
+            patch(
+                "promptdeploy.targets.remote.ssh_push",
+                side_effect=SSHError("push fail"),
+            ),
+            pytest.raises(SSHError, match="push fail"),
+        ):
+            remote_mcp_target.finalize()
+        assert remote_mcp_target._mcp_ops != []
+        assert remote_mcp_target._staging_path.exists()
+
+    def test_cleanup_discards_ops_no_ssh(self, remote_mcp_target: RemoteTarget) -> None:
+        remote_mcp_target.deploy_mcp_server("srv", {"name": "srv", "command": "c"})
+        remote_mcp_target._mcp_manifest_names = {"old"}
+        with (
+            patch("promptdeploy.targets.remote.ssh_stdin") as mock_stdin,
+            patch("promptdeploy.targets.remote.ssh_push") as mock_push,
+        ):
+            remote_mcp_target.cleanup()
+        mock_stdin.assert_not_called()
+        mock_push.assert_not_called()
+        assert remote_mcp_target._mcp_ops == []
+        assert remote_mcp_target._mcp_seen == set()
+        assert remote_mcp_target._mcp_manifest_names is None
+        assert not remote_mcp_target._staging_path.exists()
+
+
+class TestRemoteMcpGuardrails:
+    def test_rsync_includes_excludes_claude_json(
+        self, remote_mcp_target: RemoteTarget
+    ) -> None:
+        includes = remote_mcp_target.rsync_includes() or []
+        assert ".claude.json" not in includes
+
+    def test_target_root_previews_remote_mcp_as_local_verbatim(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from promptdeploy.config import (
+            Config,
+            TargetConfig,
+            remap_targets_to_root,
+        )
+        from promptdeploy.targets import create_target
+
+        target_dir = tmp_path / "preview"
+        tc = TargetConfig(
+            id="rc", type="claude", path=tmp_path / "live", host="user@remotehost"
+        )
+        config = Config(source_root=tmp_path / "src", targets={tc.id: tc}, groups={})
+        remapped = remap_targets_to_root(config, target_dir)
+        target = create_target(remapped.targets["rc"])
+        assert isinstance(target, ClaudeTarget)
+        assert not isinstance(target, RemoteTarget)
+        assert target.remote_mcp_hash is False
+        # ${VAR} is written VERBATIM, no ssh_stdin.
+        with patch("promptdeploy.targets.remote.ssh_stdin") as mock_stdin:
+            target.deploy_mcp_server(
+                "srv", {"name": "srv", "command": "c", "env": {"K": "${TOK}"}}
+            )
+        mock_stdin.assert_not_called()
+        claude_json = json.loads((target._config_path / ".claude.json").read_text())
+        assert claude_json["mcpServers"]["srv"]["env"]["K"] == "${TOK}"

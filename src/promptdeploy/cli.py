@@ -177,6 +177,7 @@ def _run_deploy(args: argparse.Namespace) -> None:
     from .envsubst import EnvVarError
     from .frontmatter import FrontmatterError
     from .poet import PoetError
+    from .ssh import SSHError
     from .targets.claude import JsonConfigError
     from .targets.codex import CodexConfigError
 
@@ -196,6 +197,7 @@ def _run_deploy(args: argparse.Namespace) -> None:
         CodexConfigError,
         JsonConfigError,
         PoetError,
+        SSHError,
     ) as exc:
         out.error(str(exc))
         sys.exit(1)

@@ -94,6 +94,7 @@ class TestCreateTarget:
         target = create_target(tc)
         assert isinstance(target, RemoteTarget)
         assert isinstance(target._inner, CodexTarget)
+        assert target.remote_mcp_hash is False
         target.cleanup()
 
     def test_no_remote_without_host(self, tmp_path: Path) -> None:

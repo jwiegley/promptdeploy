@@ -477,3 +477,154 @@ def test_status_handles_settings_and_prompts(tmp_path):
     kinds = {e.item_type for e in entries}
     assert "settings" in kinds
     assert "prompt" in kinds
+
+
+class TestStatusRemoteMcp:
+    """Status parity for remote MCP targets (env-folded hash, never flushes)."""
+
+    def _remote_config(self, tmp_path: Path, *, mcp_yaml: bytes) -> Config:
+        src = tmp_path / "src"
+        (src / "mcp").mkdir(parents=True)
+        (src / "mcp" / "srv.yaml").write_bytes(mcp_yaml)
+        tc = TargetConfig(
+            id="rc", type="claude", path=tmp_path / "rc", host="user@fakehost"
+        )
+        return Config(source_root=src, targets={tc.id: tc}, groups={})
+
+    def _patch(self, monkeypatch, *, seed: dict | None = None):
+        from promptdeploy.manifest import (
+            MANIFEST_FILENAME,
+            Manifest,
+            ManifestItem,
+            save_manifest,
+        )
+
+        def fake_pull(host, remote_path, local_path, *, verbose=False, includes=None):
+            local_path.mkdir(parents=True, exist_ok=True)
+            if seed:
+                save_manifest(
+                    Manifest(
+                        items={
+                            "mcp_servers": {
+                                n: ManifestItem(source_hash=h) for n, h in seed.items()
+                            }
+                        }
+                    ),
+                    local_path / MANIFEST_FILENAME,
+                )
+
+        monkeypatch.setattr("promptdeploy.targets.remote.ssh_pull", fake_pull)
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_push", lambda *a, **kw: None
+        )
+
+    def _hash_for(self, config: Config) -> str:
+        from promptdeploy.deploy import compute_item_hash
+        from promptdeploy.source import SourceDiscovery
+        from promptdeploy.targets import create_target
+
+        target = create_target(config.targets["rc"])
+        item = next(
+            i
+            for i in SourceDiscovery(config.source_root).discover_all()
+            if i.item_type == "mcp"
+        )
+        return compute_item_hash(item, target, config)
+
+    def test_status_reports_remote_mcp_new(self, tmp_path: Path, monkeypatch):
+        config = self._remote_config(tmp_path, mcp_yaml=b"name: srv\ncommand: c\n")
+        self._patch(monkeypatch)
+        entries = get_status(config)
+        mcp = [e for e in entries if e.item_type == "mcp"]
+        assert len(mcp) == 1
+        assert mcp[0].state == "new"
+
+    def test_status_remote_mcp_never_ssh_stdins(self, tmp_path: Path, monkeypatch):
+        config = self._remote_config(tmp_path, mcp_yaml=b"name: srv\ncommand: c\n")
+        pulls: list = []
+        stdins: list = []
+
+        def fake_pull(host, remote_path, local_path, *, verbose=False, includes=None):
+            pulls.append(host)
+            local_path.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("promptdeploy.targets.remote.ssh_pull", fake_pull)
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_push", lambda *a, **kw: None
+        )
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin",
+            lambda *a, **kw: stdins.append(a),
+        )
+
+        get_status(config)
+
+        assert stdins == []
+        assert pulls == ["user@fakehost"]
+
+    def test_status_matches_deploy_remote_mcp(self, tmp_path: Path, monkeypatch):
+        from promptdeploy.deploy import deploy
+
+        config = self._remote_config(
+            tmp_path, mcp_yaml=b'name: srv\nurl: https://x\nenv:\n  K: "${TOK}"\n'
+        )
+        monkeypatch.setenv("TOK", "v1")
+        current = self._hash_for(config)
+
+        # Capture that the status path built a remote_mcp_hash target.
+        from promptdeploy.targets import create_target as real_create
+
+        seen: dict = {}
+
+        def spy_create(tc, **kw):
+            t = real_create(tc, **kw)
+            if tc.id == "rc":
+                seen["remote_mcp_hash"] = t.remote_mcp_hash
+            return t
+
+        monkeypatch.setattr("promptdeploy.status.create_target", spy_create)
+
+        # current/skip
+        self._patch(monkeypatch, seed={"srv": current})
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin", lambda *a, **kw: None
+        )
+        status_entries = get_status(config)
+        assert [e.state for e in status_entries if e.item_type == "mcp"] == ["current"]
+        assert seen["remote_mcp_hash"] is True
+        deploy_actions = deploy(config)
+        assert all(a.action == "skip" for a in deploy_actions if a.item_type == "mcp")
+
+        # rotate -> changed/update
+        monkeypatch.setenv("TOK", "v2")
+        self._patch(monkeypatch, seed={"srv": current})
+        assert [e.state for e in get_status(config) if e.item_type == "mcp"] == [
+            "changed"
+        ]
+        self._patch(monkeypatch, seed={"srv": current})
+        deploy_actions = deploy(config)
+        assert [a.action for a in deploy_actions if a.item_type == "mcp"] == ["update"]
+
+        # delete source -> pending_removal / remove
+        (config.source_root / "mcp" / "srv.yaml").unlink()
+        self._patch(monkeypatch, seed={"srv": current})
+        assert [e.state for e in get_status(config) if e.name == "srv"] == [
+            "pending_removal"
+        ]
+        self._patch(monkeypatch, seed={"srv": current})
+        deploy_actions = deploy(config)
+        assert [a.action for a in deploy_actions if a.name == "srv"] == ["remove"]
+
+    def test_status_remote_mcp_secret_unset_reports_changed(
+        self, tmp_path: Path, monkeypatch
+    ):
+        config = self._remote_config(
+            tmp_path, mcp_yaml=b'name: srv\nurl: https://x\nenv:\n  K: "${TOK}"\n'
+        )
+        monkeypatch.setenv("TOK", "secret")
+        baked = self._hash_for(config)
+        # Now status runs WITHOUT TOK exported.
+        monkeypatch.delenv("TOK", raising=False)
+        self._patch(monkeypatch, seed={"srv": baked})
+        entries = get_status(config)
+        assert [e.state for e in entries if e.item_type == "mcp"] == ["changed"]

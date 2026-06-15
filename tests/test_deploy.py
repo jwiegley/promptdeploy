@@ -1977,3 +1977,467 @@ class TestRemoteDeployIntegration:
 
         assert pushes == []
         assert not seen["staging"].exists()
+
+
+# ----------------------------------------------------------------------
+# Remote MCP (SSH-stdin direct merge) orchestration + hash + convergence
+# ----------------------------------------------------------------------
+
+
+def _remote_mcp_config(tmp_path: Path, *, mcp_yaml: bytes) -> Config:
+    """Build a remote claude config with a single mcp source."""
+    src = tmp_path / "source"
+    src.mkdir(exist_ok=True)
+    mcp_dir = src / "mcp"
+    mcp_dir.mkdir(exist_ok=True)
+    (mcp_dir / "srv.yaml").write_bytes(mcp_yaml)
+    tc = TargetConfig(
+        id="remote-claude",
+        type="claude",
+        path=tmp_path / "remote-claude",
+        host="user@fakehost",
+    )
+    return _make_config(src, {tc.id: tc})
+
+
+def _patch_pull_push(monkeypatch, *, seed: dict | None = None):
+    """Patch ssh_pull/ssh_push so the staging dir is created (and optionally a
+    seeded manifest is written there)."""
+    from promptdeploy.manifest import (
+        MANIFEST_FILENAME,
+        Manifest,
+        ManifestItem,
+        save_manifest,
+    )
+
+    def fake_pull(host, remote_path, local_path, *, verbose=False, includes=None):
+        local_path.mkdir(parents=True, exist_ok=True)
+        if seed:
+            save_manifest(
+                Manifest(
+                    items={
+                        "mcp_servers": {
+                            n: ManifestItem(source_hash=h) for n, h in seed.items()
+                        }
+                    }
+                ),
+                local_path / MANIFEST_FILENAME,
+            )
+
+    monkeypatch.setattr("promptdeploy.targets.remote.ssh_pull", fake_pull)
+    monkeypatch.setattr("promptdeploy.targets.remote.ssh_push", lambda *a, **kw: None)
+
+
+def _hash_for(config: Config, *, target_id: str = "remote-claude") -> str:
+    """Compute the remote-mcp env-folded hash for the srv item under the
+    CURRENT env (so a seeded manifest can be made to match)."""
+    from promptdeploy.deploy import compute_item_hash
+    from promptdeploy.source import SourceDiscovery
+    from promptdeploy.targets import create_target
+
+    target = create_target(config.targets[target_id])
+    item = next(
+        i
+        for i in SourceDiscovery(config.source_root).discover_all()
+        if i.item_type == "mcp"
+    )
+    return compute_item_hash(item, target, config)
+
+
+class TestRemoteMcpDeploy:
+    def test_remote_mcp_deploy_flushes_before_save_manifest(
+        self, tmp_path: Path, monkeypatch
+    ):
+        config = _remote_mcp_config(tmp_path, mcp_yaml=b"name: srv\ncommand: c\n")
+        _patch_pull_push(monkeypatch)
+        order: list[str] = []
+        captured: dict = {}
+
+        def fake_stdin(host, script):
+            order.append("stdin")
+            captured["script"] = script
+
+        def fake_save(manifest, path):
+            order.append("save")
+
+        monkeypatch.setattr("promptdeploy.targets.remote.ssh_stdin", fake_stdin)
+        monkeypatch.setattr("promptdeploy.deploy.save_manifest", fake_save)
+
+        actions = deploy(config)
+
+        creates = [a for a in actions if a.action == "create" and a.item_type == "mcp"]
+        assert len(creates) == 1
+        assert order[order.index("stdin")] == "stdin"
+        assert order.index("stdin") < order.index("save")
+        # The script encodes a single set op for srv.
+        import base64
+        import json as _json
+
+        marker = 'base64.b64decode("'
+        s = captured["script"]
+        b = s[
+            s.index(marker) + len(marker) : s.index('"', s.index(marker) + len(marker))
+        ]
+        ops = _json.loads(base64.b64decode(b).decode())
+        assert ops == [{"action": "set", "name": "srv", "entry": {"command": "c"}}]
+
+    def test_remote_mcp_dry_run_no_ssh_stdin_no_write(
+        self, tmp_path: Path, monkeypatch
+    ):
+        config = _remote_mcp_config(tmp_path, mcp_yaml=b"name: srv\ncommand: c\n")
+        pulls: list = []
+        saves: list = []
+        stdins: list = []
+
+        def fake_pull(host, remote_path, local_path, *, verbose=False, includes=None):
+            pulls.append(host)
+            local_path.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("promptdeploy.targets.remote.ssh_pull", fake_pull)
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_push", lambda *a, **kw: None
+        )
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin",
+            lambda *a, **kw: stdins.append(a),
+        )
+        monkeypatch.setattr(
+            "promptdeploy.deploy.save_manifest", lambda *a, **kw: saves.append(a)
+        )
+
+        actions = deploy(config, dry_run=True)
+
+        assert any(a.action == "create" and a.item_type == "mcp" for a in actions)
+        assert stdins == []
+        assert saves == []
+        assert pulls == ["user@fakehost"]
+
+    def test_remote_mcp_unchanged_skips_no_ssh_stdin(self, tmp_path: Path, monkeypatch):
+        config = _remote_mcp_config(tmp_path, mcp_yaml=b"name: srv\ncommand: c\n")
+        seed_hash = _hash_for(config)
+        _patch_pull_push(monkeypatch, seed={"srv": seed_hash})
+        stdins: list = []
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin",
+            lambda *a, **kw: stdins.append(a),
+        )
+
+        actions = deploy(config)
+
+        mcp_actions = [a for a in actions if a.item_type == "mcp"]
+        assert all(a.action == "skip" for a in mcp_actions)
+        assert stdins == []
+
+    def test_remote_mcp_rotated_secret_redeploys(self, tmp_path: Path, monkeypatch):
+        config = _remote_mcp_config(
+            tmp_path,
+            mcp_yaml=b'name: srv\nurl: https://x\nenv:\n  K: "${TOK}"\n',
+        )
+        monkeypatch.setenv("TOK", "v1")
+        seed_hash = _hash_for(config)
+        monkeypatch.setenv("TOK", "v2")
+        _patch_pull_push(monkeypatch, seed={"srv": seed_hash})
+        captured: dict = {}
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin",
+            lambda host, script: captured.update(script=script),
+        )
+
+        actions = deploy(config)
+
+        updates = [a for a in actions if a.action == "update" and a.item_type == "mcp"]
+        assert len(updates) == 1
+        import base64
+        import json as _json
+
+        marker = 'base64.b64decode("'
+        s = captured["script"]
+        b = s[
+            s.index(marker) + len(marker) : s.index('"', s.index(marker) + len(marker))
+        ]
+        ops = _json.loads(base64.b64decode(b).decode())
+        assert ops[0]["action"] == "set"
+        assert ops[0]["entry"]["env"]["K"] == "v2"
+
+    def test_remote_mcp_enabled_flip_triggers_pop(self, tmp_path: Path, monkeypatch):
+        config = _remote_mcp_config(
+            tmp_path, mcp_yaml=b"name: srv\ncommand: c\nenabled: true\n"
+        )
+        seed_hash = _hash_for(config)
+        # Flip source to disabled.
+        (config.source_root / "mcp" / "srv.yaml").write_bytes(
+            b"name: srv\ncommand: c\nenabled: false\n"
+        )
+        _patch_pull_push(monkeypatch, seed={"srv": seed_hash})
+        captured: dict = {}
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin",
+            lambda host, script: captured.update(script=script),
+        )
+
+        actions = deploy(config)
+
+        updates = [a for a in actions if a.action == "update" and a.item_type == "mcp"]
+        assert len(updates) == 1
+        import base64
+        import json as _json
+
+        marker = 'base64.b64decode("'
+        s = captured["script"]
+        b = s[
+            s.index(marker) + len(marker) : s.index('"', s.index(marker) + len(marker))
+        ]
+        ops = _json.loads(base64.b64decode(b).decode())
+        assert ops == [{"action": "pop", "name": "srv", "entry": None}]
+
+    def test_remote_mcp_scope_flip_redeploys(self, tmp_path: Path, monkeypatch):
+        config = _remote_mcp_config(
+            tmp_path, mcp_yaml=b"name: srv\ncommand: c\nscope: user\n"
+        )
+        seed_hash = _hash_for(config)
+        (config.source_root / "mcp" / "srv.yaml").write_bytes(
+            b"name: srv\ncommand: c\nscope: local\n"
+        )
+        _patch_pull_push(monkeypatch, seed={"srv": seed_hash})
+        captured: dict = {}
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin",
+            lambda host, script: captured.update(script=script),
+        )
+
+        actions = deploy(config)
+
+        updates = [a for a in actions if a.action == "update" and a.item_type == "mcp"]
+        assert len(updates) == 1
+        import base64
+        import json as _json
+
+        marker = 'base64.b64decode("'
+        s = captured["script"]
+        b = s[
+            s.index(marker) + len(marker) : s.index('"', s.index(marker) + len(marker))
+        ]
+        ops = _json.loads(base64.b64decode(b).decode())
+        assert ops[0]["action"] == "set"
+
+    def test_remote_mcp_stale_removal_flushes_pop(self, tmp_path: Path, monkeypatch):
+        # No source for "gone", but the seeded manifest has it.
+        config = _remote_mcp_config(tmp_path, mcp_yaml=b"name: srv\ncommand: c\n")
+        _patch_pull_push(monkeypatch, seed={"gone": "sha256:stale"})
+        captured: dict = {}
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin",
+            lambda host, script: captured.update(script=script),
+        )
+
+        actions = deploy(config)
+
+        removes = [a for a in actions if a.action == "remove" and a.name == "gone"]
+        assert len(removes) == 1
+        import base64
+        import json as _json
+
+        marker = 'base64.b64decode("'
+        s = captured["script"]
+        b = s[
+            s.index(marker) + len(marker) : s.index('"', s.index(marker) + len(marker))
+        ]
+        ops = _json.loads(base64.b64decode(b).decode())
+        assert {"action": "pop", "name": "gone", "entry": None} in ops
+
+    def test_remote_mcp_stale_removal_dry_run_no_ssh_stdin(
+        self, tmp_path: Path, monkeypatch
+    ):
+        config = _remote_mcp_config(tmp_path, mcp_yaml=b"name: srv\ncommand: c\n")
+        _patch_pull_push(monkeypatch, seed={"gone": "sha256:stale"})
+        stdins: list = []
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin",
+            lambda *a, **kw: stdins.append(a),
+        )
+
+        actions = deploy(config, dry_run=True)
+
+        assert any(a.action == "remove" and a.name == "gone" for a in actions)
+        assert stdins == []
+
+    def test_remote_mcp_flush_failure_leaves_manifest_unchanged(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from promptdeploy.ssh import SSHError
+
+        config = _remote_mcp_config(tmp_path, mcp_yaml=b"name: srv\ncommand: c\n")
+        _patch_pull_push(monkeypatch)
+        saves: list = []
+        monkeypatch.setattr(
+            "promptdeploy.deploy.save_manifest", lambda *a, **kw: saves.append(a)
+        )
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin",
+            lambda *a, **kw: (_ for _ in ()).throw(SSHError("merge failed")),
+        )
+
+        with pytest.raises(SSHError, match="merge failed"):
+            deploy(config)
+        assert saves == []
+
+        # Re-run with a working stdin: the same op is re-flushed (self-healing).
+        captured: dict = {}
+        monkeypatch.setattr("promptdeploy.deploy.save_manifest", lambda *a, **kw: None)
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin",
+            lambda host, script: captured.update(script=script),
+        )
+        deploy(config)
+        import base64
+        import json as _json
+
+        marker = 'base64.b64decode("'
+        s = captured["script"]
+        b = s[
+            s.index(marker) + len(marker) : s.index('"', s.index(marker) + len(marker))
+        ]
+        ops = _json.loads(base64.b64decode(b).decode())
+        assert ops == [{"action": "set", "name": "srv", "entry": {"command": "c"}}]
+
+    def test_remote_mcp_push_failure_after_flush_self_heals(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from promptdeploy.ssh import SSHError
+
+        config = _remote_mcp_config(tmp_path, mcp_yaml=b"name: srv\ncommand: c\n")
+        flushes: list = []
+
+        def fake_pull(host, remote_path, local_path, *, verbose=False, includes=None):
+            local_path.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("promptdeploy.targets.remote.ssh_pull", fake_pull)
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin",
+            lambda host, script: flushes.append(script),
+        )
+        # First run: flush succeeds, push fails.
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_push",
+            lambda *a, **kw: (_ for _ in ()).throw(SSHError("push fail")),
+        )
+        with pytest.raises(SSHError, match="push fail"):
+            deploy(config)
+        assert len(flushes) == 1
+
+        # Second run: push succeeds; the idempotent op is re-flushed harmlessly.
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_push", lambda *a, **kw: None
+        )
+        deploy(config)
+        assert len(flushes) == 2
+
+    def test_remote_mcp_missing_secret_aborts_deploy(self, tmp_path: Path, monkeypatch):
+        from promptdeploy.envsubst import EnvVarError
+
+        config = _remote_mcp_config(
+            tmp_path,
+            mcp_yaml=b'name: srv\ncommand: c\nenv:\n  K: "${ABSENT}"\n',
+        )
+        monkeypatch.delenv("ABSENT", raising=False)
+        seen: dict = {}
+        stdins: list = []
+
+        def fake_pull(host, remote_path, local_path, *, verbose=False, includes=None):
+            seen["staging"] = local_path
+            local_path.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr("promptdeploy.targets.remote.ssh_pull", fake_pull)
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_push", lambda *a, **kw: None
+        )
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin",
+            lambda *a, **kw: stdins.append(a),
+        )
+
+        with pytest.raises(EnvVarError):
+            deploy(config)
+        assert stdins == []
+        assert not seen["staging"].exists()
+
+    def test_local_claude_mcp_hash_unchanged(self, tmp_path: Path, monkeypatch):
+        import hashlib
+
+        from promptdeploy.deploy import compute_item_hash
+        from promptdeploy.manifest import compute_file_hash
+        from promptdeploy.source import SourceDiscovery
+        from promptdeploy.targets import create_target
+
+        src = tmp_path / "source"
+        src.mkdir()
+        mcp_dir = src / "mcp"
+        mcp_dir.mkdir()
+        (mcp_dir / "srv.yaml").write_bytes(
+            b'name: srv\ncommand: c\nenv:\n  K: "${TOK}"\n'
+        )
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        target = create_target(tc)
+        item = next(
+            i for i in SourceDiscovery(src).discover_all() if i.item_type == "mcp"
+        )
+
+        monkeypatch.setenv("TOK", "v1")
+        h1 = compute_item_hash(item, target, config)
+        expected = (
+            "sha256:"
+            + hashlib.sha256(
+                f"{compute_file_hash(item.content)}|claude-mcp-entry-v2".encode()
+            ).hexdigest()
+        )
+        assert h1 == expected
+        monkeypatch.setenv("TOK", "v2")
+        assert compute_item_hash(item, target, config) == h1
+
+    def test_flush_remote_mcp_helper_noop_for_non_remote_target(self, tmp_path: Path):
+        from promptdeploy.deploy import _flush_remote_mcp
+        from promptdeploy.targets.claude import ClaudeTarget
+
+        target = ClaudeTarget("c", tmp_path)
+        _flush_remote_mcp(target)  # must not raise
+
+    def test_remote_mcp_hash_metadata_none(self, tmp_path: Path):
+        from promptdeploy.deploy import compute_item_hash
+        from promptdeploy.source import SourceItem
+        from promptdeploy.targets import create_target
+
+        src = tmp_path / "source"
+        src.mkdir()
+        tc = TargetConfig(
+            id="rc", type="claude", path=tmp_path / "rc", host="user@fakehost"
+        )
+        config = _make_config(src, {tc.id: tc})
+        target = create_target(tc)
+        item = SourceItem(
+            item_type="mcp",
+            name="srv",
+            path=src / "mcp" / "srv.yaml",
+            metadata=None,
+            content=b"just a scalar",
+        )
+        h = compute_item_hash(item, target, config)
+        assert h.startswith("sha256:")
+
+    def test_remote_mcp_queued_but_unmanaged_not_pre_existing(
+        self, tmp_path: Path, monkeypatch
+    ):
+        # First-ever deploy of a server (no prior manifest) must be `create`,
+        # never `pre-existing`.
+        config = _remote_mcp_config(tmp_path, mcp_yaml=b"name: srv\ncommand: c\n")
+        _patch_pull_push(monkeypatch)
+        monkeypatch.setattr(
+            "promptdeploy.targets.remote.ssh_stdin", lambda *a, **kw: None
+        )
+
+        actions = deploy(config)
+
+        mcp_actions = [a for a in actions if a.item_type == "mcp"]
+        assert mcp_actions
+        assert all(a.action != "pre-existing" for a in mcp_actions)
+        assert any(a.action == "create" for a in mcp_actions)

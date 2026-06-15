@@ -63,7 +63,13 @@ def create_target(
 
     if is_remote:
         assert target_config.host is not None  # narrowed by is_remote check
-        return RemoteTarget(inner, target_config.host, target_config.path, staging_path)
+        return RemoteTarget(
+            inner,
+            target_config.host,
+            target_config.path,
+            staging_path,
+            remote_mcp=isinstance(inner, ClaudeTarget),
+        )
 
     return inner
 

@@ -206,6 +206,21 @@ def compute_item_hash(
         return compute_file_hash(
             json.dumps(effective, sort_keys=True, default=str).encode()
         )
+    if item.item_type == "mcp" and target.remote_mcp_hash:
+        # Remote claude bakes deploy-time-expanded env/headers into the remote
+        # .claude.json, so fold current env values into the hash (like models)
+        # -- a rotated secret VALUE changes the hash and triggers a redeploy.
+        # We fold over the RAW source metadata so enabled:/scope: flips are
+        # still detected (they live in item.metadata), then mix in the SAME
+        # fingerprint and the SAME sha256(f"{base}|{fingerprint}") shape as the
+        # generic branch so the two compose and the local path is byte-identical.
+        effective = _expand_env_for_hash(item.metadata or {})
+        base = compute_file_hash(
+            json.dumps(effective, sort_keys=True, default=str).encode()
+        )
+        fingerprint = target.content_fingerprint(item.item_type)  # claude-mcp-entry-v2
+        digest = hashlib.sha256(f"{base}|{fingerprint}".encode()).hexdigest()
+        return f"sha256:{digest}"
     if item.item_type == "skill":
         base = compute_directory_hash(item.path.parent.resolve())
     else:
@@ -244,6 +259,22 @@ def _deploy_item(
         # "settings" is dispatched through Target.deploy_settings in
         # deploy(); anything else here is a programming error.
         raise ValueError(f"unsupported item type for deploy: {item.item_type!r}")
+
+
+def _flush_remote_mcp(target: Target) -> None:
+    """Flush a RemoteTarget's accumulated remote-MCP ops before the manifest is
+    saved.
+
+    Duck-typed: only RemoteTarget (claude inner, remote_mcp=True) defines
+    flush_remote_mcp; for every other target this is a no-op. Running this
+    BEFORE save_manifest means a failed SSH merge (SSHError) leaves the manifest
+    unchanged, so the next deploy re-detects the change and retries
+    automatically (self-healing). The surrounding ``except BaseException:
+    target.cleanup(); raise`` then discards the queued ops and removes staging.
+    """
+    flush = getattr(target, "flush_remote_mcp", None)
+    if flush is not None:
+        flush()
 
 
 def _drain_warnings(target: Target) -> dict[str, list[str]]:
@@ -600,6 +631,7 @@ def deploy(
 
             # Save updated manifest (atomic write)
             if not dry_run:
+                _flush_remote_mcp(target)
                 save_manifest(new_manifest, target.manifest_path())
                 target.finalize(verbose=verbose)
             else:
