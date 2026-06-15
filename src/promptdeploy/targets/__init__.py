@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from .base import Target
 from .claude import ClaudeTarget
+from .codex import CodexTarget
 from .droid import DroidTarget
 from .gptel import GptelTarget
 from .opencode import OpenCodeTarget
@@ -49,6 +50,7 @@ def create_target(
         "claude": lambda tc, p: ClaudeTarget(
             tc.id, p, model=effective_model, manage_mcp=not is_remote
         ),
+        "codex": lambda tc, p: CodexTarget(tc.id, p),
         "droid": lambda tc, p: DroidTarget(tc.id, p),
         "opencode": lambda tc, p: OpenCodeTarget(tc.id, p),
         "gptel": lambda tc, p: GptelTarget(tc.id, p),
@@ -68,6 +70,7 @@ def create_target(
 
 __all__ = [
     "ClaudeTarget",
+    "CodexTarget",
     "DroidTarget",
     "GptelTarget",
     "OpenCodeTarget",

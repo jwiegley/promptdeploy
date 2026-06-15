@@ -25,7 +25,7 @@ def current_host() -> str:
 @dataclass
 class TargetConfig:
     id: str
-    type: str  # 'claude', 'droid', 'opencode'
+    type: str  # 'claude', 'codex', 'droid', 'opencode', or 'gptel'
     path: Path
     host: str | None = None
     labels: list[str] = None  # type: ignore[assignment]

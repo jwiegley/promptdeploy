@@ -8,6 +8,7 @@ from promptdeploy.config import TargetConfig
 from promptdeploy.targets import create_target
 from promptdeploy.targets.base import Target
 from promptdeploy.targets.claude import ClaudeTarget
+from promptdeploy.targets.codex import CodexTarget
 from promptdeploy.targets.droid import DroidTarget
 from promptdeploy.targets.opencode import OpenCodeTarget
 from promptdeploy.targets.remote import RemoteTarget
@@ -28,6 +29,11 @@ class TestCreateTarget:
         tc = TargetConfig(id="t", type="opencode", path=tmp_path)
         target = create_target(tc)
         assert isinstance(target, OpenCodeTarget)
+
+    def test_creates_codex_target(self, tmp_path: Path) -> None:
+        tc = TargetConfig(id="t", type="codex", path=tmp_path)
+        target = create_target(tc)
+        assert isinstance(target, CodexTarget)
 
     def test_unknown_target_type_raises(self, tmp_path: Path) -> None:
         tc = TargetConfig(id="t", type="unknown_tool", path=tmp_path)
@@ -76,6 +82,18 @@ class TestCreateTarget:
         target = create_target(tc)
         assert isinstance(target, RemoteTarget)
         assert isinstance(target._inner, OpenCodeTarget)
+        target.cleanup()
+
+    def test_creates_remote_codex_target(self, tmp_path: Path) -> None:
+        tc = TargetConfig(
+            id="remote-codex",
+            type="codex",
+            path=Path("/remote/home"),
+            host="deploy@prod",
+        )
+        target = create_target(tc)
+        assert isinstance(target, RemoteTarget)
+        assert isinstance(target._inner, CodexTarget)
         target.cleanup()
 
     def test_no_remote_without_host(self, tmp_path: Path) -> None:

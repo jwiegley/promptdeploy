@@ -1,6 +1,6 @@
 # promptdeploy
 
-I've been using several different AI tools -- Claude Code, Factory Droid, OpenCode, and gptel in Emacs -- and quickly got tired of maintaining the same agents, commands, prompts, and configurations in four different places with four different formats. So I wrote `promptdeploy`: you define everything once in this repository, and it deploys to all your targets, handling the format differences for you.
+I've been using several different AI tools -- Claude Code, OpenAI Codex, Factory Droid, OpenCode, and gptel in Emacs -- and quickly got tired of maintaining the same agents, commands, prompts, and configurations in five different places with five different formats. So I wrote `promptdeploy`: you define everything once in this repository, and it deploys to all your targets, handling the format differences for you.
 
 It's a single Python CLI tool with a few small dependencies (PyYAML, Jinja2, ruamel.yaml). You describe what you want in Markdown files and YAML, point it at your targets in `deploy.yaml`, and it figures out the rest.
 
@@ -11,11 +11,11 @@ The repository holds these types of content, all defined in simple Markdown or Y
 | Type | Location | What it is |
 |------|----------|------------|
 | Agents | `agents/*.md` | Specialized sub-agents (Markdown + YAML frontmatter) |
-| Commands | `commands/*.md` | Slash command prompts, `$ARGUMENTS` for user input |
+| Commands | `commands/*.md` | Slash command prompts, `$ARGUMENTS` for user input; Codex receives generated skills because Codex does not expose a custom slash-command file surface |
 | Skills | `skills/*/SKILL.md` | Multi-file skill directories with a `SKILL.md` entry point |
 | Prompts | `prompts/*` | Prompt Poet (`.poet`/Jinja) or plain prompts, rendered per target: slash-command Markdown for the coding tools, role/content JSON for gptel |
 | MCP Servers | `mcp/*.yaml` | Model Context Protocol server definitions |
-| Hooks | `hooks/*.yaml` | Claude Code hook groups for tool events |
+| Hooks | `hooks/*.yaml` | Claude Code and Codex hook groups for tool events |
 | Marketplaces | `marketplaces/*.yaml` | Claude Code plugin marketplaces + enabled plugins (Claude-only) |
 | Models | `models.yaml` | Custom model providers and their models |
 | Settings | `settings.yaml` | Claude Code `settings.json`, single-sourced with `base:` + per-target `overrides:` |
@@ -37,7 +37,7 @@ The deploy pipeline works like this: discover all source items, filter by target
 
 ### Targets
 
-Targets are defined in `deploy.yaml`. Each has a type (`claude`, `droid`, `opencode`, or `gptel`) and a path. Remote targets add a `host:` field and deploy via rsync over SSH. The `gptel` type receives only prompts, rendered as JSON for Emacs' gptel-prompts; the other types receive the full content set.
+Targets are defined in `deploy.yaml`. Each has a type (`claude`, `codex`, `droid`, `opencode`, or `gptel`) and a path. Remote targets add a `host:` field and deploy via rsync over SSH. The `gptel` type receives only prompts, rendered as JSON for Emacs' gptel-prompts; the other coding-agent types receive the full content set they support.
 
 One Claude Code detail worth knowing: MCP servers are deployed into each local profile's `.claude.json` (the user-scope `mcpServers` surface Claude Code actually reads), not `settings.json`. The merge is surgical, touching only the named server keys, so plain `claude` picks them up with no wrapper. Two caveats follow: `.claude.json` is machine-specific and never synced, so remote Claude targets skip MCP (manage those on the host directly); and a running `claude` session rewrites `.claude.json` from memory, so deploy MCP with sessions closed. To see what a profile actually serves, run `claude -p "Say ok" --output-format json --max-turns 1` and inspect the init event's `mcp_servers`.
 
@@ -53,6 +53,9 @@ targets:
   opencode:
     type: opencode
     path: ~/.config/opencode
+  codex:
+    type: codex
+    path: "~"
   gptel-emacs:
     type: gptel
     path: ~/.emacs.d/prompts
@@ -61,9 +64,13 @@ groups:
     - claude-personal
 ```
 
+For Codex, set `path` to your home directory (recommended) or directly to `~/.codex`. The target writes custom agents to `.codex/agents/*.toml`, MCP servers and Codex model providers to managed blocks in `.codex/config.toml`, hooks to `.codex/hooks.json`, and skills to `.agents/skills`. Commands and rendered prompts are installed as generated skills named `command-<name>` and `prompt-<name>`, which makes them available through Codex's skill surfaces. `settings.yaml` and Claude marketplaces are intentionally skipped for Codex.
+
 ### Environment variables
 
-API keys and other secrets use `${VAR}` syntax in MCP and model definitions, resolved from your shell environment plus a `.env` file at the repo root (which never overrides exported variables). When and how strictly they expand depends on the target. Claude Code targets deploy MCP `env` and `headers` values verbatim: the `${VAR}` references expand at runtime, when Claude Code reads them from `.claude.json`, so no secrets are ever written into deployed files. Droid also copies MCP definitions verbatim and leniently expands only model `api_key` values -- an unset variable stays as literal `${VAR}` with a warning. OpenCode expands model `api_key` and MCP `env`/`headers` values strictly at deploy time -- a missing variable aborts the deploy -- since OpenCode runs from a directory where your shell variables won't be set. `promptdeploy validate` warns when an MCP definition references a variable not declared in `.env.example`. See `.env.example` for the full list.
+API keys and other secrets use `${VAR}` syntax in MCP and model definitions, resolved from your shell environment plus a `.env` file at the repo root (which never overrides exported variables). When and how strictly they expand depends on the target. Claude Code targets deploy MCP `env` and `headers` values verbatim: the `${VAR}` references expand at runtime, when Claude Code reads them from `.claude.json`, so no secrets are ever written into deployed files. Codex maps simple MCP `${VAR}` references to `env_vars`, `env_http_headers`, or `bearer_token_env_var` in `config.toml`; complex embedded references are written literally with a warning. Droid also copies MCP definitions verbatim and leniently expands only model `api_key` values -- an unset variable stays as literal `${VAR}` with a warning. OpenCode expands model `api_key` and MCP `env`/`headers` values strictly at deploy time -- a missing variable aborts the deploy -- since OpenCode runs from a directory where your shell variables won't be set. `promptdeploy validate` warns when an MCP definition references a variable not declared in `.env.example`. See `.env.example` for the full list.
+
+Codex model providers are opt-in from `models.yaml`: add a `codex:` mapping under a provider to write `[model_providers.<id>]` into `.codex/config.toml`. If the provider's `api_key` is a plain `${VAR}` reference, promptdeploy emits `env_key = "VAR"` rather than writing a secret.
 
 ### Single-source settings.yaml
 
@@ -82,7 +89,7 @@ overrides:
       FAST: "1"
 ```
 
-Deploying renders the settings for each claude target and gently merges only the rendered top-level keys into that target's `settings.json`. Keys you manage are tracked per target, so dropping one from `settings.yaml` removes it on the next deploy, while `hooks`, `mcpServers`, `extraKnownMarketplaces`, `enabledPlugins`, and any keys you didn't put under `settings.yaml` are left untouched. Droid and OpenCode targets skip settings entirely.
+Deploying renders the settings for each claude target and gently merges only the rendered top-level keys into that target's `settings.json`. Keys you manage are tracked per target, so dropping one from `settings.yaml` removes it on the next deploy, while `hooks`, `mcpServers`, `extraKnownMarketplaces`, `enabledPlugins`, and any keys you didn't put under `settings.yaml` are left untouched. Codex, Droid, and OpenCode targets skip settings entirely.
 
 Two helpers bootstrap and maintain the file:
 

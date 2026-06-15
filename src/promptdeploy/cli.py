@@ -178,6 +178,7 @@ def _run_deploy(args: argparse.Namespace) -> None:
     from .frontmatter import FrontmatterError
     from .poet import PoetError
     from .targets.claude import JsonConfigError
+    from .targets.codex import CodexConfigError
 
     try:
         actions = deploy(
@@ -192,6 +193,7 @@ def _run_deploy(args: argparse.Namespace) -> None:
         FilterError,
         EnvVarError,
         FrontmatterError,
+        CodexConfigError,
         JsonConfigError,
         PoetError,
     ) as exc:

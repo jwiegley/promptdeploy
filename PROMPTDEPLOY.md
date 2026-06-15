@@ -1,6 +1,6 @@
 # promptdeploy
 
-Deploy agents, commands, skills, prompts, MCP servers, hooks, models, marketplaces, and settings from a single source repository to multiple environments: Claude Code, Factory Droid, OpenCode, and Emacs gptel.
+Deploy agents, commands, skills, prompts, MCP servers, hooks, models, marketplaces, and settings from a single source repository to multiple environments: Claude Code, OpenAI Codex, Factory Droid, OpenCode, and Emacs gptel.
 
 ## Targets
 
@@ -11,12 +11,15 @@ Deploy agents, commands, skills, prompts, MCP servers, hooks, models, marketplac
 | claude-git-ai-local | Claude Code | ~/.config/claude/git-ai |
 | claude-git-ai-remote | Claude Code | git-ai:~/.claude |
 | droid | Factory Droid | ~/.factory |
+| codex-hera | OpenAI Codex | hera:~ |
 | opencode-vulcan | OpenCode | vulcan:~/.config/opencode |
 | opencode-hera | OpenCode | hera:~/.config/opencode |
 | opencode-clio | OpenCode | clio:~/.config/opencode |
+| codex-clio | OpenAI Codex | clio:~ |
 | claude-vulcan | Claude Code | vulcan:~/.claude |
 | claude-vps | Claude Code | vps:~/.claude |
 | claude-andoria | Claude Code | andoria-08:~/.claude |
+| codex-andoria | OpenAI Codex | andoria-08:~ |
 | gptel-emacs | gptel (Emacs) | ~/.emacs.d/prompts |
 
 Targets and groups are defined in `deploy.yaml` at the repository root -- that file is the source of truth; this table mirrors it. Host-qualified paths are remote targets, deployed via rsync over SSH. Run `promptdeploy list` to see what is currently managed on each target.

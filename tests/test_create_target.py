@@ -5,6 +5,7 @@ from pathlib import Path
 from promptdeploy.config import TargetConfig
 from promptdeploy.targets import create_target
 from promptdeploy.targets.claude import ClaudeTarget
+from promptdeploy.targets.codex import CodexTarget
 
 
 class TestCreateTarget:
@@ -58,3 +59,9 @@ class TestCreateTarget:
         target = create_target(tc)
         assert isinstance(target, GptelTarget)
         assert target.id == "g"
+
+    def test_codex_target_recognized(self, tmp_path: Path) -> None:
+        tc = TargetConfig(id="cx", type="codex", path=tmp_path / "home")
+        target = create_target(tc)
+        assert isinstance(target, CodexTarget)
+        assert target.id == "cx"

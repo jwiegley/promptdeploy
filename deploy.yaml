@@ -29,6 +29,12 @@ targets:
     path: ~/.factory
     labels: [personal, local]
 
+  codex-hera:
+    type: codex
+    path: "~"
+    host: hera
+    labels: [codex, personal, remote]
+
   opencode-vulcan:
     type: opencode
     path: ~/.config/opencode
@@ -47,6 +53,12 @@ targets:
     host: clio
     labels: [personal, remote]
 
+  codex-clio:
+    type: codex
+    path: "~"
+    host: clio
+    labels: [codex, personal, remote]
+
   claude-vulcan:
     type: claude
     path: ~/.claude
@@ -64,6 +76,12 @@ targets:
     path: ~/.claude
     host: andoria-08
     labels: [claude, positron, remote]
+
+  codex-andoria:
+    type: codex
+    path: "~"
+    host: andoria-08
+    labels: [codex, personal, remote]
 
   gptel-emacs:
     type: gptel
