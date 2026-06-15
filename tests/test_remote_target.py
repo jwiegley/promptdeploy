@@ -12,6 +12,7 @@ from promptdeploy.targets.claude import ClaudeTarget
 from promptdeploy.targets.remote import RemoteTarget
 
 _MOCK_INCLUDES = ["agents/", "agents/**", "settings.json", ".manifest.json"]
+_MOCK_PUSH_INCLUDES = ["agents/", "agents/**", ".manifest.json"]
 
 
 @pytest.fixture
@@ -22,6 +23,7 @@ def mock_inner() -> MagicMock:
     inner.manifest_path.return_value = Path("/staging/.manifest.json")
     inner.item_exists.return_value = True
     inner.rsync_includes.return_value = _MOCK_INCLUDES
+    inner.rsync_push_includes.return_value = _MOCK_PUSH_INCLUDES
     return inner
 
 
@@ -113,7 +115,7 @@ class TestRemoteTargetLifecycle:
             Path("/remote/target"),
             remote_target._staging_path,
             verbose=False,
-            includes=_MOCK_INCLUDES,
+            includes=_MOCK_PUSH_INCLUDES,
         )
         # staging dir should be removed
         assert not remote_target._staging_path.exists()
@@ -128,7 +130,7 @@ class TestRemoteTargetLifecycle:
             Path("/remote/target"),
             remote_target._staging_path,
             verbose=True,
-            includes=_MOCK_INCLUDES,
+            includes=_MOCK_PUSH_INCLUDES,
         )
 
     @patch("promptdeploy.targets.remote.ssh_push")

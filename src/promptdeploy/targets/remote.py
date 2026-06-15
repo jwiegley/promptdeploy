@@ -109,7 +109,7 @@ class RemoteTarget(Target):
             self._remote_path,
             self._staging_path,
             verbose=verbose,
-            includes=self._inner.rsync_includes(),
+            includes=self._inner.rsync_push_includes(),
         )
         self._mcp_ops.clear()
         self._mcp_seen.clear()

@@ -58,6 +58,15 @@ class Target(ABC):
         """
         return None
 
+    def rsync_push_includes(self) -> list[str] | None:
+        """Return rsync include patterns for the remote push.
+
+        Defaults to :meth:`rsync_includes`. Targets with machine-local runtime
+        state may pull a broader tree for staging while pushing back only the
+        files promptdeploy is allowed to modify.
+        """
+        return self.rsync_includes()
+
     def should_skip(
         self,
         item_type: str,

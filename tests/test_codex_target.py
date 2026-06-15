@@ -33,7 +33,16 @@ def test_constructor_accepts_codex_home_path(tmp_path: Path):
     assert target.exists()
     assert target.manifest_path() == codex_home / MANIFEST_FILENAME
     assert target.deployed_artifact_path("agent", "a") == Path(".codex/agents/a.toml")
-    assert ".agents/skills/**" in (target.rsync_includes() or [])
+    pull_includes = target.rsync_includes() or []
+    push_includes = target.rsync_push_includes() or []
+    assert ".agents/skills/**" in pull_includes
+    assert ".codex/**" in pull_includes
+    assert ".agents/skills/**" in push_includes
+    assert ".codex/agents/**" in push_includes
+    assert ".codex/config.toml" in push_includes
+    assert f".codex/{MANIFEST_FILENAME}" in push_includes
+    assert ".codex/**" not in push_includes
+    assert not any("sessions" in pattern for pattern in push_includes)
 
 
 def test_exists_false_for_missing_home(tmp_path: Path):

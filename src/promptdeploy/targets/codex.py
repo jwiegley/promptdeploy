@@ -83,6 +83,19 @@ class CodexTarget(Target):
             ".codex/**",
         ]
 
+    def rsync_push_includes(self) -> list[str] | None:
+        return [
+            ".agents/",
+            ".agents/skills/",
+            ".agents/skills/**",
+            ".codex/",
+            ".codex/agents/",
+            ".codex/agents/**",
+            ".codex/config.toml",
+            ".codex/hooks.json",
+            f".codex/{MANIFEST_FILENAME}",
+        ]
+
     def should_skip(
         self,
         item_type: str,
