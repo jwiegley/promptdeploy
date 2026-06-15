@@ -73,12 +73,14 @@ target type:
   the deploy exits 1, since OpenCode runs from a directory where shell
   variables won't be set.
 - **OpenAI Codex** -- deployed into `~/.codex/config.toml` as
-  `[mcp_servers.<name>]`. A same-name `env` entry such as
-  `TOKEN: "${TOKEN}"` is rendered as `env_vars = ["TOKEN"]` so Codex forwards
-  the variable from the Codex process environment without baking the secret
-  into config. Header references are mapped to Codex's `env_http_headers` or,
-  for `Authorization: "Bearer ${TOKEN}"`, `bearer_token_env_var`. Other
-  Codex-native keys can be supplied directly, or under `codex:` when they
+  `[mcp_servers.<name>]`. `env` values are strict-expanded at deploy time and
+  written to Codex's `env` table, matching OpenCode's behavior and avoiding a
+  dependency on the environment used later to launch `codex`. A missing
+  variable raises `EnvVarError` and the deploy exits 1. Header references are
+  mapped to Codex's `env_http_headers` or, for
+  `Authorization: "Bearer ${TOKEN}"`, `bearer_token_env_var`. Other
+  Codex-native keys can be supplied directly, including explicit `env_vars`
+  entries when runtime forwarding is desired, or under `codex:` when they
   should override the shared definition only for Codex.
 
 `promptdeploy validate` warns when an `env` or `headers` value references a

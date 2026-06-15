@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from promptdeploy.envsubst import EnvVarError
 from promptdeploy.frontmatter import FrontmatterError, parse_frontmatter
 from promptdeploy.manifest import MANIFEST_FILENAME
 from promptdeploy.targets.codex import CodexConfigError, CodexTarget
@@ -68,7 +69,7 @@ def test_should_skip_settings_marketplaces_and_non_codex_models(tmp_path: Path):
         metadata={"providers": {"p": {"display_name": "P", "codex": {}}}},
     )
     assert target.content_fingerprint("agent") == "codex-agent-v2"
-    assert target.content_fingerprint("mcp") == "codex-mcp-v2"
+    assert target.content_fingerprint("mcp") == "codex-mcp-v3"
     assert target.content_fingerprint("models") == "codex-target-v1"
     assert target.content_fingerprint("command") == "codex-command-skill-v1"
     assert target.content_fingerprint("skill") is None
@@ -324,7 +325,11 @@ def test_remove_skill_removes_directory_and_symlink(tmp_path: Path):
     assert real.exists()
 
 
-def test_deploy_mcp_server_maps_codex_fields_and_preserves_config(tmp_path: Path):
+def test_deploy_mcp_server_maps_codex_fields_and_preserves_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("LOCAL_TOKEN", "local-token")
+    monkeypatch.setenv("OTHER_TOKEN", "other-token")
     target = _make_target(tmp_path)
     config_path = tmp_path / ".codex" / "config.toml"
     config_path.parent.mkdir()
@@ -358,22 +363,18 @@ def test_deploy_mcp_server_maps_codex_fields_and_preserves_config(tmp_path: Path
     server = data["mcp_servers"]["context7"]
     assert server["command"] == "npx"
     assert server["args"] == ["-y", "@upstash/context7-mcp"]
-    assert server["env_vars"] == ["LOCAL_TOKEN"]
-    assert server["env"] == {"RENAMED": "${OTHER_TOKEN}", "STATIC": "x"}
+    assert server["env"] == {
+        "LOCAL_TOKEN": "local-token",
+        "RENAMED": "other-token",
+        "STATIC": "x",
+    }
+    assert "env_vars" not in server
     assert server["bearer_token_env_var"] == "AUTH_TOKEN"
     assert server["http_headers"] == {"X-Region": "us"}
     assert server["env_http_headers"] == {"X-Env": "HEADER_TOKEN"}
     assert "type" not in server
     assert "enabled" not in server
-    assert target.consume_warnings() == [
-        (
-            "context7",
-            [
-                "env.RENAMED contains an embedded variable reference; Codex "
-                "cannot express that without writing a literal value"
-            ],
-        )
-    ]
+    assert target.consume_warnings() == []
     assert target.item_exists("mcp", "context7")
 
 
@@ -421,7 +422,10 @@ def test_deploy_mcp_server_applies_codex_overrides(tmp_path: Path):
     }
 
 
-def test_deploy_mcp_omits_empty_env_and_header_maps(tmp_path: Path):
+def test_deploy_mcp_omits_empty_env_and_header_maps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("TOKEN", "token-value")
     target = _make_target(tmp_path)
     target.deploy_mcp_server(
         "env-only",
@@ -437,12 +441,40 @@ def test_deploy_mcp_omits_empty_env_and_header_maps(tmp_path: Path):
     )
 
     data = _read_toml(tmp_path / ".codex" / "config.toml")["mcp_servers"]
-    assert data["env-only"]["env_vars"] == ["TOKEN"]
-    assert "env" not in data["env-only"]
+    assert data["env-only"]["env"] == {"TOKEN": "token-value"}
+    assert "env_vars" not in data["env-only"]
     assert data["env-only"]["env_http_headers"] == {"X-Env": "HEADER_TOKEN"}
     assert "http_headers" not in data["env-only"]
     assert data["header-only"]["http_headers"] == {"X-Region": "us"}
     assert "env_http_headers" not in data["header-only"]
+
+
+def test_deploy_mcp_strict_expands_missing_env_refs(tmp_path: Path):
+    target = _make_target(tmp_path)
+    with pytest.raises(EnvVarError, match=r"MISSING.*mcp\.srv\.env\.TOKEN"):
+        target.deploy_mcp_server(
+            "srv",
+            {"command": "cmd", "env": {"TOKEN": "${MISSING}"}},
+        )
+
+
+def test_deploy_mcp_preserves_literal_string_env_value(tmp_path: Path):
+    target = _make_target(tmp_path)
+    target.deploy_mcp_server(
+        "srv",
+        {"command": "cmd", "env": {"MODE": "literal"}},
+    )
+
+    server = _read_toml(tmp_path / ".codex" / "config.toml")["mcp_servers"]["srv"]
+    assert server["env"] == {"MODE": "literal"}
+
+
+def test_deploy_mcp_omits_empty_env_map(tmp_path: Path):
+    target = _make_target(tmp_path)
+    target.deploy_mcp_server("srv", {"command": "cmd", "env": {}})
+
+    server = _read_toml(tmp_path / ".codex" / "config.toml")["mcp_servers"]["srv"]
+    assert "env" not in server
 
 
 def test_mcp_item_exists_false_when_config_missing_or_table_absent(tmp_path: Path):

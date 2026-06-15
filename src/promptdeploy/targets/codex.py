@@ -119,7 +119,7 @@ class CodexTarget(Target):
         if item_type == "agent":
             return "codex-agent-v2"
         if item_type == "mcp":
-            return "codex-mcp-v2"
+            return "codex-mcp-v3"
         if item_type in ("models", "hook"):
             return "codex-target-v1"
         if item_type in ("command", "prompt"):
@@ -456,6 +456,8 @@ class CodexTarget(Target):
         self._write_bytes(dest / "SKILL.md", content)
 
     def _codex_mcp_entry(self, name: str, config: dict[str, Any]) -> dict[str, Any]:
+        from ..envsubst import expand_env_vars_strict
+
         config = self._apply_codex_mcp_overrides(config)
         entry: dict[str, Any] = {}
         env_vars: list[Any] = list(config.get("env_vars", []))
@@ -465,22 +467,12 @@ class CodexTarget(Target):
             if key == "env" and isinstance(value, dict):
                 env: dict[str, Any] = {}
                 for env_key, env_value in value.items():
-                    if isinstance(env_value, str):
-                        match = _ENV_REF_RE.fullmatch(env_value)
-                        if match and match.group(1) == env_key:
-                            env_vars.append(env_key)
-                            continue
-                        if "${" in env_value:
-                            self._warnings.append(
-                                (
-                                    name,
-                                    [
-                                        f"env.{env_key} contains an embedded "
-                                        "variable reference; Codex cannot express "
-                                        "that without writing a literal value"
-                                    ],
-                                )
-                            )
+                    if isinstance(env_value, str) and "${" in env_value:
+                        env[env_key] = expand_env_vars_strict(
+                            env_value,
+                            context=f"mcp.{name}.env.{env_key}",
+                        )
+                        continue
                     env[env_key] = env_value
                 if env:
                     entry["env"] = env
