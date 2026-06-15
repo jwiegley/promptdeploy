@@ -27,6 +27,11 @@ Exactly one transport must be specified:
 | `url`     | string            | HTTP endpoint URL              |
 | `headers` | map[string,string] | HTTP headers for requests. Supports `${VAR}` syntax (see Environment Variable Expansion). |
 
+On a Claude target, a URL server is written to `.claude.json` with `"type":
+"http"` -- Claude Code reads a `type`-less entry as stdio and rejects it for the
+missing `command` ("command: expected string, received undefined"). For an SSE
+endpoint set `type: sse` explicitly; an explicit `type` is always preserved.
+
 ## Optional Fields
 
 | Field     | Type     | Default | Description                                                  |

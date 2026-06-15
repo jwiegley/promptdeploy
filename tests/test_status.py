@@ -1,5 +1,6 @@
 """Tests for promptdeploy deployment status."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from promptdeploy.status import (
     StatusEntry,
     get_status,
 )
+from promptdeploy.targets.claude import ClaudeTarget
 
 
 @pytest.fixture
@@ -110,8 +112,14 @@ class TestGetStatusWithManifest:
         deploy_hash = compute_file_hash(
             (source_root / "commands" / "deploy.md").read_bytes()
         )
-        server_hash = compute_file_hash(
+        # MCP entries carry a content fingerprint (ClaudeTarget), so the
+        # manifest hash mixes it in exactly as compute_item_hash does.
+        server_base = compute_file_hash(
             (source_root / "mcp" / "server.yaml").read_bytes()
+        )
+        fp = ClaudeTarget("local", target_path).content_fingerprint("mcp")
+        server_hash = (
+            f"sha256:{hashlib.sha256(f'{server_base}|{fp}'.encode()).hexdigest()}"
         )
         self._write_manifest(
             target_path,

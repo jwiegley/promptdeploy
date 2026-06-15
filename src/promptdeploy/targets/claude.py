@@ -142,6 +142,11 @@ class ClaudeTarget(Target):
     def content_fingerprint(self, item_type: str) -> str | None:
         if self._injected is not None and item_type in ("agent", "skill"):
             return f"model={self._model}"
+        if item_type == "mcp":
+            # Bump when the deployed .claude.json entry format changes (e.g.
+            # the URL-server "type" field) so existing deployments refresh
+            # even though the source YAML is unchanged.
+            return "claude-mcp-entry-v2"
         return None
 
     def deploy_models(self, config: dict[str, Any]) -> None:
@@ -218,12 +223,24 @@ class ClaudeTarget(Target):
             if isinstance(servers, dict):
                 servers.pop(name, None)
         else:
-            claude_config = {
-                k: v for k, v in config.items() if k not in _MCP_STRIP_KEYS
-            }
-            self._ensure_dict(data, "mcpServers")[name] = claude_config
+            self._ensure_dict(data, "mcpServers")[name] = self._claude_mcp_entry(config)
 
         self._save_json(path, data)
+
+    @staticmethod
+    def _claude_mcp_entry(config: dict[str, Any]) -> dict[str, Any]:
+        """Build the ``.claude.json`` ``mcpServers`` entry for a server.
+
+        Strips deployment metadata (:data:`_MCP_STRIP_KEYS`). URL-transport
+        servers get an explicit ``type`` (default ``http``) because Claude
+        Code treats a ``type``-less entry as stdio and rejects it for the
+        missing ``command`` ("command: expected string, received undefined").
+        An explicit ``type`` in the source (e.g. ``sse``) is preserved.
+        """
+        entry = {k: v for k, v in config.items() if k not in _MCP_STRIP_KEYS}
+        if "url" in entry and "type" not in entry:
+            entry["type"] = "http"
+        return entry
 
     @staticmethod
     def _strip_marketplace(settings: dict[str, Any], name: str) -> None:

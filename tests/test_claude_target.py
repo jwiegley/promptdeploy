@@ -490,6 +490,43 @@ class TestDeployMcpServer:
         # The skip is specific to mcp -- agents still deploy on remote.
         assert remote_inner.should_skip("agent", "a") is False
 
+    def test_url_server_gets_http_type(self, tmp_path: Path):
+        # Claude Code reads a type-less entry as stdio and rejects it for the
+        # missing command ("command: expected string, received undefined").
+        # URL-transport servers must deploy with an explicit type.
+        target = _make_target(tmp_path)
+        config = {
+            "name": "context7",
+            "description": "docs lookup",
+            "url": "https://mcp.context7.com/mcp",
+            "headers": {"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"},
+        }
+        target.deploy_mcp_server("context7", config)
+
+        srv = json.loads(_claude_json(tmp_path).read_text())["mcpServers"]["context7"]
+        assert srv == {
+            "type": "http",
+            "url": "https://mcp.context7.com/mcp",
+            "headers": {"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"},
+        }
+
+    def test_explicit_transport_type_preserved(self, tmp_path: Path):
+        # An explicit transport type in the source is never overridden.
+        target = _make_target(tmp_path)
+        target.deploy_mcp_server(
+            "srv", {"name": "srv", "type": "sse", "url": "https://x"}
+        )
+
+        srv = json.loads(_claude_json(tmp_path).read_text())["mcpServers"]["srv"]
+        assert srv == {"type": "sse", "url": "https://x"}
+
+    def test_mcp_fingerprint_refreshes_existing_deployments(self, tmp_path: Path):
+        # The deployed entry format (URL "type") changed without the source
+        # YAML changing, so MCP items carry a content fingerprint that
+        # invalidates stale manifest hashes and forces a one-time refresh.
+        target = _make_target(tmp_path)
+        assert target.content_fingerprint("mcp") is not None
+
 
 class TestRemoveMcpServer:
     def test_removes_existing(self, tmp_path: Path):
