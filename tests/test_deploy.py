@@ -1284,7 +1284,7 @@ class TestFiletagDeploy:
             (a.action, a.name, a.target_id) for a in actions if a.item_type == "command"
         ] == [("create", "retest", "codex-positron")]
         assert not (personal_path / ".codex" / "prompts" / "retest.md").exists()
-        assert (positron_path / ".codex" / "prompts" / "retest.md").exists()
+        assert not (positron_path / ".codex" / "prompts" / "retest.md").exists()
         assert (
             positron_path / ".agents" / "skills" / "command-retest" / "SKILL.md"
         ).exists()
@@ -1604,9 +1604,9 @@ class TestItemSelected:
 
 
 class TestCodexCommandDeploy:
-    """Codex command deployment keeps skill and slash-prompt surfaces in sync."""
+    """Codex command deployment writes generated skills."""
 
-    def test_refreshes_legacy_skill_only_command(self, tmp_path: Path):
+    def test_refreshes_legacy_command_manifest_path(self, tmp_path: Path):
         src = tmp_path / "source"
         src.mkdir()
         commands = src / "commands"
@@ -1619,7 +1619,6 @@ class TestCodexCommandDeploy:
         tc = TargetConfig(id="codex", type="codex", path=target_dir)
         config = _make_config(src, {tc.id: tc})
         target = create_target(tc)
-        item = next(SourceDiscovery(src).discover_commands())
 
         legacy_skill = target_dir / ".agents" / "skills" / "command-fix"
         legacy_skill.mkdir(parents=True)
@@ -1627,8 +1626,8 @@ class TestCodexCommandDeploy:
         manifest = Manifest()
         manifest.items["commands"] = {
             "fix": ManifestItem(
-                source_hash=compute_item_hash(item, target, config),
-                target_path=".agents/skills/command-fix",
+                source_hash="old",
+                target_path=".codex/prompts/fix.md",
             )
         }
         save_manifest(manifest, target.manifest_path())
@@ -1636,8 +1635,13 @@ class TestCodexCommandDeploy:
         actions = deploy(config)
 
         assert any(a.name == "fix" and a.action == "update" for a in actions)
-        assert (target_dir / ".codex" / "prompts" / "fix.md").exists()
+        assert not (target_dir / ".codex" / "prompts" / "fix.md").exists()
         assert (legacy_skill / "SKILL.md").exists()
+        manifest = load_manifest(target.manifest_path())
+        assert (
+            manifest.items["commands"]["fix"].target_path
+            == ".agents/skills/command-fix"
+        )
 
 
 class TestMarketplaceDeploy:

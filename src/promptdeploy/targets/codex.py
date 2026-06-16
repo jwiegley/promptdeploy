@@ -80,7 +80,11 @@ class CodexTarget(Target):
             ".agents/skills/",
             ".agents/skills/**",
             ".codex/",
-            ".codex/**",
+            ".codex/agents/",
+            ".codex/agents/**",
+            ".codex/config.toml",
+            ".codex/hooks.json",
+            f".codex/{MANIFEST_FILENAME}",
         ]
 
     def rsync_push_includes(self) -> list[str] | None:
@@ -91,8 +95,6 @@ class CodexTarget(Target):
             ".codex/",
             ".codex/agents/",
             ".codex/agents/**",
-            ".codex/prompts/",
-            ".codex/prompts/**",
             ".codex/config.toml",
             ".codex/hooks.json",
             f".codex/{MANIFEST_FILENAME}",
@@ -125,7 +127,7 @@ class CodexTarget(Target):
         if item_type in ("models", "hook"):
             return "codex-target-v1"
         if item_type in ("command", "prompt"):
-            return "codex-command-skill-v2"
+            return "codex-command-skill-v3"
         return None
 
     @property
@@ -144,10 +146,6 @@ class CodexTarget(Target):
         self._write_generated_skill(
             self._command_skill_dir(name),
             self._command_skill_bytes(name, content),
-        )
-        self._write_bytes(
-            self._command_prompt_path(name),
-            self._command_prompt_bytes(content),
         )
 
     def deploy_prompt(self, name: str, content: bytes, source_path: Path) -> None:
@@ -276,7 +274,6 @@ class CodexTarget(Target):
 
     def remove_command(self, name: str) -> None:
         self._remove_tree(self._command_skill_dir(name))
-        self._remove_file(self._command_prompt_path(name))
 
     def remove_prompt(self, name: str, target_path: Path | None = None) -> None:
         self._remove_tree(self._prompt_skill_dir(name))
@@ -316,10 +313,7 @@ class CodexTarget(Target):
         if item_type == "agent":
             return (self._codex_path / "agents" / f"{name}.toml").exists()
         if item_type == "command":
-            return (
-                self._command_skill_dir(name).exists()
-                or self._command_prompt_path(name).exists()
-            )
+            return self._command_skill_dir(name).exists()
         if item_type == "prompt":
             return self._prompt_skill_dir(name).exists()
         if item_type == "skill":
@@ -352,19 +346,12 @@ class CodexTarget(Target):
     ) -> bytes | None:
         if item_type == "agent":
             return self._agent_toml(name, content, collect_warnings=False)
-        if item_type == "command":
-            return self._command_prompt_bytes(content)
         return None
 
     def read_deployed_bytes(self, item_type: str, name: str) -> bytes | None:
-        if item_type == "agent":
-            path = self._codex_path / "agents" / f"{name}.toml"
-        elif item_type == "command":
-            if not self._command_skill_dir(name).exists():
-                return None
-            path = self._command_prompt_path(name)
-        else:
+        if item_type != "agent":
             return None
+        path = self._codex_path / "agents" / f"{name}.toml"
         try:
             return path.read_bytes()
         except FileNotFoundError:
@@ -374,7 +361,7 @@ class CodexTarget(Target):
         if item_type == "agent":
             return Path(".codex") / "agents" / f"{name}.toml"
         if item_type == "command":
-            return Path(".codex") / "prompts" / f"{name}.md"
+            return Path(".agents") / "skills" / self._command_skill_dir_name(name)
         if item_type == "prompt":
             return Path(".agents") / "skills" / self._prompt_skill_dir_name(name)
         if item_type == "skill":
@@ -428,34 +415,6 @@ class CodexTarget(Target):
             source_name=name,
         )
 
-    def _command_prompt_bytes(self, content: bytes) -> bytes:
-        metadata, body = parse_frontmatter(content)
-        cleaned = strip_deployment_fields(metadata or {})
-        prompt_metadata: dict[str, Any] = {}
-        description = cleaned.get("description")
-        if isinstance(description, str) and description.strip():
-            prompt_metadata["description"] = description
-        argument_hint = self._stringify_argument_hint(cleaned.get("argument-hint"))
-        if argument_hint:
-            prompt_metadata["argument-hint"] = argument_hint
-        return serialize_frontmatter(prompt_metadata, body)
-
-    @staticmethod
-    def _stringify_argument_hint(value: object) -> str | None:
-        if isinstance(value, str):
-            return value
-        if isinstance(value, list):
-            parts: list[str] = []
-            for item in value:
-                if isinstance(item, dict):
-                    parts.extend(f"{k}={v}" for k, v in item.items())
-                else:
-                    parts.append(str(item))
-            return ", ".join(parts)
-        if value is None:
-            return None
-        return str(value)
-
     def _generated_skill_bytes(
         self,
         *,
@@ -492,9 +451,6 @@ class CodexTarget(Target):
 
     def _command_skill_dir(self, name: str) -> Path:
         return self._skills_path / self._command_skill_dir_name(name)
-
-    def _command_prompt_path(self, name: str) -> Path:
-        return self._codex_path / "prompts" / f"{name}.md"
 
     def _prompt_skill_dir(self, name: str) -> Path:
         return self._skills_path / self._prompt_skill_dir_name(name)

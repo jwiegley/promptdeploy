@@ -37,10 +37,13 @@ def test_constructor_accepts_codex_home_path(tmp_path: Path):
     pull_includes = target.rsync_includes() or []
     push_includes = target.rsync_push_includes() or []
     assert ".agents/skills/**" in pull_includes
-    assert ".codex/**" in pull_includes
+    assert ".codex/agents/**" in pull_includes
+    assert ".codex/config.toml" in pull_includes
+    assert f".codex/{MANIFEST_FILENAME}" in pull_includes
+    assert ".codex/**" not in pull_includes
     assert ".agents/skills/**" in push_includes
     assert ".codex/agents/**" in push_includes
-    assert ".codex/prompts/**" in push_includes
+    assert ".codex/prompts/**" not in push_includes
     assert ".codex/config.toml" in push_includes
     assert f".codex/{MANIFEST_FILENAME}" in push_includes
     assert ".codex/**" not in push_includes
@@ -72,7 +75,7 @@ def test_should_skip_settings_marketplaces_and_non_codex_models(tmp_path: Path):
     assert target.content_fingerprint("agent") == "codex-agent-v2"
     assert target.content_fingerprint("mcp") == "codex-mcp-v3"
     assert target.content_fingerprint("models") == "codex-target-v1"
-    assert target.content_fingerprint("command") == "codex-command-skill-v2"
+    assert target.content_fingerprint("command") == "codex-command-skill-v3"
     assert target.content_fingerprint("skill") is None
     assert target.mcp_hash_includes_env is True
 
@@ -174,50 +177,13 @@ def test_deploy_command_as_generated_skill(tmp_path: Path):
     assert b"promptdeploy command 'fix'" in body
     assert b"Fix $ARGUMENTS." in body
 
-    prompt = tmp_path / ".codex" / "prompts" / "fix.md"
-    prompt_metadata, prompt_body = parse_frontmatter(prompt.read_bytes())
-    assert prompt_metadata == {
-        "description": "Fix command.",
-        "argument-hint": "files, or branch",
-    }
-    assert prompt_body == b"Fix $ARGUMENTS.\n"
+    assert not (tmp_path / ".codex" / "prompts" / "fix.md").exists()
     assert target.item_exists("command", "fix")
     assert target.deployed_artifact_path("command", "fix") == Path(
-        ".codex/prompts/fix.md"
+        ".agents/skills/command-fix"
     )
-    assert target.read_deployed_bytes("command", "fix") == prompt.read_bytes()
-    assert target.would_deploy_bytes("command", "fix", content) == prompt.read_bytes()
-
-
-def test_deploy_command_prompt_argument_hint_variants(tmp_path: Path):
-    target = _make_target(tmp_path)
-
-    target.deploy_command(
-        "string",
-        b"---\nargument-hint: FILES\n---\nBody.\n",
-    )
-    metadata, _ = parse_frontmatter(
-        (tmp_path / ".codex" / "prompts" / "string.md").read_bytes()
-    )
-    assert metadata == {"argument-hint": "FILES"}
-
-    target.deploy_command(
-        "mapping",
-        b"---\nargument-hint: [{FILES: optional}, PR_TITLE]\n---\nBody.\n",
-    )
-    metadata, _ = parse_frontmatter(
-        (tmp_path / ".codex" / "prompts" / "mapping.md").read_bytes()
-    )
-    assert metadata == {"argument-hint": "FILES=optional, PR_TITLE"}
-
-    target.deploy_command(
-        "scalar",
-        b"---\nargument-hint: 3\n---\nBody.\n",
-    )
-    metadata, _ = parse_frontmatter(
-        (tmp_path / ".codex" / "prompts" / "scalar.md").read_bytes()
-    )
-    assert metadata == {"argument-hint": "3"}
+    assert target.read_deployed_bytes("command", "fix") is None
+    assert target.would_deploy_bytes("command", "fix", content) is None
 
 
 def test_deploy_command_overwrites_symlink(tmp_path: Path):
@@ -242,8 +208,7 @@ def test_deploy_command_overwrites_existing_directory(tmp_path: Path):
     target.deploy_command("fix", b"new")
     dest = tmp_path / ".agents" / "skills" / "command-fix" / "SKILL.md"
     assert b"new" in dest.read_bytes()
-    prompt = tmp_path / ".codex" / "prompts" / "fix.md"
-    assert prompt.read_bytes() == b"new"
+    assert not (tmp_path / ".codex" / "prompts" / "fix.md").exists()
 
 
 def test_remove_command_removes_directory_and_symlink(tmp_path: Path):
@@ -251,7 +216,6 @@ def test_remove_command_removes_directory_and_symlink(tmp_path: Path):
     target.deploy_command("fix", b"body")
     target.remove_command("fix")
     assert not (tmp_path / ".agents" / "skills" / "command-fix").exists()
-    assert not (tmp_path / ".codex" / "prompts" / "fix.md").exists()
 
     real = tmp_path / "real"
     real.mkdir()
@@ -267,24 +231,6 @@ def test_remove_command_removes_directory_and_symlink(tmp_path: Path):
 def test_remove_command_noops_when_missing(tmp_path: Path):
     target = _make_target(tmp_path)
     target.remove_command("missing")
-
-
-def test_command_read_requires_skill_and_prompt(tmp_path: Path):
-    target = _make_target(tmp_path)
-    content = b"---\ndescription: Fix.\n---\nBody.\n"
-    target.deploy_command("fix", content)
-
-    prompt = tmp_path / ".codex" / "prompts" / "fix.md"
-    assert target.read_deployed_bytes("command", "fix") == prompt.read_bytes()
-
-    target.remove_skill("command-fix")
-    assert target.item_exists("command", "fix")
-    assert target.read_deployed_bytes("command", "fix") is None
-
-    target.deploy_command("fix", content)
-    prompt.unlink()
-    assert target.item_exists("command", "fix")
-    assert target.read_deployed_bytes("command", "fix") is None
 
 
 def test_deploy_prompt_as_generated_skill_with_warnings(tmp_path: Path):
