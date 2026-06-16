@@ -47,8 +47,10 @@ def parse_frontmatter(content: bytes) -> tuple[dict[str, Any] | None, bytes]:
 
 
 def strip_deployment_fields(metadata: dict[str, Any]) -> dict[str, Any]:
-    """Remove 'only' and 'except' deployment keys from metadata."""
-    return {k: v for k, v in metadata.items() if k not in ("only", "except")}
+    """Remove deployment-only keys from metadata."""
+    return {
+        k: v for k, v in metadata.items() if k not in ("only", "except", "droid_deploy")
+    }
 
 
 def serialize_frontmatter(metadata: dict[str, Any], body: bytes) -> bytes:
@@ -56,7 +58,7 @@ def serialize_frontmatter(metadata: dict[str, Any], body: bytes) -> bytes:
     if not metadata:
         return body
 
-    yaml_text = yaml.dump(
+    yaml_text: str = yaml.dump(
         metadata,
         default_flow_style=False,
         allow_unicode=True,

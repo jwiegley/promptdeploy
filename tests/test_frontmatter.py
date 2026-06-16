@@ -114,6 +114,11 @@ class TestStripDeploymentFields:
         result = strip_deployment_fields(metadata)
         assert result == {"name": "test", "description": "hi"}
 
+    def test_strip_droid_deploy(self):
+        metadata = {"name": "test", "droid_deploy": "skill"}
+        result = strip_deployment_fields(metadata)
+        assert result == {"name": "test"}
+
     def test_no_deployment_fields(self):
         metadata = {"name": "test", "description": "hi"}
         result = strip_deployment_fields(metadata)
@@ -176,12 +181,23 @@ class TestTransformForTarget:
         assert first == second
 
     def test_all_deployment_fields_removed(self):
-        content = b"---\nname: test\nonly:\n  - a\nexcept:\n  - b\n---\nBody.\n"
+        content = (
+            b"---\n"
+            b"name: test\n"
+            b"only:\n"
+            b"  - a\n"
+            b"except:\n"
+            b"  - b\n"
+            b"droid_deploy: skill\n"
+            b"---\n"
+            b"Body.\n"
+        )
         result = transform_for_target(content)
         meta, _ = parse_frontmatter(result)
         assert meta is not None
         assert "only" not in meta
         assert "except" not in meta
+        assert "droid_deploy" not in meta
         assert meta == {"name": "test"}
 
     def test_empty_metadata_after_strip(self):
