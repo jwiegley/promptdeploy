@@ -81,7 +81,7 @@ targets:
     type: codex
     path: "~"
     host: andoria-08
-    labels: [codex, personal, remote]
+    labels: [codex, personal, positron, remote]
 
   gptel-emacs:
     type: gptel

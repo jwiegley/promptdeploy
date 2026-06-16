@@ -11,7 +11,7 @@ The repository holds these types of content, all defined in simple Markdown or Y
 | Type | Location | What it is |
 |------|----------|------------|
 | Agents | `agents/*.md` | Specialized sub-agents (Markdown + YAML frontmatter) |
-| Commands | `commands/*.md` | Slash command prompts, `$ARGUMENTS` for user input; Codex receives generated skills because Codex does not expose a custom slash-command file surface |
+| Commands | `commands/*.md` | Slash command prompts, `$ARGUMENTS` for user input; Codex receives both generated skills and custom-prompt compatibility files |
 | Skills | `skills/*/SKILL.md` | Multi-file skill directories with a `SKILL.md` entry point |
 | Prompts | `prompts/*` | Prompt Poet (`.poet`/Jinja) or plain prompts, rendered per target: slash-command Markdown for the coding tools; gptel receives `.poet` files verbatim and Jinja variants as role/content JSON |
 | MCP Servers | `mcp/*.yaml` | Model Context Protocol server definitions |
@@ -64,7 +64,7 @@ groups:
     - claude-personal
 ```
 
-For Codex, set `path` to your home directory (recommended) or directly to `~/.codex`. The target writes custom agents to `.codex/agents/*.toml`, MCP servers and Codex model providers to managed blocks in `.codex/config.toml`, hooks to `.codex/hooks.json`, and skills to `.agents/skills`. Commands and rendered prompts are installed as generated skills named `command-<name>` and `prompt-<name>`, which makes them available through Codex's skill surfaces. `settings.yaml` and Claude marketplaces are intentionally skipped for Codex.
+For Codex, set `path` to your home directory (recommended) or directly to `~/.codex`. The target writes custom agents to `.codex/agents/*.toml`, MCP servers and Codex model providers to managed blocks in `.codex/config.toml`, hooks to `.codex/hooks.json`, and skills to `.agents/skills`. Commands are installed twice: as generated skills named `command-<name>` for Codex's supported skill surfaces, and as `.codex/prompts/<name>.md` custom-prompt compatibility files so they appear in the slash menu as `/prompts:<name>` after a new Codex session or restart. Rendered prompts are installed as generated skills named `prompt-<name>`. `settings.yaml` and Claude marketplaces are intentionally skipped for Codex.
 
 ### Environment variables
 

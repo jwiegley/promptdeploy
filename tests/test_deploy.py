@@ -1240,6 +1240,55 @@ class TestFiletagDeploy:
         assert (tc_positron.path / "commands" / "heavy.md").exists()
         assert not (tc_personal.path / "commands").exists()
 
+    def test_positron_filetag_restricts_codex_commands(self, tmp_path: Path):
+        """A Positron-tagged command deploys only to Positron Codex targets."""
+        src = tmp_path / "source"
+        src.mkdir()
+        commands = src / "commands"
+        commands.mkdir()
+        (commands / "retest -- positron.md").write_bytes(
+            b"---\ndescription: Retest.\n---\nRetest $ARGUMENTS.\n"
+        )
+
+        personal_path = tmp_path / "codex-personal"
+        positron_path = tmp_path / "codex-positron"
+        personal_path.mkdir()
+        positron_path.mkdir()
+        targets = {
+            "codex-personal": TargetConfig(
+                id="codex-personal",
+                type="codex",
+                path=personal_path,
+                labels=["codex", "personal"],
+            ),
+            "codex-positron": TargetConfig(
+                id="codex-positron",
+                type="codex",
+                path=positron_path,
+                labels=["codex", "personal", "positron"],
+            ),
+        }
+        config = Config(
+            source_root=src,
+            targets=targets,
+            groups={
+                "codex": ["codex-personal", "codex-positron"],
+                "personal": ["codex-personal", "codex-positron"],
+                "positron": ["codex-positron"],
+            },
+        )
+
+        actions = deploy(config)
+
+        assert [
+            (a.action, a.name, a.target_id) for a in actions if a.item_type == "command"
+        ] == [("create", "retest", "codex-positron")]
+        assert not (personal_path / ".codex" / "prompts" / "retest.md").exists()
+        assert (positron_path / ".codex" / "prompts" / "retest.md").exists()
+        assert (
+            positron_path / ".agents" / "skills" / "command-retest" / "SKILL.md"
+        ).exists()
+
     def test_filetag_removal_on_tag_change(self, tmp_path: Path):
         """When tags change, item is removed from previously matching targets."""
         src = tmp_path / "source"
@@ -1552,6 +1601,43 @@ class TestItemSelected:
         assert not item_selected(items["heavy"], target, tc.id, config)
         # 'helper' passes filters and droid deploys agents.
         assert item_selected(items["helper"], target, tc.id, config)
+
+
+class TestCodexCommandDeploy:
+    """Codex command deployment keeps skill and slash-prompt surfaces in sync."""
+
+    def test_refreshes_legacy_skill_only_command(self, tmp_path: Path):
+        src = tmp_path / "source"
+        src.mkdir()
+        commands = src / "commands"
+        commands.mkdir()
+        body = b"---\ndescription: Fix.\n---\nFix $ARGUMENTS.\n"
+        (commands / "fix.md").write_bytes(body)
+
+        target_dir = tmp_path / "codex"
+        target_dir.mkdir()
+        tc = TargetConfig(id="codex", type="codex", path=target_dir)
+        config = _make_config(src, {tc.id: tc})
+        target = create_target(tc)
+        item = next(SourceDiscovery(src).discover_commands())
+
+        legacy_skill = target_dir / ".agents" / "skills" / "command-fix"
+        legacy_skill.mkdir(parents=True)
+        (legacy_skill / "SKILL.md").write_text("legacy skill")
+        manifest = Manifest()
+        manifest.items["commands"] = {
+            "fix": ManifestItem(
+                source_hash=compute_item_hash(item, target, config),
+                target_path=".agents/skills/command-fix",
+            )
+        }
+        save_manifest(manifest, target.manifest_path())
+
+        actions = deploy(config)
+
+        assert any(a.name == "fix" and a.action == "update" for a in actions)
+        assert (target_dir / ".codex" / "prompts" / "fix.md").exists()
+        assert (legacy_skill / "SKILL.md").exists()
 
 
 class TestMarketplaceDeploy:

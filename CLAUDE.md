@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with this repository.
 
 ## Repository Purpose
 
-A single-source repository of AI coding prompts (agents, commands, skills, prompts, MCP servers, hooks, models, marketplaces, settings) deployed to four target environments -- Claude Code, Factory Droid, OpenCode, and gptel (Emacs) -- using the included `promptdeploy` Python CLI tool.
+A single-source repository of AI coding prompts (agents, commands, skills, prompts, MCP servers, hooks, models, marketplaces, settings) deployed to five target environments -- Claude Code, OpenAI Codex, Factory Droid, OpenCode, and gptel (Emacs) -- using the included `promptdeploy` Python CLI tool.
 
 ## Content Types
 
@@ -15,9 +15,9 @@ A single-source repository of AI coding prompts (agents, commands, skills, promp
 | Skills | `skills/*/SKILL.md` | Directory with `SKILL.md` (YAML frontmatter) + optional files | `translate-en` symlinks into the `translate-tool` git submodule (run `git submodule update --init` after cloning) |
 | Prompts | `prompts/*.{poet,j2,jinja,jinja2,txt,md,org,json}` | Poet files: YAML list of role/content turns + Jinja2, optional leading `# key: value` comment frontmatter; plain files become a single system turn | Rendered per target by `poet.py`; gptel copies `.poet` files directly and consumes only prompts |
 | MCP Servers | `mcp/*.yaml` | YAML with `name`, transport (`command`+`args` or `url`+`headers`), `env`, `scope` | Schema in `mcp/schema.md`; on claude targets deployed into `.claude.json` (local profiles only -- see Key Patterns) |
-| Hooks | `hooks/*.yaml` | YAML with `name`, event handlers, matchers | Claude-only |
+| Hooks | `hooks/*.yaml` | YAML with `name`, event handlers, matchers | Claude Code and Codex |
 | Marketplaces | `marketplaces/*.yaml` | YAML with `name`, optional `source`, `plugins` map | Claude-only; drives top-level `extraKnownMarketplaces` + `enabledPlugins` in `settings.json`. Schema in `marketplaces/schema.md` |
-| Models | `models.yaml` | Single YAML file, providers with nested models | Droid and OpenCode consume the full config; claude targets read only `providers.anthropic.claude.default_model` for model injection -- currently absent, so injection is OFF (see Key Patterns) |
+| Models | `models.yaml` | Single YAML file, providers with nested models | Droid and OpenCode consume the full config; Codex consumes providers with `codex:` config; claude targets read only `providers.anthropic.claude.default_model` for model injection -- currently absent, so injection is OFF (see Key Patterns) |
 | Settings | `settings.yaml` | Single YAML, `base:` + `overrides:` (per target/group) | Claude-only; rendered per target and gently merged into `settings.json` (managed top-level keys only; the four MANAGED_ELSEWHERE keys hooks/mcpServers/extraKnownMarketplaces/enabledPlugins untouched) |
 
 All content items support `only`/`except` filtering by target or group name (defined in `deploy.yaml`). Items can also embed *filetags* in the filename (or skill directory name) after a ` -- ` separator, e.g. `heavy -- positron local.md` (`filetags.py`): each tag must match the target (AND semantics), evaluated before and composed with `only`/`except`.
@@ -34,8 +34,9 @@ All content items support `only`/`except` filtering by target or group name (def
 4. **Poet rendering** (`poet.py`) -- `parse_poet` parses `.poet`/Jinja prompt files (YAML list of role/content turns, optional `# key: value` comment frontmatter); `render_for_command` produces slash-command Markdown (claude/opencode→`commands/{name}.md`, droid→`skills/{name}/SKILL.md`); `render_for_gptel` produces the JSON array used for Jinja-flavoured gptel prompt sources. Native `.poet` files are copied directly by the gptel target. Undefined Jinja variables degrade to literal `{{ name }}` placeholders and surface as deploy warnings instead of raising.
 5. **Filtering** (`filters.py`) -- `should_deploy_to()` evaluates filetags first (AND semantics), then `only`/`except` with group expansion
 6. **Deploy** (`deploy.py`) -- Orchestrates targets × items, computes SHA256 hashes, returns `List[DeployAction]`. Maps between naming conventions: `_TYPE_TO_CATEGORY` (singular→plural for manifests), `_CLI_TYPE_TO_ITEM_TYPE` (CLI plural→singular)
-7. **Targets** (`targets/`) -- Abstract `Target` ABC in `base.py`, four local implementations + remote wrapper:
+7. **Targets** (`targets/`) -- Abstract `Target` ABC in `base.py`, five local implementations + remote wrapper:
    - `claude.py` -- Writes `.md` files; merges MCP into `.claude.json` `mcpServers` (surgically, only the named keys; *local* claude targets via the `manage_mcp` flag, *remote* claude targets via the `RemoteTarget` SSH-stdin direct-merge intercept -- never via `.claude.json` rsync and never via the `claude` CLI); merges hooks with `_source` tagging for independent group updates; merges marketplaces into top-level `extraKnownMarketplaces`/`enabledPlugins` (ownership derived from the `@<marketplace>` key suffix). `deploy_settings` strips four keys (see settings.yaml)
+   - `codex.py` -- Writes agents to `.codex/agents/*.toml`; commands to both `.codex/prompts/{name}.md` custom-prompt compatibility files and `.agents/skills/command-{name}/` generated skills; prompts to `.agents/skills/prompt-{name}/` generated skills; skills to `.agents/skills/{name}/`; MCP/model providers to managed `.codex/config.toml` blocks; hooks to `.codex/hooks.json`; settings and marketplaces skipped
    - `droid.py` -- Agents→`droids/`; commands skipped unless `droid_deploy: skill` in frontmatter; MCP→`mcp.json` with `type` field; models→`settings.json` `customModels` with provider-type formatting
    - `opencode.py` -- Standard layout; MCP→`opencode.json` with `command` as array, `environment` instead of `env`; models→`opencode.json` under `provider` key
    - `gptel.py` -- Prompts only: native `.poet` sources copy to `{name}.poet`; Jinja-flavoured Poet sources render to `{name}.json` (via `render_for_gptel`) for `gptel-prompts.el`; plain prompts are copied verbatim; all other item types are silently skipped
@@ -107,7 +108,7 @@ The flake also exports `homeManagerModules.default` (`nix/hm-module.nix`): with 
 
 ## deploy.yaml
 
-Defines 15 targets classified by labels: `claude`, `codex`, `personal`, `positron`, `git-ai`, `gptel`, `local`, `remote`. Labels on targets auto-generate groups (merged with explicit groups). `--target positron` expands to `claude-positron` + `claude-andoria`. Target types: `claude`, `codex`, `droid`, `opencode`, `gptel`. Remote targets add `host:` field.
+Defines 15 targets classified by labels: `claude`, `codex`, `personal`, `positron`, `git-ai`, `gptel`, `local`, `remote`. Labels on targets auto-generate groups (merged with explicit groups). `--target positron` expands to `claude-positron` + `claude-andoria` + `codex-andoria`. Target types: `claude`, `codex`, `droid`, `opencode`, `gptel`. Remote targets add `host:` field.
 
 The top-level `hosts:` key registers each listed hostname as a group containing every target whose `host:` matches it; the current machine's short hostname (override with `PROMPTDEPLOY_HOST`) also becomes a group containing all host-less targets. This is what `only: [hera]` / `only: [clio]` filters in `models.yaml` rely on.
 
