@@ -74,6 +74,10 @@ class RemoteTarget(Target):
     def remote_mcp_hash(self) -> bool:
         return self._remote_mcp
 
+    @property
+    def mcp_hash_includes_env(self) -> bool:
+        return self._remote_mcp or self._inner.mcp_hash_includes_env
+
     def prepare(self, *, verbose: bool = False) -> None:
         ssh_pull(
             self._host,
@@ -162,7 +166,7 @@ class RemoteTarget(Target):
             self._mcp_ops.append({"action": "pop", "name": name, "entry": None})
             self._mcp_seen.add(name)
             return
-        entry = ClaudeTarget._claude_mcp_entry(config)
+        entry = ClaudeTarget._claude_mcp_entry(config, name=name, expand_secrets=False)
         entry = self._expand_entry_secrets(name, entry)  # may raise EnvVarError
         self._mcp_ops.append({"action": "set", "name": name, "entry": entry})
         self._mcp_seen.add(name)

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from promptdeploy.envsubst import EnvVarError
 from promptdeploy.frontmatter import parse_frontmatter
 from promptdeploy.manifest import MANIFEST_FILENAME
 from promptdeploy.targets.claude import ClaudeTarget
@@ -450,9 +451,7 @@ class TestDeployMcpServer:
         assert result["mcpServers"]["existing"] == {"command": "keep"}
         assert result["mcpServers"]["new"] == {"command": "added"}
 
-    def test_env_vars_passed_through_verbatim(self, tmp_path: Path, monkeypatch):
-        # Even when the variable IS set, the reference must be written
-        # verbatim: Claude Code expands ${VAR} in .claude.json at runtime.
+    def test_env_vars_strict_expanded(self, tmp_path: Path, monkeypatch):
         monkeypatch.setenv("MY_API_KEY", "secret123")
         target = _make_target(tmp_path)
         config = {
@@ -463,11 +462,9 @@ class TestDeployMcpServer:
         target.deploy_mcp_server("srv", config)
 
         result = json.loads(_claude_json(tmp_path).read_text())
-        assert result["mcpServers"]["srv"]["env"]["KEY"] == "${MY_API_KEY}"
+        assert result["mcpServers"]["srv"]["env"]["KEY"] == "secret123"
 
-    def test_headers_passed_through_verbatim(self, tmp_path: Path, monkeypatch):
-        # Set the variable so this also guards against a future lenient
-        # deploy-time expansion of headers, not just the unset case.
+    def test_headers_strict_expanded(self, tmp_path: Path, monkeypatch):
         monkeypatch.setenv("SOME_KEY", "expanded-would-be-wrong")
         target = _make_target(tmp_path)
         config = {
@@ -478,7 +475,16 @@ class TestDeployMcpServer:
         target.deploy_mcp_server("srv", config)
 
         result = json.loads(_claude_json(tmp_path).read_text())
-        assert result["mcpServers"]["srv"]["headers"]["K"] == "${SOME_KEY}"
+        assert result["mcpServers"]["srv"]["headers"]["K"] == "expanded-would-be-wrong"
+
+    def test_missing_env_var_raises(self, tmp_path: Path, monkeypatch):
+        monkeypatch.delenv("MISSING_KEY", raising=False)
+        target = _make_target(tmp_path)
+        with pytest.raises(EnvVarError, match=r"MISSING_KEY.*mcp\.srv\.env\.KEY"):
+            target.deploy_mcp_server(
+                "srv",
+                {"name": "srv", "command": "x", "env": {"KEY": "${MISSING_KEY}"}},
+            )
 
     def test_local_target_manages_mcp_remote_skips(self, tmp_path: Path):
         # Local claude targets manage MCP; remote ones cannot (.claude.json is
@@ -490,11 +496,12 @@ class TestDeployMcpServer:
         # The skip is specific to mcp -- agents still deploy on remote.
         assert remote_inner.should_skip("agent", "a") is False
 
-    def test_url_server_gets_http_type(self, tmp_path: Path):
+    def test_url_server_gets_http_type(self, tmp_path: Path, monkeypatch):
         # Claude Code reads a type-less entry as stdio and rejects it for the
         # missing command ("command: expected string, received undefined").
         # URL-transport servers must deploy with an explicit type.
         target = _make_target(tmp_path)
+        monkeypatch.setenv("CONTEXT7_API_KEY", "ctx")
         config = {
             "name": "context7",
             "description": "docs lookup",
@@ -507,7 +514,7 @@ class TestDeployMcpServer:
         assert srv == {
             "type": "http",
             "url": "https://mcp.context7.com/mcp",
-            "headers": {"CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"},
+            "headers": {"CONTEXT7_API_KEY": "ctx"},
         }
 
     def test_explicit_transport_type_preserved(self, tmp_path: Path):

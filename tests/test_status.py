@@ -1,20 +1,20 @@
 """Tests for promptdeploy deployment status."""
 
-import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
 from promptdeploy.config import Config, TargetConfig
-from promptdeploy.deploy import _TYPE_TO_CATEGORY
+from promptdeploy.deploy import _TYPE_TO_CATEGORY, compute_item_hash
 from promptdeploy.manifest import MANIFEST_FILENAME, compute_file_hash
+from promptdeploy.source import SourceDiscovery
 from promptdeploy.status import (
     _CATEGORY_TO_TYPE,
     StatusEntry,
     get_status,
 )
-from promptdeploy.targets.claude import ClaudeTarget
+from promptdeploy.targets import create_target
 
 
 @pytest.fixture
@@ -112,15 +112,16 @@ class TestGetStatusWithManifest:
         deploy_hash = compute_file_hash(
             (source_root / "commands" / "deploy.md").read_bytes()
         )
-        # MCP entries carry a content fingerprint (ClaudeTarget), so the
-        # manifest hash mixes it in exactly as compute_item_hash does.
-        server_base = compute_file_hash(
-            (source_root / "mcp" / "server.yaml").read_bytes()
+        # MCP entries include target transforms and, for targets that bake
+        # env values, effective env values. Use the shared helper so status
+        # and deploy stay in lockstep.
+        target = create_target(config.targets["local"])
+        server_item = next(
+            item
+            for item in SourceDiscovery(source_root).discover_all()
+            if item.item_type == "mcp"
         )
-        fp = ClaudeTarget("local", target_path).content_fingerprint("mcp")
-        server_hash = (
-            f"sha256:{hashlib.sha256(f'{server_base}|{fp}'.encode()).hexdigest()}"
-        )
+        server_hash = compute_item_hash(server_item, target, config)
         self._write_manifest(
             target_path,
             {

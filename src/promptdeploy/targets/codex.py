@@ -126,6 +126,10 @@ class CodexTarget(Target):
             return "codex-command-skill-v1"
         return None
 
+    @property
+    def mcp_hash_includes_env(self) -> bool:
+        return True
+
     # ------------------------------------------------------------------
     # Deploy
     # ------------------------------------------------------------------

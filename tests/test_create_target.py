@@ -75,6 +75,7 @@ class TestCreateTarget:
         target = create_target(tc)
         assert isinstance(target, RemoteTarget)
         assert target.remote_mcp_hash is True
+        assert target.mcp_hash_includes_env is True
 
     def test_remote_non_claude_target_no_remote_mcp(self, tmp_path: Path) -> None:
         from promptdeploy.targets.remote import RemoteTarget
@@ -85,3 +86,4 @@ class TestCreateTarget:
         target = create_target(tc)
         assert isinstance(target, RemoteTarget)
         assert target.remote_mcp_hash is False
+        assert target.mcp_hash_includes_env is True

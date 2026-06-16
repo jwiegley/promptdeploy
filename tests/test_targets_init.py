@@ -95,6 +95,7 @@ class TestCreateTarget:
         assert isinstance(target, RemoteTarget)
         assert isinstance(target._inner, CodexTarget)
         assert target.remote_mcp_hash is False
+        assert target.mcp_hash_includes_env is True
         target.cleanup()
 
     def test_no_remote_without_host(self, tmp_path: Path) -> None:
@@ -152,6 +153,13 @@ class TestCreateTarget:
         target = create_target(tc)
         # Call the base class default directly
         assert Target.should_skip(target, "agent", "x") is False
+
+    def test_base_target_mcp_hash_includes_env_default_false(
+        self, tmp_path: Path
+    ) -> None:
+        tc = TargetConfig(id="t", type="gptel", path=tmp_path)
+        target = create_target(tc)
+        assert target.mcp_hash_includes_env is False
 
     def test_base_target_consume_warnings_default_empty(self, tmp_path: Path) -> None:
         tc = TargetConfig(id="t", type="claude", path=tmp_path)

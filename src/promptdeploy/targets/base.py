@@ -96,8 +96,19 @@ class Target(ABC):
     def remote_mcp_hash(self) -> bool:
         """True when this target bakes deploy-time-expanded MCP secrets into a
         remote file, so its mcp manifest hash must fold current env values
-        (mirroring _expand_env_for_hash for models). Default False: local
-        targets ship ${VAR} verbatim, so their mcp hash stays source-bytes-only.
+        (mirroring _expand_env_for_hash for models). Retained for remote
+        Claude merge behavior; use :attr:`mcp_hash_includes_env` for the
+        broader "MCP config bakes env values" behavior.
+        """
+        return False
+
+    @property
+    def mcp_hash_includes_env(self) -> bool:
+        """True when MCP env/header references are expanded at deploy time.
+
+        Targets that bake expanded MCP secrets into their config need manifest
+        hashes to include current env values, so rotating a secret triggers a
+        redeploy even when the source YAML is unchanged.
         """
         return False
 

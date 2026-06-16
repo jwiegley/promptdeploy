@@ -24,6 +24,7 @@ def mock_inner() -> MagicMock:
     inner.item_exists.return_value = True
     inner.rsync_includes.return_value = _MOCK_INCLUDES
     inner.rsync_push_includes.return_value = _MOCK_PUSH_INCLUDES
+    inner.mcp_hash_includes_env = False
     return inner
 
 
@@ -450,6 +451,22 @@ class TestRemoteMcpDeployServer:
         assert entry["env"]["K"] == "secret123"
         assert entry["headers"]["Authorization"] == "Bearer secret123"
 
+    def test_deploy_mcp_server_expands_remote_secrets_once(
+        self, remote_mcp_target: RemoteTarget, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("TOK", "literal ${INNER}")
+        monkeypatch.delenv("INNER", raising=False)
+        remote_mcp_target.deploy_mcp_server(
+            "srv",
+            {
+                "name": "srv",
+                "command": "c",
+                "env": {"K": "${TOK}"},
+            },
+        )
+        entry = remote_mcp_target._mcp_ops[0]["entry"]
+        assert entry["env"]["K"] == "literal ${INNER}"
+
     def test_deploy_mcp_server_missing_env_raises(
         self, remote_mcp_target: RemoteTarget, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -579,15 +596,18 @@ class TestRemoteMcpHashProperty:
         self, remote_mcp_target: RemoteTarget
     ) -> None:
         assert remote_mcp_target.remote_mcp_hash is True
+        assert remote_mcp_target.mcp_hash_includes_env is True
 
     def test_remote_mcp_hash_property_false_when_not_remote_mcp(
         self, remote_target: RemoteTarget
     ) -> None:
         assert remote_target.remote_mcp_hash is False
+        assert remote_target.mcp_hash_includes_env is False
 
     def test_base_target_remote_mcp_hash_default_false(self, tmp_path: Path) -> None:
         target = ClaudeTarget("c", tmp_path)
         assert target.remote_mcp_hash is False
+        assert target.mcp_hash_includes_env is True
 
 
 class TestRemoteMcpFlush:
@@ -694,7 +714,7 @@ class TestRemoteMcpGuardrails:
         includes = remote_mcp_target.rsync_includes() or []
         assert ".claude.json" not in includes
 
-    def test_target_root_previews_remote_mcp_as_local_verbatim(
+    def test_target_root_previews_remote_mcp_as_local_expanded(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from promptdeploy.config import (
@@ -714,11 +734,13 @@ class TestRemoteMcpGuardrails:
         assert isinstance(target, ClaudeTarget)
         assert not isinstance(target, RemoteTarget)
         assert target.remote_mcp_hash is False
-        # ${VAR} is written VERBATIM, no ssh_stdin.
+        assert target.mcp_hash_includes_env is True
+        monkeypatch.setenv("TOK", "value")
+        # ${VAR} is expanded locally, no ssh_stdin.
         with patch("promptdeploy.targets.remote.ssh_stdin") as mock_stdin:
             target.deploy_mcp_server(
                 "srv", {"name": "srv", "command": "c", "env": {"K": "${TOK}"}}
             )
         mock_stdin.assert_not_called()
         claude_json = json.loads((target._config_path / ".claude.json").read_text())
-        assert claude_json["mcpServers"]["srv"]["env"]["K"] == "${TOK}"
+        assert claude_json["mcpServers"]["srv"]["env"]["K"] == "value"

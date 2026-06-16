@@ -2361,11 +2361,10 @@ class TestRemoteMcpDeploy:
         assert stdins == []
         assert not seen["staging"].exists()
 
-    def test_local_claude_mcp_hash_unchanged(self, tmp_path: Path, monkeypatch):
-        import hashlib
-
+    def test_local_claude_mcp_hash_changes_when_env_rotates(
+        self, tmp_path: Path, monkeypatch
+    ):
         from promptdeploy.deploy import compute_item_hash
-        from promptdeploy.manifest import compute_file_hash
         from promptdeploy.source import SourceDiscovery
         from promptdeploy.targets import create_target
 
@@ -2385,15 +2384,8 @@ class TestRemoteMcpDeploy:
 
         monkeypatch.setenv("TOK", "v1")
         h1 = compute_item_hash(item, target, config)
-        expected = (
-            "sha256:"
-            + hashlib.sha256(
-                f"{compute_file_hash(item.content)}|claude-mcp-entry-v2".encode()
-            ).hexdigest()
-        )
-        assert h1 == expected
         monkeypatch.setenv("TOK", "v2")
-        assert compute_item_hash(item, target, config) == h1
+        assert compute_item_hash(item, target, config) != h1
 
     def test_flush_remote_mcp_helper_noop_for_non_remote_target(self, tmp_path: Path):
         from promptdeploy.deploy import _flush_remote_mcp

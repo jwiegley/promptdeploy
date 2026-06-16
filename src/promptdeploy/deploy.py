@@ -206,10 +206,10 @@ def compute_item_hash(
         return compute_file_hash(
             json.dumps(effective, sort_keys=True, default=str).encode()
         )
-    if item.item_type == "mcp" and target.remote_mcp_hash:
-        # Remote claude bakes deploy-time-expanded env/headers into the remote
-        # .claude.json, so fold current env values into the hash (like models)
-        # -- a rotated secret VALUE changes the hash and triggers a redeploy.
+    if item.item_type == "mcp" and target.mcp_hash_includes_env:
+        # Some targets bake deploy-time-expanded env/headers into their MCP
+        # config, so fold current env values into the hash (like models) -- a
+        # rotated secret VALUE changes the hash and triggers a redeploy.
         # We fold over the RAW source metadata so enabled:/scope: flips are
         # still detected (they live in item.metadata), then mix in the SAME
         # fingerprint and the SAME sha256(f"{base}|{fingerprint}") shape as the
@@ -218,7 +218,7 @@ def compute_item_hash(
         base = compute_file_hash(
             json.dumps(effective, sort_keys=True, default=str).encode()
         )
-        fingerprint = target.content_fingerprint(item.item_type)  # claude-mcp-entry-v2
+        fingerprint = target.content_fingerprint(item.item_type)
         digest = hashlib.sha256(f"{base}|{fingerprint}".encode()).hexdigest()
         return f"sha256:{digest}"
     if item.item_type == "skill":

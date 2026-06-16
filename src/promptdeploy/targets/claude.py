@@ -144,10 +144,14 @@ class ClaudeTarget(Target):
             return f"model={self._model}"
         if item_type == "mcp":
             # Bump when the deployed .claude.json entry format changes (e.g.
-            # the URL-server "type" field) so existing deployments refresh
-            # even though the source YAML is unchanged.
-            return "claude-mcp-entry-v2"
+            # the URL-server "type" field or env expansion policy) so existing
+            # deployments refresh even though the source YAML is unchanged.
+            return "claude-mcp-entry-v3"
         return None
+
+    @property
+    def mcp_hash_includes_env(self) -> bool:
+        return True
 
     def deploy_models(self, config: dict[str, Any]) -> None:
         pass  # Claude Code does not support custom models
@@ -212,9 +216,10 @@ class ClaudeTarget(Target):
     def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:
         # MCP servers deploy into .claude.json (user scope) -- the surface
         # Claude Code actually reads. It never reads settings.json's
-        # mcpServers. ${VAR} references in env/headers expand at runtime, so
-        # they are written verbatim. Only the named server key is touched;
-        # every other key in the app-owned file is preserved.
+        # mcpServers. ${VAR} references in env/headers are expanded at deploy
+        # time so `claude /doctor` does not depend on launcher environment.
+        # Only the named server key is touched; every other key in the
+        # app-owned file is preserved.
         path = self._claude_json_path()
         data = self._load_json(path)
 
@@ -223,12 +228,19 @@ class ClaudeTarget(Target):
             if isinstance(servers, dict):
                 servers.pop(name, None)
         else:
-            self._ensure_dict(data, "mcpServers")[name] = self._claude_mcp_entry(config)
+            self._ensure_dict(data, "mcpServers")[name] = self._claude_mcp_entry(
+                config, name=name
+            )
 
         self._save_json(path, data)
 
     @staticmethod
-    def _claude_mcp_entry(config: dict[str, Any]) -> dict[str, Any]:
+    def _claude_mcp_entry(
+        config: dict[str, Any],
+        *,
+        name: str | None = None,
+        expand_secrets: bool = True,
+    ) -> dict[str, Any]:
         """Build the ``.claude.json`` ``mcpServers`` entry for a server.
 
         Strips deployment metadata (:data:`_MCP_STRIP_KEYS`). URL-transport
@@ -237,7 +249,28 @@ class ClaudeTarget(Target):
         missing ``command`` ("command: expected string, received undefined").
         An explicit ``type`` in the source (e.g. ``sse``) is preserved.
         """
+        from ..envsubst import expand_env_vars_strict
+
         entry = {k: v for k, v in config.items() if k not in _MCP_STRIP_KEYS}
+        if expand_secrets:
+            for field in ("env", "headers"):
+                value = entry.get(field)
+                if isinstance(value, dict):
+                    entry[field] = {
+                        k: (
+                            expand_env_vars_strict(
+                                v,
+                                context=(
+                                    f"mcp.{name}.{field}.{k}"
+                                    if name
+                                    else f"mcp.{field}.{k}"
+                                ),
+                            )
+                            if isinstance(v, str)
+                            else v
+                        )
+                        for k, v in value.items()
+                    }
         if "url" in entry and "type" not in entry:
             entry["type"] = "http"
         return entry

@@ -48,12 +48,11 @@ endpoint set `type: sse` explicitly; an explicit `type` is always preserved.
 `${VAR}` references in `env` and `headers` values are handled differently per
 target type:
 
-- **Claude Code (local)** -- deployed VERBATIM, in both `env` and `headers`.
-  Expansion happens at runtime when Claude Code reads `.claude.json` (see the
-  next section), so secrets are never baked into deployed config. The manifest
-  hash is source-bytes only, so **rotating a secret does NOT trigger a
-  redeploy**. Caveat: an unset variable expands to *empty* at runtime rather
-  than failing.
+- **Claude Code (local)** -- `env`/`headers` `${VAR}` are strict-expanded at
+  deploy time and the resolved values are baked into `.claude.json` (mode
+  `0600`). A missing variable raises `EnvVarError` and the deploy exits 1.
+  The manifest hash folds current env values, so **rotating a referenced
+  secret triggers a redeploy**.
 - **Claude Code (remote)** -- `env`/`headers` `${VAR}` are **strict-expanded
   at deploy time** (like OpenCode) and the resolved value is baked into the
   remote `.claude.json` (transported only over the encrypted SSH channel, at
@@ -117,8 +116,8 @@ Two consequences:
   a failed merge leaves the manifest untouched and the next run retries
   automatically. `--dry-run` performs no SSH merge and no write (it still does
   a read-only `ssh_pull` in `prepare`), and `--target-root` previews a
-  remote-MCP target as a **local `.claude.json` write with verbatim `${VAR}`**
-  (it does NOT reflect the remote deploy-time-expanded/baked form).
+  remote-MCP target as a **local `.claude.json` write with deploy-time-expanded
+  `${VAR}` values** (it does NOT exercise the SSH-stdin merge transport).
   **Requirement:** `python3` must be on the remote non-interactive SSH PATH
   (NixOS and Amazon Linux both ship it); if absent (exit 127) the deploy fails
   loudly with a clear hint. Because real secrets now transit the channel,

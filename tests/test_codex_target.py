@@ -73,6 +73,7 @@ def test_should_skip_settings_marketplaces_and_non_codex_models(tmp_path: Path):
     assert target.content_fingerprint("models") == "codex-target-v1"
     assert target.content_fingerprint("command") == "codex-command-skill-v1"
     assert target.content_fingerprint("skill") is None
+    assert target.mcp_hash_includes_env is True
 
 
 def test_deploy_agent_writes_custom_agent_toml_and_warning(tmp_path: Path):

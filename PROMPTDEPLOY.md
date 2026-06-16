@@ -79,10 +79,10 @@ Labels can also be embedded in the filename itself using the filetags convention
 
 Two consequences shape the deploy model:
 
-- **Local profiles only.** `.claude.json` is machine-specific and must never be rsynced, so remote Claude targets skip MCP (`create_target` builds them with `manage_mcp=False`, and `ClaudeTarget.should_skip("mcp")` returns True). Manage MCP for a remote host on that host directly.
+- **`.claude.json` is never rsynced.** Local Claude targets merge directly into their profile's `.claude.json`. Remote Claude targets perform a surgical SSH-stdin merge into the remote `.claude.json` so OAuth state, caches, and session history stay on that host.
 - **Deploy with sessions closed.** A live `claude` session rewrites `.claude.json` wholesale from memory with no locking, so an MCP deploy run alongside an open session can be lost (or clobber the session's own changes). This is exactly the constraint `claude mcp add` operates under.
 
-Because expansion happens at runtime when Claude Code reads `.claude.json`, `${VAR}` references in `env` and `headers` are deployed verbatim -- no secrets are baked into deployed files. An unset variable expands to *empty* at runtime rather than failing, which is why `promptdeploy validate` warns about `${VAR}` references missing from `.env.example`.
+`${VAR}` references in `env` and `headers` are strict-expanded at deploy time and the resolved values are baked into `.claude.json` (mode `0600`). A missing variable fails the deploy with `EnvVarError`, and the manifest hash includes the current values so secret rotation triggers a refresh.
 
 To verify a profile's MCP servers end to end, run a headless probe and inspect the init event's `mcp_servers`:
 
@@ -326,7 +326,7 @@ Rebuild your system to install `promptdeploy` to the Nix profile.
 2. **Filtering** -- Evaluates filename filetags and `only`/`except` frontmatter against each target, expanding group names.
 3. **Change detection** -- Computes SHA256 hashes and compares against the manifest from the last deploy. Unchanged items are skipped (unless `--force`).
 4. **Deployment** -- Writes each item in the format the target expects:
-   - Claude Code: agents/, commands/, skills/ directories (agents and skills get `model:` injection when configured); prompts render to `commands/{name}.md`; MCP merges into `.claude.json`'s `mcpServers` with `${VAR}` references deployed verbatim (local profiles only -- see above); hooks merge into settings.json with `_source` tagging; marketplaces merge into top-level `extraKnownMarketplaces`/`enabledPlugins`; `settings.yaml` keys gently merge into settings.json; models are skipped.
+   - Claude Code: agents/, commands/, skills/ directories (agents and skills get `model:` injection when configured); prompts render to `commands/{name}.md`; MCP merges into `.claude.json`'s `mcpServers` with deploy-time-expanded `env`/`headers`; hooks merge into settings.json with `_source` tagging; marketplaces merge into top-level `extraKnownMarketplaces`/`enabledPlugins`; `settings.yaml` keys gently merge into settings.json; models are skipped.
    - Factory Droid: agents go to droids/; commands are skipped (unless `droid_deploy: skill`); prompts and skills become `skills/{name}/` directories; MCP merges into mcp.json with a `type` field; models go to settings.json `customModels`; hooks, marketplaces, and settings are skipped.
    - OpenCode: agents/, commands/, skills/ layout; prompts render to `commands/{name}.md`; MCP merges into opencode.json with `command` as an array and `environment` instead of `env`; models go under opencode.json's `provider` key; hooks, marketplaces, and settings are skipped.
    - gptel: prompts only -- Poet/Jinja sources render to `{name}.json` (an array of role/content turns read by gptel-prompts.el); plain prompts are copied verbatim; every other item type is skipped.

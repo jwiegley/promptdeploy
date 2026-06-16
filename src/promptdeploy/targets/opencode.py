@@ -203,6 +203,10 @@ class OpenCodeTarget(Target):
     ) -> bool:
         return item_type in ("hook", "settings", "marketplace")
 
+    @property
+    def mcp_hash_includes_env(self) -> bool:
+        return True
+
     # ------------------------------------------------------------------
     # Deploy
     # ------------------------------------------------------------------

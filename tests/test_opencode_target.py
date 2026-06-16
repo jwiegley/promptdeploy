@@ -976,6 +976,10 @@ class TestTargetProperties:
         assert "opencode.json" in includes
         assert MANIFEST_FILENAME in includes
 
+    def test_mcp_hash_includes_env(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.mcp_hash_includes_env is True
+
 
 # ------------------------------------------------------------------
 # Hooks (no-op for OpenCode)
