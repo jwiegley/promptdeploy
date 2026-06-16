@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -38,6 +37,7 @@ class TestProperties:
         target = _make_target(tmp_path)
         includes = target.rsync_includes()
         assert includes is not None
+        assert "*.poet" in includes
         assert "*.json" in includes
         assert "*.txt" in includes
         assert "*.md" in includes
@@ -65,20 +65,16 @@ class TestShouldSkip:
 
 
 class TestDeployPrompt:
-    def test_poet_renders_to_json(self, tmp_path: Path):
+    def test_poet_copied_verbatim(self, tmp_path: Path):
         target = _make_target(tmp_path)
         src = tmp_path / "demo.poet"
         content = b"- role: system\n  content: Hello\n- role: user\n  content: Hi\n"
         src.write_bytes(content)
         target.deploy_prompt("demo", content, src)
 
-        dest = tmp_path / "prompts" / "demo.json"
+        dest = tmp_path / "prompts" / "demo.poet"
         assert dest.exists()
-        data = json.loads(dest.read_text())
-        assert data == [
-            {"role": "system", "content": "Hello"},
-            {"role": "user", "content": "Hi"},
-        ]
+        assert dest.read_bytes() == content
 
     def test_txt_copied_verbatim(self, tmp_path: Path):
         target = _make_target(tmp_path)
@@ -151,12 +147,18 @@ class TestDeployPrompt:
 class TestRemovePrompt:
     def test_removes_json(self, tmp_path: Path):
         target = _make_target(tmp_path)
+        (tmp_path / "prompts" / "demo.json").write_text("[]")
+        target.remove_prompt("demo")
+        assert not (tmp_path / "prompts" / "demo.json").exists()
+
+    def test_removes_poet(self, tmp_path: Path):
+        target = _make_target(tmp_path)
         src = tmp_path / "demo.poet"
         body = b"- role: system\n  content: x\n"
         src.write_bytes(body)
         target.deploy_prompt("demo", body, src)
         target.remove_prompt("demo")
-        assert not (tmp_path / "prompts" / "demo.json").exists()
+        assert not (tmp_path / "prompts" / "demo.poet").exists()
 
     def test_removes_txt(self, tmp_path: Path):
         target = _make_target(tmp_path)
@@ -207,7 +209,7 @@ class TestDeployedArtifactPath:
         body = b"- role: system\n  content: x\n"
         src.write_bytes(body)
         target.deploy_prompt("demo", body, src)
-        assert target.deployed_artifact_path("prompt", "demo") == Path("demo.json")
+        assert target.deployed_artifact_path("prompt", "demo") == Path("demo.poet")
 
     def test_returns_path_for_plain_extension(self, tmp_path: Path):
         target = _make_target(tmp_path)
@@ -229,7 +231,7 @@ class TestDeployedArtifactPath:
 class TestConsumeWarnings:
     def test_records_warnings_for_undefined_var(self, tmp_path: Path):
         target = _make_target(tmp_path)
-        src = tmp_path / "demo.poet"
+        src = tmp_path / "demo.j2"
         body = b"- role: system\n  content: 'hi {{ missing }}'\n"
         src.write_bytes(body)
         target.deploy_prompt("demo", body, src)
@@ -240,7 +242,7 @@ class TestConsumeWarnings:
 
     def test_no_warnings_when_no_undefined(self, tmp_path: Path):
         target = _make_target(tmp_path)
-        src = tmp_path / "demo.poet"
+        src = tmp_path / "demo.j2"
         body = b"- role: system\n  content: ok\n"
         src.write_bytes(body)
         target.deploy_prompt("demo", body, src)
@@ -260,6 +262,11 @@ class TestItemExists:
     def test_prompt_json_present(self, tmp_path: Path):
         target = _make_target(tmp_path)
         (tmp_path / "prompts" / "x.json").write_text("[]")
+        assert target.item_exists("prompt", "x") is True
+
+    def test_prompt_poet_present(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        (tmp_path / "prompts" / "x.poet").write_text("- role: system\n  content: x\n")
         assert target.item_exists("prompt", "x") is True
 
     def test_prompt_md_present(self, tmp_path: Path):
@@ -314,6 +321,15 @@ class TestWouldDeployBytes:
         body = b"- role: system\n  content: hi\n"
         src.write_bytes(body)
         target.deploy_prompt("demo", body, src)
+        on_disk = (tmp_path / "prompts" / "demo.poet").read_bytes()
+        assert target.would_deploy_bytes("prompt", "demo", body, src) == on_disk
+
+    def test_jinja_prompt_matches_deploy_output(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        src = tmp_path / "demo.j2"
+        body = b"- role: system\n  content: hi\n"
+        src.write_bytes(body)
+        target.deploy_prompt("demo", body, src)
         on_disk = (tmp_path / "prompts" / "demo.json").read_bytes()
         assert target.would_deploy_bytes("prompt", "demo", body, src) == on_disk
 
@@ -335,7 +351,7 @@ class TestReadDeployedBytes:
         target = _make_target(tmp_path)
         # Write a plain prompt at each supported extension and confirm the
         # reader finds it in priority order.
-        for ext in (".json", ".txt", ".md", ".org"):
+        for ext in (".poet", ".json", ".txt", ".md", ".org"):
             path = tmp_path / "prompts" / f"doc{ext}"
             path.write_bytes(f"content{ext}".encode())
             assert target.read_deployed_bytes("prompt", "doc") == (

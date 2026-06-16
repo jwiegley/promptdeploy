@@ -10,14 +10,18 @@ from promptdeploy.deploy import (
     _CLI_TYPE_TO_ITEM_TYPE,
     _TYPE_TO_CATEGORY,
     _deploy_item,
+    compute_item_hash,
     deploy,
 )
 from promptdeploy.manifest import (
     MANIFEST_FILENAME,
+    Manifest,
     ManifestItem,
     load_manifest,
     save_manifest,
 )
+from promptdeploy.source import SourceDiscovery
+from promptdeploy.targets import create_target
 
 
 def _make_source(tmp_path: Path) -> Path:
@@ -585,7 +589,7 @@ class TestPromptDeploy:
         assert skill.exists()
         assert "<instructions>" in skill.read_text()
 
-    def test_gptel_target_renders_json(self, tmp_path: Path):
+    def test_gptel_target_copies_poet(self, tmp_path: Path):
         src = self._build_source(tmp_path)
         target_dir = tmp_path / "gptel"
         target_dir.mkdir()
@@ -593,13 +597,9 @@ class TestPromptDeploy:
         config = _make_config(src, {"g": tc})
         deploy(config)
 
-        out = target_dir / "spanish.json"
+        out = target_dir / "spanish.poet"
         assert out.exists()
-        data = json.loads(out.read_text())
-        assert data == [
-            {"role": "system", "content": "Be helpful."},
-            {"role": "user", "content": "Translate this."},
-        ]
+        assert out.read_bytes() == (src / "prompts" / "spanish.poet").read_bytes()
 
     def test_prompt_removed_when_source_deleted(self, tmp_path: Path):
         src = self._build_source(tmp_path)
@@ -720,18 +720,18 @@ class TestPromptDeploy:
         tc = TargetConfig(id="g", type="gptel", path=target_dir)
         config = _make_config(src, {"g": tc})
         deploy(config)
-        assert (target_dir / "foo.json").exists()
+        assert (target_dir / "foo.poet").exists()
 
         # A user-authored stem-sibling must survive both transitions.
         unrelated = target_dir / "foo.org"
         unrelated.write_text("user authored")
 
-        # foo.poet -> foo.md: foo.md is written, the old foo.json removed.
+        # foo.poet -> foo.md: foo.md is written, the old foo.poet removed.
         (prompts / "foo.poet").unlink()
         (prompts / "foo.md").write_bytes(b"# heading\n")
         deploy(config)
         assert (target_dir / "foo.md").exists()
-        assert not (target_dir / "foo.json").exists()
+        assert not (target_dir / "foo.poet").exists()
         assert unrelated.read_text() == "user authored"
         manifest = load_manifest(target_dir / MANIFEST_FILENAME)
         assert manifest.items["prompts"]["foo"].target_path == "foo.md"
@@ -740,11 +740,45 @@ class TestPromptDeploy:
         (prompts / "foo.md").unlink()
         (prompts / "foo.poet").write_bytes(b"- role: system\n  content: hi\n")
         deploy(config)
-        assert (target_dir / "foo.json").exists()
+        assert (target_dir / "foo.poet").exists()
         assert not (target_dir / "foo.md").exists()
         assert unrelated.read_text() == "user authored"
         manifest = load_manifest(target_dir / MANIFEST_FILENAME)
-        assert manifest.items["prompts"]["foo"].target_path == "foo.json"
+        assert manifest.items["prompts"]["foo"].target_path == "foo.poet"
+
+    def test_gptel_legacy_poet_json_migrates_to_poet(self, tmp_path: Path):
+        """A gptel prompt that was previously rendered to .json must move to
+        .poet even when the source hash itself has not changed."""
+        src = tmp_path / "source"
+        src.mkdir()
+        prompts = src / "prompts"
+        prompts.mkdir()
+        body = b"- role: system\n  content: hi\n"
+        (prompts / "foo.poet").write_bytes(body)
+        target_dir = tmp_path / "gptel"
+        target_dir.mkdir()
+        tc = TargetConfig(id="g", type="gptel", path=target_dir)
+        config = _make_config(src, {"g": tc})
+
+        target = create_target(tc)
+        item = next(SourceDiscovery(src).discover_prompts())
+        manifest = Manifest()
+        manifest.items["prompts"] = {
+            "foo": ManifestItem(
+                source_hash=compute_item_hash(item, target, config),
+                target_path="foo.json",
+            )
+        }
+        save_manifest(manifest, target_dir / MANIFEST_FILENAME)
+        (target_dir / "foo.json").write_text("[]")
+
+        actions = deploy(config)
+
+        assert any(a.name == "foo" and a.action == "update" for a in actions)
+        assert (target_dir / "foo.poet").read_bytes() == body
+        assert not (target_dir / "foo.json").exists()
+        new_manifest = load_manifest(target_dir / MANIFEST_FILENAME)
+        assert new_manifest.items["prompts"]["foo"].target_path == "foo.poet"
 
     def test_gptel_stem_sibling_does_not_cause_churn(self, tmp_path: Path):
         """A user-authored stem-sibling must not shadow the deployed

@@ -467,7 +467,7 @@ def deploy(
                         source_path=item.path,
                     )
                     on_disk = target.read_deployed_bytes(item.item_type, item.name)
-                    if would is not None and on_disk is not None and would != on_disk:
+                    if would is not None and (on_disk is None or would != on_disk):
                         changed = True
 
                 if force or changed or not exists_on_target:

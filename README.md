@@ -13,7 +13,7 @@ The repository holds these types of content, all defined in simple Markdown or Y
 | Agents | `agents/*.md` | Specialized sub-agents (Markdown + YAML frontmatter) |
 | Commands | `commands/*.md` | Slash command prompts, `$ARGUMENTS` for user input; Codex receives generated skills because Codex does not expose a custom slash-command file surface |
 | Skills | `skills/*/SKILL.md` | Multi-file skill directories with a `SKILL.md` entry point |
-| Prompts | `prompts/*` | Prompt Poet (`.poet`/Jinja) or plain prompts, rendered per target: slash-command Markdown for the coding tools, role/content JSON for gptel |
+| Prompts | `prompts/*` | Prompt Poet (`.poet`/Jinja) or plain prompts, rendered per target: slash-command Markdown for the coding tools; gptel receives `.poet` files verbatim and Jinja variants as role/content JSON |
 | MCP Servers | `mcp/*.yaml` | Model Context Protocol server definitions |
 | Hooks | `hooks/*.yaml` | Claude Code and Codex hook groups for tool events |
 | Marketplaces | `marketplaces/*.yaml` | Claude Code plugin marketplaces + enabled plugins (Claude-only) |
@@ -37,7 +37,7 @@ The deploy pipeline works like this: discover all source items, filter by target
 
 ### Targets
 
-Targets are defined in `deploy.yaml`. Each has a type (`claude`, `codex`, `droid`, `opencode`, or `gptel`) and a path. Remote targets add a `host:` field and deploy via rsync over SSH. The `gptel` type receives only prompts, rendered as JSON for Emacs' gptel-prompts; the other coding-agent types receive the full content set they support.
+Targets are defined in `deploy.yaml`. Each has a type (`claude`, `codex`, `droid`, `opencode`, or `gptel`) and a path. Remote targets add a `host:` field and deploy via rsync over SSH. The `gptel` type receives only prompts: `.poet` files are copied for gptel-prompts to read directly, Jinja variants render to JSON, and plain prompts are copied verbatim. The other coding-agent types receive the full content set they support.
 
 One Claude Code detail worth knowing: MCP servers are deployed into each local profile's `.claude.json` (the user-scope `mcpServers` surface Claude Code actually reads), not `settings.json`. The merge is surgical, touching only the named server keys, so plain `claude` picks them up with no wrapper. Two caveats follow: `.claude.json` is machine-specific and never synced, so remote Claude targets skip MCP (manage those on the host directly); and a running `claude` session rewrites `.claude.json` from memory, so deploy MCP with sessions closed. To see what a profile actually serves, run `claude -p "Say ok" --output-format json --max-turns 1` and inspect the init event's `mcp_servers`.
 

@@ -1,11 +1,11 @@
 """gptel-prompts target implementation.
 
-Deploys prompts into a directory consumed by ``gptel-prompts.el``. For
-``.poet``/``.j2``/``.jinja`` sources, the file is rendered to ``{name}.json``
-(an array of role/content turns); the existing JSON handler in
-gptel-prompts.el reads this directly so no Jinja expansion is needed in
-Emacs. For plain prompts (``.txt``/``.md``/``.org``/``.json``) the file
-is copied verbatim.
+Deploys prompts into a directory consumed by ``gptel-prompts.el``. Native
+``.poet`` prompts are copied verbatim because gptel-prompts can read them
+directly. Jinja-flavoured poet sources (``.j2``/``.jinja``/``.jinja2``) are
+rendered to ``{name}.json`` so no external templating step is required in
+Emacs. Plain prompts (``.txt``/``.md``/``.org``/``.json``) are copied
+verbatim.
 
 This target only consumes prompts -- agents, commands, skills, MCP
 servers, hooks, and models are silently skipped.
@@ -23,6 +23,9 @@ from ..manifest import MANIFEST_FILENAME
 from ..poet import POET_EXTENSIONS, parse_poet, render_for_gptel
 from .base import Target
 
+_GPTEL_EXTENSIONS = (".poet", ".json", ".txt", ".md", ".org")
+_RENDERED_POET_EXTENSIONS = POET_EXTENSIONS - {".poet"}
+
 
 class GptelTarget(Target):
     """Deploy prompts into a gptel-prompts directory."""
@@ -39,6 +42,7 @@ class GptelTarget(Target):
 
     def rsync_includes(self) -> list[str] | None:
         return [
+            "*.poet",
             "*.json",
             "*.txt",
             "*.md",
@@ -79,13 +83,13 @@ class GptelTarget(Target):
     def _artifact_name(self, name: str, source_path: Path) -> str:
         """Filename this target writes for ``name`` given the source extension."""
         ext = source_path.suffix
-        if ext in POET_EXTENSIONS:
+        if ext in _RENDERED_POET_EXTENSIONS:
             return f"{name}.json"
         return f"{name}{ext}"
 
     def deploy_prompt(self, name: str, content: bytes, source_path: Path) -> None:
         dest = self._config_path / self._artifact_name(name, source_path)
-        if source_path.suffix in POET_EXTENSIONS:
+        if source_path.suffix in _RENDERED_POET_EXTENSIONS:
             doc = parse_poet(content, source_path=source_path)
             if doc.warnings:
                 self._warnings.append((name, list(doc.warnings)))
@@ -148,7 +152,7 @@ class GptelTarget(Target):
         # Legacy fallback for manifests written before we tracked
         # ``target_path``: probe each known extension. This preserves
         # cleanup of older deployments at the cost of being less precise.
-        for ext in (".json", ".txt", ".md", ".org"):
+        for ext in _GPTEL_EXTENSIONS:
             with contextlib.suppress(FileNotFoundError):
                 (self._config_path / f"{name}{ext}").unlink()
 
@@ -177,7 +181,7 @@ class GptelTarget(Target):
     def item_exists(self, item_type: str, name: str) -> bool:
         if item_type != "prompt":
             return False
-        for ext in (".json", ".txt", ".md", ".org"):
+        for ext in _GPTEL_EXTENSIONS:
             if (self._config_path / f"{name}{ext}").exists():
                 return True
         return False
@@ -195,7 +199,7 @@ class GptelTarget(Target):
         # following read_deployed_bytes() compares against the file deploy
         # owns rather than a stem-sibling found by extension probing.
         self._expected_artifact[name] = self._artifact_name(name, source_path)
-        if source_path.suffix in POET_EXTENSIONS:
+        if source_path.suffix in _RENDERED_POET_EXTENSIONS:
             doc = parse_poet(content, source_path=source_path)
             return render_for_gptel(doc)
         return content
@@ -218,7 +222,7 @@ class GptelTarget(Target):
         # Fallback for callers that did not establish an expected artifact:
         # find whichever extension is actually present, mirroring the
         # search order used by ``item_exists``.
-        for ext in (".json", ".txt", ".md", ".org"):
+        for ext in _GPTEL_EXTENSIONS:
             path = self._config_path / f"{name}{ext}"
             try:
                 return path.read_bytes()
