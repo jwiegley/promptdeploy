@@ -176,6 +176,15 @@ deploy does not abort activation: promptdeploy's output is captured to
 `~/.local/state/promptdeploy/deploy.log`) and a warning naming that log
 is printed.
 
+## Acknowledgements
+
+Many thanks to Isaac Shapira, who designed and built the `commands/fess.md`
+command. He leverages a key insight that LLM’s don’t actually reason, they
+only predict: so just as they can predict text that might not be what you
+asked for, they can also predict which bad choices you might agree that they
+just made. This offers a solid “finishing” command to find things that are
+bogus or invalid in the results the AI just generated for you.
+
 ## License
 
 BSD 3-Clause. See [LICENSE.md](LICENSE.md).
