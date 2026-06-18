@@ -9,19 +9,13 @@ providers:
     models:
       claude-haiku-4-5-20251001:
         display_name: "Claude Haiku 4.5"
-        max_output_tokens: 81920
-      claude-sonnet-4-6:
-        display_name: "Claude Sonnet 4.6"
-        max_output_tokens: 81920
+        max_output_tokens: 32768
       claude-opus-4-7:
         display_name: "Claude Opus 4.7"
-        max_output_tokens: 81920
-      claude-opus-4-8:
-        display_name: "Claude Opus 4.8"
-        max_output_tokens: 81920
-      claude-fable-5:
-        display_name: "Claude Fable 5"
-        max_output_tokens: 81920
+        max_output_tokens: 32768
+      claude-sonnet-4-6:
+        display_name: "Claude Sonnet 4.6"
+        max_output_tokens: 32768
 
   positron-google:
     display_name: "Positron"
@@ -194,8 +188,8 @@ providers:
         max_output_tokens: 65536
         context_limit: 202752
         output_limit: 65536
-      hera/GLM-5.1:
-        display_name: "GLM 5.1"
+      hera/GLM-5.2:
+        display_name: "GLM 5.2"
         max_output_tokens: 65536
         context_limit: 200000
         output_limit: 65536
@@ -329,7 +323,6 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
-        only: [hera]
       hera/omlx/Qwen3.6-35B-A3B-4bit-MTPLX-Optimized-Speed:
         display_name: "Qwen 3.6 35B A 3B 4BIT Mtplx Optimized Speed (MLX)"
         max_output_tokens: 65536
@@ -383,8 +376,8 @@ providers:
       GLM-4.7-Flash:
         display_name: "GLM 4.7 Flash"
         max_output_tokens: 128000
-      GLM-5.1:
-        display_name: "GLM 5.1"
+      GLM-5.2:
+        display_name: "GLM 5.2"
         max_output_tokens: 128000
       gpt-oss-120b:
         display_name: "GPT-OSS 120B"
@@ -497,7 +490,6 @@ providers:
         max_output_tokens: 128000
         context_limit: 262144
         output_limit: 65536
-        only: [hera]
       Qwen3.6-35B-A3B-4bit-MTPLX-Optimized-Speed:
         display_name: "Qwen 3.6 35B A 3B 4BIT Mtplx Optimized Speed (MLX)"
         max_output_tokens: 128000
@@ -551,8 +543,8 @@ providers:
         context_limit: 202752
         output_limit: 65536
         only: [hera]
-      GLM-5.1:
-        display_name: "GLM 5.1"
+      GLM-5.2:
+        display_name: "GLM 5.2"
         max_output_tokens: 128000
         context_limit: 200000
         output_limit: 65536
