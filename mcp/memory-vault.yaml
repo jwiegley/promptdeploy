@@ -1,5 +1,5 @@
 name: memory-vault
-description: Long-term memory (Memory Vault on vulcan) — hybrid semantic + keyword recall over saved notes, decisions, and project context, and store new memories across sessions. Tools: recall(query), remember(text), forget(chunk_id), memory_status(). Served over Streamable HTTP at memory-mcp.vulcan.lan.
+description: Long-term memory (Memory Vault on vulcan) — hybrid semantic + keyword recall over saved notes, decisions, and project context, and store new memories across sessions. Tools — recall(query), remember(text), forget(chunk_id), memory_status(). Served over Streamable HTTP at memory-mcp.vulcan.lan.
 url: https://memory-mcp.vulcan.lan/mcp
 scope: user
 enabled: true
