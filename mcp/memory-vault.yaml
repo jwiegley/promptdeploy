@@ -1,0 +1,29 @@
+name: memory-vault
+description: Long-term memory (Memory Vault on vulcan) — hybrid semantic + keyword recall over saved notes, decisions, and project context, and store new memories across sessions. Tools: recall(query), remember(text), forget(chunk_id), memory_status(). Served over Streamable HTTP at memory-mcp.vulcan.lan.
+url: https://memory-mcp.vulcan.lan/mcp
+scope: user
+enabled: true
+# Memory Vault MCP runs on vulcan (rootless podman quadlet → host PostgreSQL +
+# pgvector). The endpoint has NO app-layer auth — access is gated by the nginx
+# vhost's IP-allowlist (LAN 192.168.0.0/16 + the agent microVM subnets) and TLS
+# via the Vulcan step-ca, so no headers/token belong here. The client only needs
+# to (a) resolve *.vulcan.lan (the Technitium resolver) and (b) trust the Vulcan
+# CA root to validate the cert — the same prerequisites as other *.vulcan.lan
+# services. (stock-trader-mcp sidesteps (b) by baking the CA into its wrapper;
+# a plain URL MCP relies on the host's system trust store instead.)
+#
+# Streamable HTTP: FastMCP serves /mcp with NO trailing slash (/mcp/
+# 307-redirects). On Claude targets a `url` server is written as type:"http".
+#
+# Scoped to the personal machines hera, clio, and vulcan (Claude / Codex /
+# OpenCode). Deliberately NOT on the work configs (positron / git-ai / andoria)
+# or the vps. `claude-personal` is the local Claude config = hera (where
+# promptdeploy runs). Broaden this list to add more hosts/tools later.
+only:
+  - claude-personal # hera — Claude Code
+  - codex-hera # hera — Codex
+  - opencode-hera # hera — OpenCode
+  - opencode-clio # clio — OpenCode
+  - codex-clio # clio — Codex
+  - opencode-vulcan # vulcan — OpenCode
+  - claude-vulcan # vulcan — Claude Code
