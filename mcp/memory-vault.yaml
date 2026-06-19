@@ -15,15 +15,12 @@ enabled: true
 # Streamable HTTP: FastMCP serves /mcp with NO trailing slash (/mcp/
 # 307-redirects). On Claude targets a `url` server is written as type:"http".
 #
-# Scoped to the personal machines hera, clio, and vulcan (Claude / Codex /
-# OpenCode). Deliberately NOT on the work configs (positron / git-ai / andoria)
+# Scoped to the personal machines hera, clio, and vulcan (Claude Code + OpenCode only — Codex, Droid, and gptel excluded). Deliberately NOT on the work configs (positron / git-ai / andoria)
 # or the vps. `claude-personal` is the local Claude config = hera (where
 # promptdeploy runs). Broaden this list to add more hosts/tools later.
 only:
   - claude-personal # hera — Claude Code
-  - codex-hera # hera — Codex
   - opencode-hera # hera — OpenCode
   - opencode-clio # clio — OpenCode
-  - codex-clio # clio — Codex
   - opencode-vulcan # vulcan — OpenCode
   - claude-vulcan # vulcan — Claude Code
