@@ -13,3 +13,11 @@ makes. Factor in any fixes after that subagent runs into your main development
 work. However, don't run fess on commits you make to fix problems found by
 fess. That risks creating a feedback loop that prevents us from making
 progress. "Don't let the perfect become the enemy of the good."
+
+After each commit, also check for partner review observations in
+`doc/observations/`. If regular, non-hidden Markdown files are present, pause the
+main work and run the `partner-cleanup` command or `command-partner-cleanup`
+skill. Let that workflow address the captured observations through a subagent
+and make its cleanup commit before resuming the original task. New observations
+created by the reviewing partner after that cleanup commit can be handled in the
+next cycle.
