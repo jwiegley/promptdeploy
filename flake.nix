@@ -65,8 +65,27 @@
             mainProgram = "promptdeploy";
           };
         };
+
+        promptdeployDeploy = pkgs.writeShellScriptBin "promptdeploy-deploy" ''
+          exec ${pkgs.lib.getExe promptdeploy} deploy "$@"
+        '';
       in {
         packages.default = promptdeploy;
+
+        apps = {
+          default = {
+            type = "app";
+            program = "${promptdeployDeploy}/bin/promptdeploy-deploy";
+            meta.description =
+              "Run promptdeploy deploy in the packaged Nix environment";
+          };
+          promptdeploy = {
+            type = "app";
+            program = pkgs.lib.getExe promptdeploy;
+            meta.description =
+              "Run the promptdeploy CLI in the packaged Nix environment";
+          };
+        };
 
         checks = {
           ruff-format = pkgs.runCommand "ruff-format" { nativeBuildInputs = [ pkgs.ruff ]; } ''
@@ -104,7 +123,7 @@
             pkgs.ruff
             pkgs.lefthook
             # GNU rsync (not macOS openrsync) for remote deploys run from
-            # the dev shell (PYTHONPATH=src python -m promptdeploy ...).
+            # the dev shell.
             pkgs.rsync
           ];
         };

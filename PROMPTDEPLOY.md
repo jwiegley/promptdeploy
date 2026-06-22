@@ -226,10 +226,11 @@ direnv allow
 
 This drops you into a shell with Python 3.12, PyYAML, Jinja2, ruamel.yaml, pytest, pytest-cov, mypy, and ruff.
 
-Run the tool from source:
+Run deployment through the flake:
 
 ```bash
-PYTHONPATH=src python -m promptdeploy deploy --dry-run
+nix run . -- --dry-run
+nix run .
 ```
 
 ### Running from source with a virtualenv

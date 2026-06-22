@@ -11,10 +11,10 @@ help:
 	@echo "  force    Deploy, rewriting items even if unchanged"
 
 dry-run:
-	nix develop --command bash -c "PYTHONPATH=src python -m promptdeploy deploy --dry-run"
+	nix run . -- --dry-run
 
 deploy:
-	nix develop --command bash -c "PYTHONPATH=src python -m promptdeploy deploy"
+	nix run .
 
 force:
-	nix develop --command bash -c "PYTHONPATH=src python -m promptdeploy deploy --force"
+	nix run . -- --force

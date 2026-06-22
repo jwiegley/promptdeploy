@@ -76,8 +76,9 @@ nix develop
 # Alternative: direnv (note: .envrc is untracked/machine-local, not reproducible)
 direnv allow
 
-# Run from source
-PYTHONPATH=src python -m promptdeploy deploy --dry-run
+# Run deployment through the flake
+nix run . -- --dry-run
+nix run .
 
 # Run all tests (100% line+branch coverage enforced in pyproject.toml)
 PYTHONPATH=src python -m pytest tests/ --cov --cov-report=term-missing

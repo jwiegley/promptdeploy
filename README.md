@@ -108,8 +108,8 @@ promptdeploy settings reconcile [--target T] [--apply]
 **With Nix** (recommended):
 
 ```bash
-direnv allow   # Python 3.12 + all dependencies
-PYTHONPATH=src python -m promptdeploy deploy --dry-run
+nix run . -- --dry-run
+nix run .
 ```
 
 **With pip:**
