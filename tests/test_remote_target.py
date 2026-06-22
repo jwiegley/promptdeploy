@@ -64,6 +64,30 @@ class TestRemoteTargetProperties:
     ) -> None:
         assert remote_target.rsync_includes() == _MOCK_INCLUDES
 
+    def test_prepare_force_deploy_delegates_to_inner(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        remote_target.prepare_force_deploy("mcp", "srv", {"command": "cmd"})
+
+        mock_inner.prepare_force_deploy.assert_called_once_with(
+            "mcp", "srv", {"command": "cmd"}
+        )
+
+    def test_prepare_force_deploy_remote_mcp_does_not_delegate(
+        self, tmp_path: Path, mock_inner: MagicMock
+    ) -> None:
+        remote_target = RemoteTarget(
+            inner=mock_inner,
+            host="user@host",
+            remote_path=Path("/remote/target"),
+            staging_path=tmp_path / "staging",
+            remote_mcp=True,
+        )
+
+        remote_target.prepare_force_deploy("mcp", "srv", {"command": "cmd"})
+
+        mock_inner.prepare_force_deploy.assert_not_called()
+
 
 class TestRemoteTargetLifecycle:
     @patch("promptdeploy.targets.remote.ssh_exists", return_value=True)

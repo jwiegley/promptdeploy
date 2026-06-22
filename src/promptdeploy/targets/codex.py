@@ -134,6 +134,21 @@ class CodexTarget(Target):
     def mcp_hash_includes_env(self) -> bool:
         return True
 
+    def prepare_force_deploy(
+        self, item_type: str, name: str, metadata: dict[str, Any]
+    ) -> None:
+        if item_type == "mcp":
+            self._remove_unmanaged_table(["mcp_servers", name])
+        elif item_type == "models":
+            providers = metadata.get("providers")
+            if not isinstance(providers, dict):
+                return
+            for provider_id, provider in providers.items():
+                if isinstance(provider, dict) and isinstance(
+                    provider.get("codex"), dict
+                ):
+                    self._remove_unmanaged_table(["model_providers", str(provider_id)])
+
     # ------------------------------------------------------------------
     # Deploy
     # ------------------------------------------------------------------
@@ -610,6 +625,12 @@ class CodexTarget(Target):
             for line in self._config_text().splitlines()
         )
 
+    def _remove_unmanaged_table(self, table_path: list[str]) -> None:
+        if not self._config_path().exists():
+            return
+        text = self._remove_unmanaged_table_from_text(self._config_text(), table_path)
+        self._write_config_text(text.rstrip() + ("\n" if text.strip() else ""))
+
     def _unmanaged_table_exists(self, table_path: list[str]) -> bool:
         text = self._config_text()
         text_without_managed = self._remove_managed_blocks_from_text(text)
@@ -663,6 +684,75 @@ class CodexTarget(Target):
             kept.append(lines[i])
             i += 1
         return "".join(kept)
+
+    @classmethod
+    def _remove_unmanaged_table_from_text(cls, text: str, table_path: list[str]) -> str:
+        lines = text.splitlines(keepends=True)
+        kept: list[str] = []
+        i = 0
+        removing = False
+        while i < len(lines):
+            line = lines[i]
+            marker_kind, _marker_name = cls._parse_begin_marker(line)
+            if marker_kind is not None:
+                removing = False
+                kept.append(line)
+                i += 1
+                while i < len(lines):
+                    kept.append(lines[i])
+                    if cls._parse_end_marker(lines[i]) == marker_kind:
+                        i += 1
+                        break
+                    i += 1
+                continue
+
+            header_path = cls._parse_toml_table_header(line)
+            if header_path is not None:
+                if removing and not cls._table_path_is_under(header_path, table_path):
+                    removing = False
+                if header_path == table_path:
+                    removing = True
+                    i += 1
+                    continue
+
+            if not removing:
+                kept.append(line)
+            i += 1
+        return "".join(kept)
+
+    @staticmethod
+    def _table_path_is_under(path: list[str], parent: list[str]) -> bool:
+        return len(path) > len(parent) and path[: len(parent)] == parent
+
+    @classmethod
+    def _parse_toml_table_header(cls, line: str) -> list[str] | None:
+        stripped = line.strip()
+        if not stripped.startswith("["):
+            return None
+        sentinel = "__promptdeploy_table_probe"
+        try:
+            data = tomllib.loads(f"{line}\n{sentinel} = true\n")
+        except tomllib.TOMLDecodeError:
+            return None
+        return cls._find_toml_probe_path(data, sentinel, [])
+
+    @classmethod
+    def _find_toml_probe_path(
+        cls, value: object, sentinel: str, path: list[str]
+    ) -> list[str] | None:
+        if isinstance(value, dict):
+            if value.get(sentinel) is True:
+                return path
+            for key, child in value.items():
+                found = cls._find_toml_probe_path(child, sentinel, [*path, str(key)])
+                if found is not None:
+                    return found
+        elif isinstance(value, list):
+            for child in value:
+                found = cls._find_toml_probe_path(child, sentinel, path)
+                if found is not None:
+                    return found
+        return None
 
     @staticmethod
     def _append_block_to_text(text: str, kind: str, name: str, block: str) -> str:

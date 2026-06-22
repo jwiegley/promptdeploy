@@ -555,6 +555,112 @@ def test_deploy_mcp_rejects_unmanaged_duplicate(tmp_path: Path):
         target.deploy_mcp_server("srv", {"command": "cmd"})
 
 
+def test_prepare_force_deploy_mcp_removes_unmanaged_duplicate(tmp_path: Path):
+    target = _make_target(tmp_path)
+    config_path = tmp_path / ".codex" / "config.toml"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        "[mcp_servers.srv]\n"
+        'command = "manual"\n'
+        "\n"
+        "[mcp_servers.srv.env]\n"
+        'TOKEN = "manual"\n'
+        "\n"
+        "[mcp_servers.keep]\n"
+        'command = "keep"\n'
+    )
+
+    target.prepare_force_deploy("mcp", "srv", {})
+    target.deploy_mcp_server("srv", {"command": "cmd"})
+
+    data = _read_toml(config_path)
+    assert data["mcp_servers"]["srv"] == {"command": "cmd"}
+    assert data["mcp_servers"]["keep"] == {"command": "keep"}
+
+
+def test_prepare_force_deploy_mcp_preserves_managed_blocks(tmp_path: Path):
+    target = _make_target(tmp_path)
+    config_path = tmp_path / ".codex" / "config.toml"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        "# >>> promptdeploy codex mcp managed\n"
+        "[mcp_servers.managed]\n"
+        'command = "managed"\n'
+        "# <<< promptdeploy codex mcp managed\n"
+        "\n"
+        "[mcp_servers.srv]\n"
+        'command = "manual"\n'
+    )
+
+    target.prepare_force_deploy("mcp", "srv", {})
+
+    text = config_path.read_text("utf-8")
+    assert "# >>> promptdeploy codex mcp managed" in text
+    assert "[mcp_servers.managed]" in text
+    assert "[mcp_servers.srv]" not in text
+
+
+def test_prepare_force_deploy_missing_config_noops(tmp_path: Path):
+    target = _make_target(tmp_path)
+
+    target.prepare_force_deploy("mcp", "srv", {})
+    target.prepare_force_deploy("models", "models", {"providers": []})
+    target.prepare_force_deploy("agent", "helper", {})
+
+    assert not (tmp_path / ".codex" / "config.toml").exists()
+
+
+def test_prepare_force_deploy_models_removes_codex_provider_duplicate(
+    tmp_path: Path,
+):
+    target = _make_target(tmp_path)
+    config_path = tmp_path / ".codex" / "config.toml"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        "[model_providers.proxy]\n"
+        'name = "Manual"\n'
+        "\n"
+        "[model_providers.keep]\n"
+        'name = "Keep"\n'
+    )
+
+    target.prepare_force_deploy(
+        "models",
+        "models",
+        {
+            "providers": {
+                "proxy": {"codex": {}},
+                "ignored": {},
+                "invalid": [],
+            }
+        },
+    )
+
+    data = _read_toml(config_path)
+    assert "proxy" not in data["model_providers"]
+    assert data["model_providers"]["keep"] == {"name": "Keep"}
+
+
+def test_toml_table_header_parser_edge_cases():
+    assert CodexTarget._parse_toml_table_header("[[mcp_servers.srv]]\n") == [
+        "mcp_servers",
+        "srv",
+    ]
+    assert CodexTarget._parse_toml_table_header("[bad\n") is None
+    assert CodexTarget._parse_toml_table_header("command = 'x'\n") is None
+    assert CodexTarget._find_toml_probe_path(
+        {"first": {}, "second": {"__probe": True}}, "__probe", []
+    ) == ["second"]
+    assert CodexTarget._find_toml_probe_path(["plain"], "__probe", []) is None
+    unclosed_marker = "# >>> promptdeploy codex mcp managed\n"
+    assert (
+        CodexTarget._remove_unmanaged_table_from_text(
+            unclosed_marker, ["mcp_servers", "srv"]
+        )
+        == unclosed_marker
+    )
+
+
 def test_deploy_models_writes_codex_providers_and_removes_stale(tmp_path: Path):
     target = _make_target(tmp_path)
     target.deploy_models(

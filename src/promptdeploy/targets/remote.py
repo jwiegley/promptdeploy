@@ -148,6 +148,12 @@ class RemoteTarget(Target):
     def content_fingerprint(self, item_type: str) -> str | None:
         return self._inner.content_fingerprint(item_type)
 
+    def prepare_force_deploy(
+        self, item_type: str, name: str, metadata: dict[str, Any]
+    ) -> None:
+        if not self._remote_mcp:
+            self._inner.prepare_force_deploy(item_type, name, metadata)
+
     def deploy_agent(self, name: str, content: bytes) -> None:
         self._inner.deploy_agent(name, content)
 

@@ -1,6 +1,7 @@
 """Integration tests for the deploy orchestration."""
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -1396,6 +1397,75 @@ class TestForce:
 
         manifest = load_manifest(tc.path / MANIFEST_FILENAME)
         assert "helper" in manifest.items.get("agents", {})
+
+    def test_force_overwrites_codex_unmanaged_mcp_table(self, tmp_path: Path):
+        src = tmp_path / "source"
+        src.mkdir()
+        mcp_dir = src / "mcp"
+        mcp_dir.mkdir()
+        (mcp_dir / "context-hub.yaml").write_text(
+            "command: managed-context-hub\nargs:\n  - --stdio\n"
+        )
+
+        target_root = tmp_path / "codex-home"
+        target_root.mkdir()
+        config_path = target_root / ".codex" / "config.toml"
+        config_path.parent.mkdir()
+        config_path.write_text(
+            "[mcp_servers.context-hub]\n"
+            'command = "manual-context-hub"\n'
+            "\n"
+            "[mcp_servers.keep]\n"
+            'command = "keep"\n'
+        )
+
+        tc = TargetConfig(id="codex", type="codex", path=target_root)
+        config = _make_config(src, {tc.id: tc})
+
+        actions = deploy(config, force=True)
+
+        assert [a.action for a in actions] == ["create"]
+        data = tomllib.loads(config_path.read_text("utf-8"))
+        assert data["mcp_servers"]["context-hub"]["command"] == ("managed-context-hub")
+        assert data["mcp_servers"]["keep"]["command"] == "keep"
+
+    def test_force_overwrites_codex_unmanaged_model_provider(self, tmp_path: Path):
+        src = tmp_path / "source"
+        src.mkdir()
+        (src / "models.yaml").write_text(
+            "providers:\n"
+            "  proxy:\n"
+            "    display_name: Proxy\n"
+            "    base_url: https://proxy.example/v1\n"
+            "    codex: {}\n"
+            "    models:\n"
+            "      gpt-x: {}\n"
+        )
+
+        target_root = tmp_path / "codex-home"
+        target_root.mkdir()
+        config_path = target_root / ".codex" / "config.toml"
+        config_path.parent.mkdir()
+        config_path.write_text(
+            "[model_providers.proxy]\n"
+            'name = "Manual"\n'
+            "\n"
+            "[model_providers.keep]\n"
+            'name = "Keep"\n'
+        )
+
+        tc = TargetConfig(id="codex", type="codex", path=target_root)
+        config = _make_config(src, {tc.id: tc})
+
+        actions = deploy(config, force=True)
+
+        assert [a.action for a in actions] == ["create"]
+        data = tomllib.loads(config_path.read_text("utf-8"))
+        assert data["model_providers"]["proxy"]["name"] == "Proxy"
+        assert data["model_providers"]["proxy"]["base_url"] == (
+            "https://proxy.example/v1"
+        )
+        assert data["model_providers"]["keep"] == {"name": "Keep"}
 
 
 class TestCacheInvalidation:

@@ -518,10 +518,18 @@ def deploy(
                                 filtered = _filter_models_config(
                                     item.metadata or {}, target_id, config
                                 )
+                                if force:
+                                    target.prepare_force_deploy(
+                                        item.item_type, item.name, filtered
+                                    )
                                 _deploy_item(
                                     target, item, filtered_models_config=filtered
                                 )
                             else:
+                                if force:
+                                    target.prepare_force_deploy(
+                                        item.item_type, item.name, item.metadata or {}
+                                    )
                                 _deploy_item(target, item)
 
                         # Drain any warnings the target collected during this

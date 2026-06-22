@@ -92,6 +92,16 @@ class Target(ABC):
         """
         return None
 
+    def prepare_force_deploy(
+        self, item_type: str, name: str, metadata: dict[str, Any]
+    ) -> None:
+        """Clear target-specific unmanaged state before a forced deploy.
+
+        Most targets overwrite files directly, so they need no preparation.
+        Targets that merge into shared config files can override this to remove
+        an unmanaged entry that would otherwise block the managed write.
+        """
+
     @property
     def remote_mcp_hash(self) -> bool:
         """True when this target bakes deploy-time-expanded MCP secrets into a
