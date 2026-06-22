@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 dependencies = ["PyYAML>=6.0", "Jinja2>=3.1", "ruamel.yaml>=0.18"]
 
 [project.optional-dependencies]
-dev = ["mypy", "pytest>=8.0", "pytest-cov", "types-PyYAML"]
+dev = ["pytest>=8.0", "pytest-cov", "types-PyYAML"]
 
 [project.scripts]
 promptdeploy = "promptdeploy.cli:main"

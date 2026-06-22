@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import pytest
 
+from promptdeploy.targets.base import Target
 from promptdeploy.targets.claude import ClaudeTarget
 from promptdeploy.targets.remote import RemoteTarget
 
@@ -18,7 +19,7 @@ _MOCK_PUSH_INCLUDES = ["agents/", "agents/**", ".manifest.json"]
 @pytest.fixture
 def mock_inner() -> MagicMock:
     """Create a mock inner target with all required methods."""
-    inner = MagicMock()
+    inner = create_autospec(Target, instance=True)
     inner.id = "test-target"
     inner.manifest_path.return_value = Path("/staging/.manifest.json")
     inner.item_exists.return_value = True

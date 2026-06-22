@@ -9,7 +9,7 @@ pre-commit:
       run: ruff check {staged_files}
     mypy:
       glob: "*.py"
-      run: uv run --extra dev mypy src/ tests/
+      run: nix develop --command env PYTHONPATH=src mypy src/ tests/
     nix-check:
       glob: "*.{py,nix,toml,yaml}"
       run: nix flake check --no-warn-dirty 2>&1
