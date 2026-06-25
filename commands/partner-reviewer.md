@@ -1,5 +1,5 @@
 ---
-description: Watch new commits and publish one atomic observation file per actionable review finding
+description: Watch new commits and publish one atomic observation file per actionable review finding or worthwhile new idea
 argument-hint: [optional baseline ref, commit range, or poll interval seconds]
 ---
 
@@ -84,6 +84,44 @@ For each commit SHA:
 6. Drop vague preferences, style nits, low-confidence concerns, and duplicate
    findings. Prefer zero observations over noisy observations.
 
+## Ideas and Suggestions
+
+Beyond defects, surface genuinely useful new ideas, creative insights, and
+suggestions on approach or direction sparked by the commit under review:
+better designs, missing capabilities, follow-on optimizations, simpler
+formulations, or where the work could go next.
+
+This is strictly opt-in on quality. Include an idea only when it is concrete,
+grounded in the code you just read, and clearly valuable. If you have no ideas,
+or the ideas are weak, leave them out — silence is better than noise. Never pad
+a review with speculative directions to look thorough.
+
+Be playful and think laterally. Instead of refining the obvious solution
+head-on, move sideways: reframe the problem, attack it from an oblique angle,
+and let unexpected associations suggest approaches a straight-line analysis
+would never reach. The best ideas often come from refusing the obvious frame,
+so for each commit that sparks something, run this ideation pass:
+
+1. **Identify the hidden assumptions** the commit takes for granted (about the
+   data, the hardware, the workflow, the order of operations, what "must" be
+   true).
+2. **Invert one assumption** and follow where that leads.
+3. **Generate three "wild" ideas** that violate conventional thinking while
+   remaining physically and ethically possible.
+4. **Borrow one technique from an unrelated discipline** (biology, logistics,
+   music, finance, game design, etc.) and apply it here.
+5. **Explain why each seemingly crazy idea might actually work** — the concrete
+   mechanism that makes it plausible, not just the vibe.
+
+Keep the playfulness in service of usefulness: a wild idea still has to be
+concrete and grounded enough to act on. Discard the ones that are only clever.
+
+Publish each idea worth keeping as its own observation file using the same
+contract below, with `Category: Idea` and a severity reflecting its value
+(usually `Low`). State the idea, why it helps, a concrete first step, and how to
+validate it. Tie it to the commit that inspired it. Ideas are distinct from
+defects: do not let them displace or dilute the actionable-defect findings.
+
 ## Observation File Contract
 
 Create one Markdown file per actionable finding. Each file must be complete
@@ -97,7 +135,7 @@ Use this shape:
 - **Source commit**: `<full-sha>`
 - **Observed at**: `<ISO-8601 UTC timestamp with milliseconds>`
 - **Severity**: Critical | High | Medium | Low
-- **Category**: Bug | Security | Performance | Test Coverage | Documentation | Maintainability
+- **Category**: Bug | Security | Performance | Test Coverage | Documentation | Maintainability | Idea
 - **File**: `path/to/file.ext:line`
 - **Confidence**: <0-100>
 
@@ -117,6 +155,11 @@ Use this shape:
 
 <Tests, commands, or manual checks that should prove the fix.>
 ```
+
+For `Category: Idea` files, keep the same headers but read them as: **Problem**
+= the idea and the gap it addresses, **Impact** = why it is worth doing,
+**Suggested Fix** = a concrete first step, **Verification** = how to validate it
+pays off.
 
 Use the full ISO timestamp as the filename:
 
@@ -148,6 +191,7 @@ After each reviewed commit, report:
 
 - The commit reviewed.
 - The number of actionable observations written.
+- The number of idea observations written, if any.
 - The observation filenames written, if any.
 
 Keep running after reporting unless the user stops the loop.
