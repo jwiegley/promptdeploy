@@ -7,6 +7,14 @@ always know exactly what has been done, what remains, and where and how we can
 pick up the task and execute it to completion if anything happens to the
 machine and we need to start a fresh AI session.
 
+After every context compaction, before doing any new work, re-read this
+`wiggum` command and then re-read the current tasks and handoff document in
+full. Use those documents as the authoritative resume point so work continues
+from exactly where it was left off before compaction. If a running journal is
+being kept, for example by the `journal` command, also re-read the journal's
+preface before resuming; then read any recent entries needed to recover the
+latest durable learnings.
+
 Each time you make a commit, spawn a subagent that uses the `fess` or
 `command-fess` skill to double-check the work you've added and the claims it
 makes. Before spawning that subagent, read the commit description and choose the
