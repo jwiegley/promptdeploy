@@ -25,7 +25,12 @@ First gather evidence:
 - If a measurement would be useful but has not been taken, say so plainly rather
   than inventing one.
 
-Write the sitrep in Markdown with these sections:
+Write the sitrep in a Markdown file in the /tmp directory following the strict
+naming scheme `YYYYMMDDTHHMM-SITREP-$PROJECT-$BRANCH.md` -- with the
+`YYYYMMDDTHHMM` being replaced by a timestamp having that format (in local
+time for the server), and `$PROJECT` being replaced by the name of the
+repository or project, and `$BRANCH` being replaced by the name of the branch
+with any ’/’ characters replaced by ’-’ -- with these sections:
 
 ## Aim
 
