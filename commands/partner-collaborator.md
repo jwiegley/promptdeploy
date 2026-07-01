@@ -11,9 +11,9 @@ that commit and publish every actionable finding as its own Markdown file under
 `doc/observations/`.
 
 This command is agent-neutral: use it from Claude Code, Codex, or another
-coding agent. Use the local deep review command or skill if available
-(`/deep-review`, `command-deep-review`, or equivalent). If no deep-review
-command is available, perform the same multi-pass review manually.
+coding agent. Use the local `deep-review` command or skill if available. If no
+deep-review capability is available, perform the same multi-pass review
+manually.
 
 ## Arguments
 
@@ -70,9 +70,9 @@ For each commit SHA:
 1. Inspect the commit metadata and file list:
    `git show --stat --oneline --decorate <sha>`
    `git diff-tree --no-commit-id --name-only -r <sha>`
-2. Invoke the deep review command or skill against exactly that commit, treating
-   it like a PR. For example, call `/deep-review <sha>^!` in Claude Code or use
-   the `command-deep-review` skill in Codex with `<sha>^!` as its argument.
+2. Invoke the `deep-review` command or skill against exactly that commit,
+   treating it like a PR -- for example, run `deep-review` with `<sha>^!` as its
+   argument.
 3. If the local deep-review tool does not accept `<sha>^!`, review the output of
    `git show --find-renames --find-copies --stat --patch <sha>` directly.
 4. Focus on actionable defects: correctness bugs, security problems,

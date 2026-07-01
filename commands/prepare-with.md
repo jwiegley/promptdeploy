@@ -2,7 +2,7 @@
 description: Use the named agents to deeply analyze the project and give expert guidance for constructing its CLAUDE.md
 ---
 
-Use $ARGUMENTS to deeply analyze and understand the current project, so that you may provide expert guidance on the construction of a CLAUDE.md file that may be used to prepare future sessions for modification and improvement of the code here. Use sequential-thinking and Perplexity MCP as much as needed to research community best practices, coding guidelines, available libraries, etc.
+Treat `$ARGUMENTS` as the named agents to enlist. Use those agents to deeply analyze and understand the current project, so that you may provide expert guidance on the construction of a CLAUDE.md file that may be used to prepare future sessions for modification and improvement of the code here. Use sequential-thinking and Perplexity MCP as much as needed to research community best practices, coding guidelines, available libraries, etc.
 
 What to add:
 

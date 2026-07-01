@@ -1,3 +1,7 @@
+---
+description: Bring work to a good stopping point -- record everything in the handoff document, commit and push, then produce a comprehensive plan and requirements document defining the remaining scope and how completion is verified.
+---
+
 Bring your work to a good place to stop for now. Recording everything in the
 handoff document, commit all of your work and push it, and then report to me
 when you are done and how to resume this in another AI session.
