@@ -44,3 +44,29 @@ skill. Let that workflow address the captured observations through a subagent
 and make its cleanup commit before resuming the original task. New observations
 created by the reviewing partner after that cleanup commit can be handled in the
 next cycle.
+
+You should also restack (or rebase, if not using Graophite) your branch
+against the base branch regularly. If this branch is part of a Graphite stack,
+then rebase from the base of the stack up to the present branch (but not
+above).
+
+You should also commit regularly as well, so that work is tracked and we have
+an historical record of how the work has developed.
+
+When restacking, use the `restack` or $command-restack skill. If Graphite is
+not being used, then use the `rebase` and `resolve` skills (or $command-rebase
+and $command-resolve). When commits are being created use the `commit or
+$command-commit skill to ensure that a logical sequence of commits is created
+from the work in the working tree.
+
+Each of these -- both restacking/rebasing and committing -- should be done
+hourly, but staggered so that if a restack occurs now, then a commit happens
+no less than a half hour from now; and then, no less than a half hour later,
+another restack occurs, etc., repeating until the goal is achieved.
+
+But do not ever wait around for the commit or restack/rebase checkpoint to
+occur. Commits and restacking/rebasing should happen as soon after the delay
+period as makes sense within the flow of the work you're doing, but it's not a
+hard time limit, it shouldn't be taken as an absolute. I just meant that "at
+least thirty minutes after the latest restack or commit is when the next
+commit or restack should occur."
