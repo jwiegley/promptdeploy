@@ -1,19 +1,10 @@
-Continue autonomously until all tasks are completed and parity is achieved (provided you have a known target, otherwise just work until all objectives of the current plan have been completed and verified).
+---
+description: Turn on autonomous-continuation mode -- run, checkpoint, and verify until done, following the wiggum loop methodology
+disable-model-invocation: true
+---
 
-As you work, maintain and update a tasks and handoff document so that we always know exactly what has been done, what remains, and where and how we can pick up the task and execute it to completion if anything happens to the machine and we need to start a fresh AI session.
+Enter autonomous-continuation mode for the current work: keep going, without pausing for confirmation, until the Definition of Done holds -- all planned tasks complete and independently verified, or, if a reference target was named, parity with it achieved -- or until a stop-and-escalate condition requires the human.
 
-After every context compaction, before doing any new work, re-read this `wiggum` command and then re-read the current tasks and handoff document in full. Use those documents as the authoritative resume point so work continues from exactly where it was left off before compaction. If a running journal is being kept, for example by the `journal` command, also re-read the journal's preface before resuming; then read any recent entries needed to recover the latest durable learnings.
+Follow the `wiggum` skill for the full loop methodology: the Definition of Done and stop-and-escalate criteria; the durable plan/handoff/journal state; baseline re-verification after every context compaction; the work -> commit -> audit -> partner-cleanup -> restack loop; the work-unit (not wall-clock) cadence; subagent fan-out limits via the `parallelize` skill; and PAL consensus for significant decisions.
 
-Each time you make a commit, spawn a subagent that uses the `fess` or `command-fess` skill to double-check the work you've added and the claims it makes. Before spawning that subagent, read the commit description and choose the audit scope: anywhere from 1 to 10 recent commits, inclusive, based on how much surrounding history appears relevant to the changes under review. Use one commit for isolated work; expand the range when the description suggests follow-up work, stacked changes, refactors, shared infrastructure, earlier groundwork, or claims whose truth depends on previous commits. Include the selected commit SHAs and why that range was chosen. When spawning the subagent, include a context snapshot in the prompt so the fess run can audit the selected commit range against the full context that led to it. The snapshot must include the original user request, the current plan and handoff state, relevant design decisions and tradeoffs, notable commands and verification results, the commit SHA or SHAs being audited, the files changed, and the specific claims the main agent has made about the work. Preserve exact wording for requirements and claims when practical; if the context is too large, include a dense summary plus any exact excerpts needed to avoid losing intent. Factor in any fixes after that subagent runs into your main development work. However, don't run fess on commits you make to fix problems found by fess. That risks creating a feedback loop that prevents us from making progress. "Don't let the perfect become the enemy of the good."
-
-After each commit, also check for partner review observations in `doc/observations/`. If regular, non-hidden Markdown files are present, pause the main work and run the `partner-cleanup` command or `command-partner-cleanup` skill. Let that workflow address the captured observations through a subagent and make its cleanup commit before resuming the original task. New observations created by the reviewing partner after that cleanup commit can be handled in the next cycle.
-
-You should also restack (or rebase, if not using Graophite) your branch against the base branch regularly. If this branch is part of a Graphite stack, then rebase from the base of the stack up to the present branch (but not above).
-
-You should also commit regularly as well, so that work is tracked and we have an historical record of how the work has developed.
-
-When restacking, use the `restack` or $command-restack skill. If Graphite is not being used, then use the `rebase` and `resolve` skills (or $command-rebase and $command-resolve). When commits are being created use the `commit or $command-commit skill to ensure that a logical sequence of commits is created from the work in the working tree.
-
-Each of these -- both restacking/rebasing and committing -- should be done hourly, but staggered so that if a restack occurs now, then a commit happens no less than a half hour from now; and then, no less than a half hour later, another restack occurs, etc., repeating until the goal is achieved.
-
-But do not ever wait around for the commit or restack/rebase checkpoint to occur. Commits and restacking/rebasing should happen as soon after the delay period as makes sense within the flow of the work you're doing, but it's not a hard time limit, it shouldn't be taken as an absolute. I just meant that "at least thirty minutes after the latest restack or commit is when the next commit or restack should occur."
+$ARGUMENTS
