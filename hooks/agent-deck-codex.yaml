@@ -1,0 +1,32 @@
+name: agent-deck-codex
+description: Agent Deck lifecycle hooks for Codex status tracking.
+only:
+  - codex
+codex:
+  notify:
+    - agent-deck
+    - codex-notify
+hooks:
+  SessionStart:
+    - matcher: "startup|resume|clear|compact"
+      hooks:
+        - type: command
+          command: agent-deck hook-handler
+  UserPromptSubmit:
+    - hooks:
+        - type: command
+          command: agent-deck hook-handler
+  Stop:
+    - hooks:
+        - type: command
+          command: agent-deck hook-handler
+  PermissionRequest:
+    - matcher: "*"
+      hooks:
+        - type: command
+          command: agent-deck hook-handler
+  PreCompact:
+    - matcher: "manual|auto"
+      hooks:
+        - type: command
+          command: agent-deck hook-handler

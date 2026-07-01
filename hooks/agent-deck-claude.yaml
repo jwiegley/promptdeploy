@@ -1,0 +1,38 @@
+name: agent-deck-claude
+description: Agent Deck lifecycle hooks for Claude Code status tracking.
+only:
+  - claude
+hooks:
+  SessionStart:
+    - hooks:
+        - type: command
+          command: agent-deck hook-handler
+          async: true
+  UserPromptSubmit:
+    - hooks:
+        - type: command
+          command: agent-deck hook-handler
+          async: true
+  Stop:
+    - hooks:
+        - type: command
+          command: agent-deck hook-handler
+  PermissionRequest:
+    - hooks:
+        - type: command
+          command: agent-deck hook-handler
+  Notification:
+    - matcher: "permission_prompt|elicitation_dialog"
+      hooks:
+        - type: command
+          command: agent-deck hook-handler
+          async: true
+  SessionEnd:
+    - hooks:
+        - type: command
+          command: agent-deck hook-handler
+          async: true
+  PreCompact:
+    - hooks:
+        - type: command
+          command: agent-deck hook-handler
