@@ -41,6 +41,17 @@ _AGENT_DROP_KEYS = ("tools", "version")
 _ENV_REF_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
 _BEARER_ENV_REF_RE = re.compile(r"^Bearer\s+\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
 _BARE_TOML_KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_AGENT_DECK_NOTIFY_EXACT_LINE_RE = re.compile(
+    r"^\s*notify\s*=\s*\[\s*[\"']agent-deck[\"']\s*,\s*"
+    r"[\"']codex-notify[\"']\s*\]\s*$"
+)
+_AGENT_DECK_LEGACY_NOTIFY_PROGRAM_RE = re.compile(
+    r"(?i)^\s*program\s*=\s*\[\s*[\"']agent-deck[\"']\s*,\s*"
+    r"[\"']codex-notify[\"']\s*\]\s*$"
+)
+_AGENT_DECK_NOTIFY_MARKER_BEGIN = "# BEGIN AGENTDECK CODEX NOTIFY"
+_AGENT_DECK_NOTIFY_MARKER_END = "# END AGENTDECK CODEX NOTIFY"
+_AGENT_DECK_NOTIFY_VALUE = ["agent-deck", "codex-notify"]
 _BEGIN_PREFIX = "# >>> promptdeploy codex "
 _END_PREFIX = "# <<< promptdeploy codex "
 
@@ -248,6 +259,12 @@ class CodexTarget(Target):
             self._append_managed_block("model_provider", provider_id, block)
 
     def deploy_hook(self, name: str, config: dict[str, Any]) -> None:
+        notify = self._codex_notify_config(config)
+        if notify is None:
+            self._remove_managed_block_if_config_exists("notify", name)
+        else:
+            self._deploy_codex_notify(name, notify)
+
         path = self._hooks_path()
         data = self._load_json(path)
         hooks = self._ensure_dict(data, "hooks")
@@ -303,6 +320,8 @@ class CodexTarget(Target):
         self._remove_managed_blocks_by_kind("model_provider")
 
     def remove_hook(self, name: str) -> None:
+        self._remove_managed_block_if_config_exists("notify", name)
+
         path = self._hooks_path()
         if not path.exists():
             return
@@ -342,14 +361,13 @@ class CodexTarget(Target):
         if item_type == "hook":
             data = self._load_json(self._hooks_path())
             hooks = data.get("hooks")
-            if not isinstance(hooks, dict):
-                return False
-            return any(
+            has_hook = isinstance(hooks, dict) and any(
                 isinstance(entry, dict) and entry.get("_source") == name
                 for entries in hooks.values()
                 if isinstance(entries, list)
                 for entry in entries
             )
+            return has_hook or self._has_managed_block("notify", name)
         return False
 
     def would_deploy_bytes(
@@ -600,6 +618,13 @@ class CodexTarget(Target):
             self._remove_managed_block_from_text(self._config_text(), kind, name)
         )
 
+    def _remove_managed_block_if_config_exists(self, kind: str, name: str) -> None:
+        if not self._config_path().exists():
+            return
+        if not self._has_managed_block(kind, name):
+            return
+        self._remove_managed_block(kind, name)
+
     def _remove_managed_blocks_by_kind(self, kind: str) -> None:
         if not self._config_path().exists():
             return
@@ -624,6 +649,21 @@ class CodexTarget(Target):
             self._parse_begin_marker(line)[0] == kind
             for line in self._config_text().splitlines()
         )
+
+    def _has_managed_block(self, kind: str, name: str) -> bool:
+        return any(
+            self._parse_begin_marker(line) == (kind, name)
+            for line in self._config_text().splitlines()
+        )
+
+    @classmethod
+    def _managed_block_names_from_text(cls, text: str, kind: str) -> list[str]:
+        names: list[str] = []
+        for line in text.splitlines():
+            marker_kind, marker_name = cls._parse_begin_marker(line)
+            if marker_kind == kind and marker_name is not None:
+                names.append(marker_name)
+        return names
 
     def _remove_unmanaged_table(self, table_path: list[str]) -> None:
         if not self._config_path().exists():
@@ -765,6 +805,18 @@ class CodexTarget(Target):
         )
 
     @staticmethod
+    def _prepend_block_to_text(text: str, kind: str, name: str, block: str) -> str:
+        text = text.strip()
+        prefix = (
+            f"{_BEGIN_PREFIX}{kind} {name}\n"
+            f"{block.rstrip()}\n"
+            f"{_END_PREFIX}{kind} {name}\n"
+        )
+        if not text:
+            return prefix
+        return f"{prefix}\n{text}\n"
+
+    @staticmethod
     def _parse_begin_marker(line: str) -> tuple[str | None, str | None]:
         stripped = line.strip()
         if not stripped.startswith(_BEGIN_PREFIX):
@@ -842,6 +894,114 @@ class CodexTarget(Target):
         if _BARE_TOML_KEY_RE.fullmatch(key):
             return key
         return json.dumps(key)
+
+    # ------------------------------------------------------------------
+    # Codex notify helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _codex_notify_config(config: dict[str, Any]) -> list[Any] | None:
+        codex = config.get("codex")
+        if not isinstance(codex, dict):
+            return None
+        notify = codex.get("notify")
+        return notify if isinstance(notify, list) else None
+
+    def _deploy_codex_notify(self, name: str, notify: list[Any]) -> None:
+        text = self._config_text()
+        other_names = [
+            block_name
+            for block_name in self._managed_block_names_from_text(text, "notify")
+            if block_name != name
+        ]
+        if other_names:
+            raise CodexConfigError(
+                f"Cannot deploy Codex notify for hook '{name}': notify is already "
+                f"managed by hook '{other_names[0]}' in {self._config_path()}"
+            )
+
+        text = self._remove_managed_block_from_text(text, "notify", name)
+        if notify == _AGENT_DECK_NOTIFY_VALUE:
+            text = self._remove_agent_deck_notify_from_text(text)
+        self._assert_no_unmanaged_notify(name, text)
+
+        block = self._render_toml_document({"notify": notify}).decode("utf-8")
+        self._write_config_text(
+            self._prepend_block_to_text(text, "notify", name, block)
+        )
+
+    def _assert_no_unmanaged_notify(self, name: str, text: str) -> None:
+        try:
+            data = tomllib.loads(text)
+        except tomllib.TOMLDecodeError as exc:
+            raise CodexConfigError(
+                f"Cannot parse TOML in {self._config_path()}: {exc}. "
+                "Fix or remove the file, then re-run."
+            ) from exc
+        if "notify" in data:
+            raise CodexConfigError(
+                f"Cannot deploy Codex notify for hook '{name}': an unmanaged "
+                f"'notify' setting already exists in {self._config_path()}"
+            )
+
+    @classmethod
+    def _remove_agent_deck_notify_from_text(cls, text: str) -> str:
+        text = cls._remove_agent_deck_notify_marker_blocks(text)
+        text = cls._remove_agent_deck_notify_exact_lines(text)
+        text = cls._remove_agent_deck_legacy_notify_table(text)
+        return text.strip() + ("\n" if text.strip() else "")
+
+    @staticmethod
+    def _remove_agent_deck_notify_marker_blocks(text: str) -> str:
+        lines = text.splitlines(keepends=True)
+        kept: list[str] = []
+        i = 0
+        while i < len(lines):
+            if lines[i].strip() == _AGENT_DECK_NOTIFY_MARKER_BEGIN:
+                i += 1
+                while (
+                    i < len(lines) and lines[i].strip() != _AGENT_DECK_NOTIFY_MARKER_END
+                ):
+                    i += 1
+                if i < len(lines):
+                    i += 1
+                continue
+            kept.append(lines[i])
+            i += 1
+        return "".join(kept)
+
+    @staticmethod
+    def _remove_agent_deck_notify_exact_lines(text: str) -> str:
+        lines = text.splitlines(keepends=True)
+        return "".join(
+            line
+            for line in lines
+            if not _AGENT_DECK_NOTIFY_EXACT_LINE_RE.fullmatch(line.strip())
+        )
+
+    @staticmethod
+    def _remove_agent_deck_legacy_notify_table(text: str) -> str:
+        lines = text.splitlines(keepends=True)
+        kept: list[str] = []
+        i = 0
+        while i < len(lines):
+            if lines[i].strip() != "[notify]":
+                kept.append(lines[i])
+                i += 1
+                continue
+
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            if j < len(lines) and _AGENT_DECK_LEGACY_NOTIFY_PROGRAM_RE.fullmatch(
+                lines[j].strip()
+            ):
+                i = j + 1
+                continue
+
+            kept.append(lines[i])
+            i += 1
+        return "".join(kept)
 
     # ------------------------------------------------------------------
     # JSON and filesystem helpers

@@ -966,11 +966,131 @@ def test_deploy_hook_preserves_existing_event_list_and_non_mapping_config(
     assert entries[1]["_source"] == "new"
 
 
+def test_deploy_hook_without_codex_notify_preserves_config_toml(tmp_path: Path):
+    target = _make_target(tmp_path)
+    config_path = tmp_path / ".codex" / "config.toml"
+    config_path.parent.mkdir()
+    original = '[mcp_servers.srv]\ncommand = "srv"\n\n'
+    config_path.write_text(original)
+
+    target.deploy_hook(
+        "plain",
+        {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "plain"}]}]}},
+    )
+
+    assert config_path.read_text() == original
+
+
 def test_deploy_hook_creates_and_prunes_empty_hooks(tmp_path: Path):
     target = _make_target(tmp_path)
     target.deploy_hook("empty", {"hooks": {}})
     assert json.loads((tmp_path / ".codex" / "hooks.json").read_text()) == {}
     target.remove_hook("empty")
+
+
+def test_deploy_hook_manages_codex_notify_at_toml_root(tmp_path: Path):
+    target = _make_target(tmp_path)
+    config_path = tmp_path / ".codex" / "config.toml"
+    config_path.parent.mkdir()
+    config_path.write_text('[mcp_servers.srv]\ncommand = "srv"\n')
+
+    target.deploy_hook(
+        "agent-deck-codex",
+        {
+            "codex": {"notify": ["agent-deck", "codex-notify"]},
+            "hooks": {
+                "Stop": [{"hooks": [{"type": "command", "command": "agent-deck"}]}]
+            },
+        },
+    )
+
+    text = config_path.read_text()
+    assert text.startswith("# >>> promptdeploy codex notify agent-deck-codex\n")
+    data = tomllib.loads(text)
+    assert data["notify"] == ["agent-deck", "codex-notify"]
+    assert data["mcp_servers"]["srv"]["command"] == "srv"
+    assert target.item_exists("hook", "agent-deck-codex")
+
+    target.deploy_hook("agent-deck-codex", {"hooks": {}})
+
+    assert "notify" not in tomllib.loads(config_path.read_text())
+
+
+def test_deploy_hook_adopts_agent_deck_codex_notify_install(tmp_path: Path):
+    target = _make_target(tmp_path)
+    config_path = tmp_path / ".codex" / "config.toml"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        "# BEGIN AGENTDECK CODEX NOTIFY\n"
+        'notify = ["agent-deck", "codex-notify"]\n'
+        "# END AGENTDECK CODEX NOTIFY\n\n"
+        "[model_providers.openai]\n"
+        'name = "OpenAI"\n'
+    )
+
+    target.deploy_hook(
+        "agent-deck-codex",
+        {"codex": {"notify": ["agent-deck", "codex-notify"]}},
+    )
+
+    text = config_path.read_text()
+    assert "# BEGIN AGENTDECK CODEX NOTIFY" not in text
+    assert text.count("notify = ") == 1
+    assert tomllib.loads(text)["notify"] == ["agent-deck", "codex-notify"]
+
+
+def test_deploy_hook_rejects_unmanaged_codex_notify(tmp_path: Path):
+    target = _make_target(tmp_path)
+    config_path = tmp_path / ".codex" / "config.toml"
+    config_path.parent.mkdir()
+    config_path.write_text('notify = ["custom-notify"]\n')
+
+    with pytest.raises(CodexConfigError, match="unmanaged 'notify'"):
+        target.deploy_hook(
+            "agent-deck-codex",
+            {"codex": {"notify": ["agent-deck", "codex-notify"]}},
+        )
+
+
+def test_deploy_hook_reports_toml_parse_errors_for_codex_notify(tmp_path: Path):
+    target = _make_target(tmp_path)
+    config_path = tmp_path / ".codex" / "config.toml"
+    config_path.parent.mkdir()
+    config_path.write_text("broken = [\n")
+
+    with pytest.raises(CodexConfigError, match="Cannot parse TOML"):
+        target.deploy_hook(
+            "agent-deck-codex",
+            {"codex": {"notify": ["agent-deck", "codex-notify"]}},
+        )
+
+
+def test_deploy_hook_rejects_second_managed_codex_notify(tmp_path: Path):
+    target = _make_target(tmp_path)
+
+    target.deploy_hook("first", {"codex": {"notify": ["first"]}})
+
+    with pytest.raises(CodexConfigError, match="managed by hook 'first'"):
+        target.deploy_hook("second", {"codex": {"notify": ["second"]}})
+
+
+def test_agent_deck_codex_notify_cleanup_variants():
+    assert (
+        CodexTarget._remove_agent_deck_notify_marker_blocks(
+            '# BEGIN AGENTDECK CODEX NOTIFY\nnotify = ["agent-deck", "codex-notify"]\n'
+        )
+        == ""
+    )
+    assert CodexTarget._remove_agent_deck_legacy_notify_table(
+        "[notify]\n"
+        "\n"
+        'program = ["agent-deck", "codex-notify"]\n'
+        "[model_providers.openai]\n"
+        'name = "OpenAI"\n'
+    ) == ('[model_providers.openai]\nname = "OpenAI"\n')
+    assert CodexTarget._remove_agent_deck_legacy_notify_table(
+        '[notify]\nprogram = ["other"]\n'
+    ) == ('[notify]\nprogram = ["other"]\n')
 
 
 def test_remove_hook_noops_on_missing_or_malformed_hooks(tmp_path: Path):
