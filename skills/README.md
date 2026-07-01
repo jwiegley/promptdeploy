@@ -15,5 +15,5 @@ discovers and deploys them to the configured targets; see the repository
 - **node-red** -- Build, edit, and debug Node-RED flows on John's NixOS host (vulcan).
 - **persian** -- Translate English text into high-quality, accurate Persian (Farsi) using a team of specialist reviewers.
 - **skill-creator** -- Guide for creating effective skills that extend Claude's capabilities.
-- **swiftui-expert-skill** -- Write, review, or improve SwiftUI code following best practices, including iOS 26+ Liquid Glass adoption.
+- **swiftui** -- Write, review, or improve SwiftUI code following best practices, including iOS 26+ Liquid Glass adoption.
 - **translate-en** -- Translate Arabic/Persian Baha'i sacred texts into English in the elevated register of Shoghi Effendi (symlink into the `translate-tool` submodule).
