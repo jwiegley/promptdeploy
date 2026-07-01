@@ -64,7 +64,7 @@ groups:
     - claude-personal
 ```
 
-For Codex, set `path` to your home directory (recommended) or directly to `~/.codex`. The target writes custom agents to `.codex/agents/*.toml`, MCP servers and Codex model providers to managed blocks in `.codex/config.toml`, hooks to `.codex/hooks.json`, and skills to `.agents/skills`. Commands and rendered prompts are installed as generated skills named `command-<name>` and `prompt-<name>`, which makes them available through Codex's skill surfaces. `settings.yaml` and Claude marketplaces are intentionally skipped for Codex.
+For Codex, set `path` to your home directory (recommended) or directly to `~/.codex`. The target writes custom agents to `.codex/agents/*.toml`, MCP servers and Codex model providers to managed blocks in `.codex/config.toml`, hooks to `.codex/hooks.json`, and skills to `.agents/skills`. Commands and rendered prompts are installed as generated skills named `command-<name>` and `prompt-<name>`, which makes them available through Codex's skill surfaces. A hook file can also include `codex.notify: ["cmd", "arg"]` to manage Codex's top-level `notify` command in `.codex/config.toml`; promptdeploy inserts that block at the top of the TOML file so it remains a root setting. `settings.yaml` and Claude marketplaces are intentionally skipped for Codex.
 
 ### Environment variables
 
