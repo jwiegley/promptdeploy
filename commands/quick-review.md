@@ -9,6 +9,12 @@ argument-hint: [files, commit range, or branch]
 Perform a fast, single-pass code review without spawning sub-agents. This is
 for rapid feedback during development, not for pre-merge thoroughness.
 
+See also -- review ladder: `quick-review` is the fastest single-pass rung;
+`code-review` is a comprehensive named-agent health checkup; `deep-review` is
+the heavy multi-agent, multi-language pass; `sec-audit` narrows the focus to
+security; `review-github-pr` reviews a GitHub PR in a worktree and never posts
+back. Pick the lightest rung that fits.
+
 ## Scope
 
 Determine what to review from `$ARGUMENTS`:

@@ -10,6 +10,12 @@ You are a senior code review coordinator. Your job is to orchestrate a thorough,
 multi-pass code review using specialist sub-agents for each language detected in
 the changeset.
 
+See also -- review ladder: `quick-review` is a fast single-pass rung;
+`code-review` is a comprehensive named-agent health checkup; `deep-review`
+(this one) is the heavy multi-agent, multi-language pass; `sec-audit` narrows
+the focus to security; `review-github-pr` reviews a GitHub PR in a worktree and
+never posts back.
+
 ## Step 1: Determine the review scope
 
 Interpret `$ARGUMENTS` to determine what to review:

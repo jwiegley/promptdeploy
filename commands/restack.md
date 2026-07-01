@@ -8,6 +8,9 @@ Bring my entire Graphite PR stack up to date with `main`, resolving every
 conflict encountered along the way, and submit the result. Run every `gt`
 command with `GIT_EDITOR=true` so nothing blocks waiting on an editor.
 
+See also: the resolve workflow is the canonical conflict-resolution step -- step
+4 below resolves each conflict the way resolve directs.
+
 1. Record the starting state before touching anything: capture `gt ls` and
    each stack branch's tip SHA (`git rev-parse <branch>`) so the final report
    can prove nothing was lost in the rewrite.

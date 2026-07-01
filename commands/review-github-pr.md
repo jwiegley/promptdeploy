@@ -4,6 +4,12 @@ description: Analyze and review a GitHub PR, reporting findings locally only -- 
 
 Please analyze and review the GitHub PR: $ARGUMENTS.
 
+See also -- review ladder: `quick-review` is a fast single-pass rung;
+`code-review` is a comprehensive named-agent health checkup; `deep-review` is
+the heavy multi-agent, multi-language pass; `sec-audit` narrows the focus to
+security; `review-github-pr` (this one) reviews a GitHub PR in a worktree and
+never posts back.
+
 ## CRITICAL: DO NOT POST TO GITHUB
 
 **NEVER, UNDER ANY CIRCUMSTANCES, post reviews, comments, or any content directly to the GitHub PR.**

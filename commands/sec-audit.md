@@ -8,6 +8,12 @@ argument-hint: [files, directories, commit range, or branch]
 
 You are coordinating a security-focused code review.
 
+See also -- review ladder: `quick-review` is a fast single-pass rung;
+`code-review` is a comprehensive named-agent health checkup; `deep-review` is
+the heavy multi-agent, multi-language pass; `sec-audit` (this one) narrows the
+focus to security; `review-github-pr` reviews a GitHub PR in a worktree and
+never posts back.
+
 ## Scope
 
 Determine what to review from `$ARGUMENTS`:
