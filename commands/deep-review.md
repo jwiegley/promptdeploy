@@ -61,7 +61,7 @@ Print a brief plan:
 - Scope: <description of what's being reviewed>
 - Files: <N> files across <languages detected>
 - Agents: <list of agents to spawn>
-- Strategy: <parallel language passes → cross-cutting security pass → synthesis>
+- Strategy: <parallel language passes → cross-cutting performance pass → synthesis (add a security pass only if explicitly requested)>
 ```
 
 ## Step 3: Spawn language-specialist sub-agents in parallel
@@ -87,20 +87,17 @@ with `run_in_background: true`. Pass each agent:
 
 Severity levels: CRITICAL, HIGH, MEDIUM, LOW.
 
-## Step 4: Spawn cross-cutting review agents
+## Step 4: Spawn the cross-cutting review agent
 
-After language agents complete, spawn these cross-cutting agents with
-`run_in_background: true`:
+After language agents complete, spawn the `perf-reviewer` cross-cutting agent
+with `run_in_background: true` to catch performance concerns the language
+agents may miss (e.g., N+1 queries, unnecessary serialization boundaries,
+resource leaks across FFI boundaries). Pass it the full file list and diff.
 
-1. **`security-reviewer`** — Reviews the entire changeset for security concerns
-   that span language boundaries (e.g., secrets in config, injection vectors,
-   authentication gaps, data exposure).
-
-2. **`perf-reviewer`** — Reviews for performance concerns that language agents
-   may not catch (e.g., N+1 queries, unnecessary serialization boundaries,
-   resource leaks across FFI boundaries).
-
-Pass each cross-cutting agent the full file list and diff.
+Do NOT run a security pass by default. Spawn the `security-reviewer` agent
+ONLY when the review request explicitly asks for security -- for example, when
+`$ARGUMENTS` names it or the user asked for a security pass. Otherwise omit it
+and leave security to the standalone `sec-audit` command.
 
 ## Step 5: Synthesize and report
 
