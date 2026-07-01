@@ -1,28 +1,10 @@
 ---
-description: Bring work to a good stopping point -- record everything in the handoff document, commit and push, then produce a comprehensive plan and requirements document defining the remaining scope and how completion is verified.
+description: Bring work to a clean stopping point -- update the handoff document, commit and push, and produce a comprehensive remaining-scope plan/PRD with verifiable completion criteria
 ---
 
-Bring your work to a good place to stop for now. Recording everything in the
-handoff document, commit all of your work and push it, and then report to me
-when you are done and how to resume this in another AI session.
+Bring the work to a good stopping point so it can be resumed cleanly in a fresh session:
 
-Since this task that you're now doing is taking a significantly long time to
-complete, so I'm going to start doing some work now to help you parallelize
-this work.
-
-Here's what I want you to do at this point. I want you to consider all of the
-work that you're aware of that remains and all of the work you've done until
-now. I want you to consider all of the research, the information, the things
-that you've observed during the course of doing everything that you've done in
-the last several days. I want you to compile all of this into a comprehensive
-plan and product requirements document that will accurately and completely
-represent the full scope of the work that exists yet to be done and how
-completion should be best defined. It should inform as to what will allow us
-to verify that we have a succinct and complete target.
-
-In fact, I want you to make reference to the `fess` skill -- that should be
-run at the end of every subtask to be performed by the system that I'm going
-to be handing this document to. I want you to get all of this ready for me in
-the form of a comprehensive markdown report, and then write that into a file
-in the current directory.
-
+1. Update the handoff document -- what is done, what remains, and exactly how to resume -- so nothing is lost if this machine or session goes away.
+2. Commit all outstanding work following the `commit` workflow (a clean, logical commit sequence), then push it.
+3. Produce a comprehensive remaining-scope plan and requirements document following the `report` workflow: the full roadmap of work yet to be done, phase by phase, and how completion is to be verified (a succinct, complete target). Instruct that the downstream system run the `fess` skill at the end of every subtask it performs. Write this document to a Markdown file in the current directory.
+4. Report where things stand and how to resume in another session.
