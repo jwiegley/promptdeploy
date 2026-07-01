@@ -605,8 +605,42 @@ def validate_item(
                     file_path=item.path,
                 )
             )
+        codex_field = metadata.get("codex")
+        has_codex_notify = False
+        if codex_field is not None:
+            if not isinstance(codex_field, dict):
+                issues.append(
+                    ValidationIssue(
+                        level="error",
+                        message="Hook 'codex' override must be a mapping",
+                        file_path=item.path,
+                    )
+                )
+            else:
+                notify = codex_field.get("notify")
+                if notify is not None:
+                    if (
+                        not isinstance(notify, list)
+                        or len(notify) == 0
+                        or not all(isinstance(part, str) for part in notify)
+                    ):
+                        issues.append(
+                            ValidationIssue(
+                                level="error",
+                                message=(
+                                    "Hook 'codex.notify' must be a non-empty "
+                                    "list of strings"
+                                ),
+                                file_path=item.path,
+                            )
+                        )
+                    else:
+                        has_codex_notify = True
+
         hooks_field = metadata.get("hooks")
-        if not isinstance(hooks_field, dict):
+        if hooks_field is None and has_codex_notify:
+            pass
+        elif not isinstance(hooks_field, dict):
             issues.append(
                 ValidationIssue(
                     level="error",

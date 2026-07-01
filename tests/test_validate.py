@@ -15,9 +15,10 @@ def config() -> Config:
         "claude-personal": TargetConfig(
             id="claude-personal", type="claude", path=Path("/tmp/claude-personal")
         ),
+        "codex": TargetConfig(id="codex", type="codex", path=Path("/tmp/codex")),
         "droid": TargetConfig(id="droid", type="droid", path=Path("/tmp/droid")),
     }
-    groups = {"claude": ["claude-personal"]}
+    groups = {"claude": ["claude-personal"], "codex": ["codex"]}
     return Config(source_root=Path("/tmp/src"), targets=targets, groups=groups)
 
 
@@ -924,6 +925,53 @@ class TestValidateItemHook:
         )
         issues = validate_item(item, config)
         assert issues == []
+
+    def test_hook_codex_notify_without_hooks_is_valid(self, config: Config) -> None:
+        item = self._make_hook_item(
+            {
+                "name": "agent-deck-codex",
+                "only": ["codex"],
+                "codex": {"notify": ["agent-deck", "codex-notify"]},
+            }
+        )
+        issues = validate_item(item, config)
+        assert issues == []
+
+    def test_hook_codex_without_notify_still_requires_hooks(
+        self, config: Config
+    ) -> None:
+        item = self._make_hook_item(
+            {
+                "name": "agent-deck-codex",
+                "codex": {},
+            }
+        )
+        issues = validate_item(item, config)
+        assert any("missing or invalid 'hooks'" in i.message for i in issues)
+
+    def test_hook_codex_override_must_be_mapping(self, config: Config) -> None:
+        item = self._make_hook_item(
+            {
+                "name": "agent-deck-codex",
+                "codex": True,
+                "hooks": {"Stop": [{"hooks": []}]},
+            }
+        )
+        issues = validate_item(item, config)
+        assert any(
+            "Hook 'codex' override must be a mapping" in i.message for i in issues
+        )
+
+    def test_hook_codex_notify_must_be_string_list(self, config: Config) -> None:
+        item = self._make_hook_item(
+            {
+                "name": "agent-deck-codex",
+                "codex": {"notify": ["agent-deck", 1]},
+                "hooks": {"Stop": [{"hooks": []}]},
+            }
+        )
+        issues = validate_item(item, config)
+        assert any("Hook 'codex.notify' must be" in i.message for i in issues)
 
     def test_hook_missing_name(self, config: Config) -> None:
         item = self._make_hook_item(
