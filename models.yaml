@@ -10,8 +10,11 @@ providers:
       claude-haiku-4-5-20251001:
         display_name: "Claude Haiku 4.5"
         max_output_tokens: 32768
-      claude-opus-4-7:
-        display_name: "Claude Opus 4.7"
+      claude-fable-5:
+        display_name: "Claude Fable 5"
+        max_output_tokens: 32768
+      claude-opus-4-8:
+        display_name: "Claude Opus 4.8"
         max_output_tokens: 32768
       claude-sonnet-4-6:
         display_name: "Claude Sonnet 4.6"
@@ -97,7 +100,7 @@ providers:
         max_output_tokens: 65536
         context_limit: 262144
         output_limit: 65536
-      hera/claude-opus-4-7-thinking-32000:
+      hera/claude-1opus-4-7-thinking-32000:
         display_name: "Claude Opus 4.7 (Thinking)"
         max_output_tokens: 65536
         context_limit: 262144

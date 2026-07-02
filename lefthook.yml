@@ -15,7 +15,7 @@ pre-commit:
       run: nix flake check --no-warn-dirty 2>&1
     pytest:
       glob: "*.{py,yaml,toml}"
-      run: PYTHONPATH=src python -m pytest tests/ -x -q --cov --cov-report=term-missing
+      run: nix develop --command env PYTHONPATH=src python -m pytest tests/ -x -q --cov --cov-report=term-missing
     agnix:
       glob: "*.{md,yaml,yml,json,toml}"
       # agnix is not in nixpkgs (it comes from a personal overlay), so skip
