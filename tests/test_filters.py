@@ -16,16 +16,12 @@ from promptdeploy.filters import (
 ALL_TARGETS = [
     "claude-personal",
     "claude-positron",
-    "claude-git-ai-local",
-    "claude-git-ai-remote",
     "droid",
     "opencode",
 ]
 CLAUDE_TARGETS = [
     "claude-personal",
     "claude-positron",
-    "claude-git-ai-local",
-    "claude-git-ai-remote",
 ]
 
 
@@ -36,8 +32,6 @@ def config() -> Config:
         for tid, t in [
             ("claude-personal", "claude"),
             ("claude-positron", "claude"),
-            ("claude-git-ai-local", "claude"),
-            ("claude-git-ai-remote", "claude"),
             ("droid", "droid"),
             ("opencode", "opencode"),
         ]

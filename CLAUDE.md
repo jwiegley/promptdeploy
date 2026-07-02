@@ -109,7 +109,7 @@ The flake also exports `homeManagerModules.default` (`nix/hm-module.nix`): with 
 
 ## deploy.yaml
 
-Defines 15 targets classified by labels: `claude`, `codex`, `personal`, `positron`, `git-ai`, `gptel`, `local`, `remote`. Labels on targets auto-generate groups (merged with explicit groups). `--target positron` expands to `claude-positron` + `claude-andoria` + `codex-andoria`. Target types: `claude`, `codex`, `droid`, `opencode`, `gptel`. Remote targets add `host:` field.
+Defines 14 targets classified by labels: `claude`, `codex`, `personal`, `positron`, `gptel`, `local`, `remote`. Labels on targets auto-generate groups (merged with explicit groups). `--target positron` expands to `claude-positron` + `claude-andoria` + `codex-andoria`. Target types: `claude`, `codex`, `droid`, `opencode`, `gptel`. Remote targets add `host:` field.
 
 The top-level `hosts:` key registers each listed hostname as a group containing every target whose `host:` matches it; the current machine's short hostname (override with `PROMPTDEPLOY_HOST`) also becomes a group containing all host-less targets. This is what `only: [hera]` / `only: [clio]` filters in `models.yaml` rely on.
 

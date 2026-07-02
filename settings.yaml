@@ -47,14 +47,6 @@ overrides:
     preferredNotifChannel:
     statusLine:
       command: bash /home/jwiegley/.claude/statusline-command.sh
-  claude-git-ai-local:
-    preferredNotifChannel:
-    statusLine:
-      command: bash /Users/johnw/.config/claude/git-ai/statusline-command.sh
-  claude-git-ai-remote:
-    preferredNotifChannel:
-    statusLine:
-      command: bash /home/ubuntu/.claude/statusline-command.sh
   claude-vulcan:
     preferredNotifChannel:
     statusLine:

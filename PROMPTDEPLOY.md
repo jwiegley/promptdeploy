@@ -8,8 +8,6 @@ Deploy agents, commands, skills, prompts, MCP servers, hooks, models, marketplac
 |--------|------|------|
 | claude-personal | Claude Code | ~/.config/claude/personal |
 | claude-positron | Claude Code | ~/.config/claude/positron |
-| claude-git-ai-local | Claude Code | ~/.config/claude/git-ai |
-| claude-git-ai-remote | Claude Code | git-ai:~/.claude |
 | droid | Factory Droid | ~/.factory |
 | codex-hera | OpenAI Codex | hera:~ |
 | opencode-vulcan | OpenCode | vulcan:~/.config/opencode |
