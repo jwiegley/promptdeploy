@@ -52,7 +52,7 @@ After every context compaction, before any new work: re-read this skill, the fro
 
 Each iteration:
 
-1. Advance one logical unit of work -- a coherent change that builds and passes.
+1. Advance one logical unit of work -- a coherent change that builds and passes. However, if that logic unit is very small, then proceed in larger steps so that commits are not being generated too often -- since that feedback loop takes a lot of time, and doing so too frquently would slow down development unnecessarily.
 2. Commit it in a clean, logical sequence, following the `commit` workflow's approach (you perform the commits directly; `commit` is user-triggered).
 3. Audit that commit: dispatch a subagent -- the `fess-auditor` agent, or one running `fess` -- to check the work and its claims. Keep the evaluator separate; do not grade your own work. See `references/fess-audit.md` for how to pick the audit scope and what context snapshot to provide. Verify any finding before acting, and fold real fixes into the main work. Do not separately re-audit commits whose only purpose is to fix `fess` findings, nor `partner-cleanup`'s own cleanup commits (it self-verifies) -- that loops without progress.
 4. Check `doc/observations/`; if non-hidden Markdown is present, run `partner-cleanup`, let it make its cleanup commit, then resume.
