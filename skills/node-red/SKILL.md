@@ -75,7 +75,7 @@ curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
 
 **Fallback paths (in order, only when the API can't help):**
 
-1. **Editor UI** — for one-off edits John wants to make himself, or when a generated flow benefits from human review before publish. Output the JSON to `/home/johnw/*.json`, suggest **Menu → Import → Select a file → Deploy**.
+1. **Editor UI** — for one-off edits John wants to make himself, or when a generated flow benefits from human review before publish. Output the JSON to `~/*.json`, suggest **Menu → Import → Select a file → Deploy**.
 2. **Direct `flows.json` edit + restart** — only if Node-RED is down or auth is broken. Procedure: backup → `sudo` read/edit → `validate_flow.py` → `sudo chown node-red:node-red` → `sudo systemctl restart node-red`. ~6 s editor disconnect.
 
 Don't write to `/var/lib/node-red/flows.json` directly when the API is reachable. Don't ask the user to re-import a tab when a `PUT /flow/<id>` would do the same job without losing the layout.

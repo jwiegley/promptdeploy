@@ -123,7 +123,7 @@ Reset the NeLisp REPL state. No params.
 
 ### Org-mode
 
-**org-get-allowed-files** — Get the list of Org files accessible through the anvil-org server. Returns the configured allowed files exactly as specified in anvil-org-allowed-files. Parameters: None Returns JSON object containing: files (array of strings): Absolute paths of allowed Org files Example response: { "files": [ "/home/user/org/tasks.org", "/home/user/org/projects.org", "/home/user/notes/daily.org" ] } Empty configuration returns: { "files": [] } Use cases: - Discovery: What Org files can I access through MCP? - URI Construction: I need to build an org-headline:// URI - what's the exact path? - Access Troubleshooting: Why is my file access failing? - Configuration Verification: Did my anvil-org-allowed-files setting work correctly?
+**org-get-allowed-files** — Get the list of Org files accessible through the anvil-org server. Returns the configured allowed files exactly as specified in anvil-org-allowed-files. Parameters: None Returns JSON object containing: files (array of strings): Absolute paths of allowed Org files Example response: { "files": [ "/path/to/org/tasks.org", "/path/to/org/projects.org", "/path/to/notes/daily.org" ] } Empty configuration returns: { "files": [] } Use cases: - Discovery: What Org files can I access through MCP? - URI Construction: I need to build an org-headline:// URI - what's the exact path? - Access Troubleshooting: Why is my file access failing? - Configuration Verification: Did my anvil-org-allowed-files setting work correctly?
 
 *Params:* (none)
 

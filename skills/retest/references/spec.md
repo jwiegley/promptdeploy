@@ -227,7 +227,7 @@ A failure that *looks* like a divergence from the HF reference is usually one of
 
 | Symptom | Cause → fix |
 |---|---|
-| `disk I/O error` / `database disk image is malformed` from `nix develop` | corrupt Nix fetcher cache → `rm -f ~/.cache/nix/fetcher-cache-v4.sqlite`, retry |
+| `disk I/O error` / `database disk image is malformed` from `nix develop` | corrupt Nix fetcher cache → `rm -f ${XDG_CACHE_HOME:-$HOME/.cache}/nix/fetcher-cache-v4.sqlite`, retry |
 | `ninja: error: '…' missing and no known rule` (deleted source) | stale CMake graph → `rm -f gen/config/<flavor>` (the relevant `dev`/`test`/`ingest` stamp), rebuild |
 | plugin output looks stale after a rebase/restack | the build missed a Haskell change → force-regen the affected plugin under `gen/src/tron/h/tron/plugins/` and rebuild (`make build-ingest -j 4`); confirm mtime is post-rebase |
 | `ModuleNotFoundError` / `No such file: tron-reference-logits` / `uv` import errors on the golden or equivalence path | the `ingest/export` uv venv is not provisioned (`tron-reference-logits` is a console script there, not a `bin/` file) → run `make ingest-deps` (skipped inside `nix develop`); this is **not** a DIVERGE |

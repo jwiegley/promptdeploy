@@ -308,7 +308,7 @@ nix build
 In your system flake (e.g., `~/src/nix/flake.nix`), add the input:
 
 ```nix
-promptdeploy.url = "git+file:///Users/johnw/src/promptdeploy";
+promptdeploy.url = "git+file:///path/to/promptdeploy";
 ```
 
 Then reference the package wherever you build your package list:
