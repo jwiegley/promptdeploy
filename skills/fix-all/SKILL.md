@@ -1,8 +1,6 @@
 ---
 name: fix-all
 description: Fix all issues — no exceptions, no excuses. Fix every finding uncovered during the work, here and now. "Out of scope," "pre-existing," and "follow-up ticket" are not acceptable framings. Fixes go upstream, everything changed gets a real test, and no reward hacking.
-invocation: /fix-all
-author: Isaac Shapira
 ---
 
 # Mission
@@ -61,3 +59,7 @@ A task is done only when **all** of the following hold:
 
 - Do the harder, more correct thing.
 - If following these rules would require shipping something broken, surface the conflict explicitly. Do not silently lower the bar.
+
+---
+
+Credit: Isaac Shapira
