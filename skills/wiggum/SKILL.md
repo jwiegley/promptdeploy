@@ -1,6 +1,6 @@
 ---
 name: wiggum
-description: Methodology for the user-triggered /wiggum command (do not self-invoke). An autonomous-continuation loop for long-running work -- run, checkpoint, and verify until a defined Definition of Done holds or a stop-and-escalate condition fires. Covers durable handoff state, baseline re-verification after context compaction, per-commit self-audit, work-unit commit and restack cadence, subagent fan-out limits, and escalation.
+description: Methodology for the user-triggered /wiggum command (do not self-invoke). An autonomous-continuation loop for long-running work -- run, checkpoint, and verify until a defined Definition of Done holds or a stop-and-escalate condition fires. Covers durable handoff state, baseline re-verification after context compaction, per-commit self-audit, work-unit commit and restack cadence, subagent fan-out limits, host-conditional anvil (live Emacs) tooling, and escalation.
 ---
 
 # Wiggum
@@ -75,6 +75,12 @@ Keep the branch rebased on its base as you go: on a Graphite stack follow the `r
 ## Parallelize non-interfering work
 
 Use the `parallelize` skill. As coordinator you keep all git and shared-state changes in this session and dispatch only safe, non-interfering work -- research, isolated file generation, the `fess` audit, reviews -- to subagents that write only inside their own namespaces and return artifacts you integrate. Bound fan-out to what you can review (roughly 3-5 at a time), and do not let subagents spawn their own subagents.
+
+## Use Anvil where the host provides it
+
+At loop start -- and again as part of every post-compaction refresh -- check whether the anvil MCP tools are available on this host (an `emacs-eval` tool from the `anvil` server and typed tools such as `file-batch` from `anvil-tools`; under Claude Code they appear as `mcp__anvil__*` / `mcp__anvil-tools__*`). If they are, invoke the `anvil` skill once and follow its tool-selection rules for the rest of the loop: progressive-disclosure reads for large files, batched typed edits (`file-batch` / `file-batch-across`) over one-at-a-time writes, the org tools for any org-file work, structured git queries for repo state, and async eval for heavy Emacs-side operations. Anvil's live-session safety rules apply unchanged inside the loop -- in particular the unsaved-buffer check before disk edits.
+
+If the tools are absent or the probe fails, note it once in the handoff document and proceed with standard tools -- anvil is an amplifier, never a hard dependency of the loop.
 
 ## Confer via PAL for real decisions
 
