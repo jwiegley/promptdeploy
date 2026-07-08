@@ -1,0 +1,31 @@
+name: anvil
+description: Live Emacs session on hera via anvil.el — the Elisp eval suite (emacs-eval sync/async/jobs, nelisp REPL) against the running GUI Emacs daemon
+command: /Users/johnw/.emacs.d/anvil-mcp.sh
+args:
+  - "--socket=/tmp/johnw-emacs/server"
+  - "--server-id=anvil"
+scope: user
+enabled: true
+only:
+  - claude-personal
+  - claude-positron
+  - codex-local
+  - codex-hera
+  - droid
+# Requires the GUI Emacs daemon on hera with (anvil-enable) +
+# (anvil-server-start) active (anvil-server-autostart-on-request covers the
+# transport after restarts). The wrapper resolves emacsclient beside the
+# *running* Emacs.app nix-store process — there is no emacsclient on PATH
+# here — and execs anvil-stdio.sh, which relays JSON-RPC over emacsclient.
+# The socket path is fixed by `server-socket-dir' in init.org.
+#
+# Scoping is BY MACHINE (hera), not by run-locality, and the `only' list
+# must keep codex-local and codex-hera in agreement: when the deploy runs
+# on hera itself, codex-hera resolves to the SAME ~/.codex as codex-local
+# (create_target treats host == current host as local), and any item that
+# one target includes and the other filters out is created and then removed
+# again in every run. A `local' filetag was exactly that mistake.
+#
+# Sibling server: anvil-tools (same bridge, --server-id=emacs-eval) exposes
+# the 43 typed file/org/git/data tools. The `anvil` skill teaches agents how
+# to use both surfaces well.

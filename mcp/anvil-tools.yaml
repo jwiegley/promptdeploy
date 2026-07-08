@@ -6,6 +6,12 @@ args:
   - "--server-id=emacs-eval"
 scope: user
 enabled: true
+only:
+  - claude-personal
+  - claude-positron
+  - codex-local
+  - codex-hera
+  - droid
 # Same bridge as the `anvil` server, different anvil.el server-id: the anvil
 # modules register their typed tools under the (historical) server-id
 # "emacs-eval", while the eval suite registers under "anvil". A server-id
@@ -13,5 +19,6 @@ enabled: true
 # keep this arg exactly in sync with `anvil-server--tools' registrations.
 #
 # Requires the same running GUI Emacs daemon as the anvil server; see the
-# comments in "anvil -- local.yaml" for the wrapper/socket details, and the
+# comments in anvil.yaml for the wrapper/socket details, the reason the
+# `only' list must keep codex-local and codex-hera in agreement, and the
 # `anvil` skill for tool-selection guidance.
