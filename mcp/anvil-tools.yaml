@@ -12,6 +12,7 @@ only:
   - codex-local
   - codex-hera
   - droid
+  - opencode-hera
 # Same bridge as the `anvil` server, different anvil.el server-id: the anvil
 # modules register their typed tools under the (historical) server-id
 # "emacs-eval", while the eval suite registers under "anvil". A server-id

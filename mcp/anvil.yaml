@@ -12,6 +12,7 @@ only:
   - codex-local
   - codex-hera
   - droid
+  - opencode-hera
 # Requires the GUI Emacs daemon on hera with (anvil-enable) +
 # (anvil-server-start) active (anvil-server-autostart-on-request covers the
 # transport after restarts). The wrapper resolves emacsclient beside the
