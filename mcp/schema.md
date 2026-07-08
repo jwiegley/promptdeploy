@@ -24,7 +24,7 @@ Exactly one transport must be specified:
 
 | Field     | Type              | Description                    |
 |-----------|-------------------|--------------------------------|
-| `url`     | string            | HTTP endpoint URL              |
+| `url`     | string            | HTTP endpoint URL. Supports `${VAR}` syntax (see Environment Variable Expansion). |
 | `headers` | map[string,string] | HTTP headers for requests. Supports `${VAR}` syntax (see Environment Variable Expansion). |
 
 On a Claude target, a URL server is written to `.claude.json` with `"type":
@@ -45,46 +45,77 @@ endpoint set `type: sse` explicitly; an explicit `type` is always preserved.
 
 ## Environment Variable Expansion
 
-`${VAR}` references in `env` and `headers` values are handled differently per
-target type:
+`${VAR}` references in `env` and `headers` values and in `url` (a URL can
+carry a secret in a query parameter, e.g. `?apiKey=${REF_API_KEY}`) are
+handled differently per target type. promptdeploy itself expands only the
+plain `${VAR}` form (`envsubst.py` `_ENV_PATTERN`); the shell-style
+`${VAR:-default}` form is never matched and passes through untouched:
+promptdeploy never expands it, so it only works where the consuming tool
+expands it at runtime (Claude Code and Droid do); on Codex and OpenCode it
+lands literally in the config and is never expanded. `${VAR}` in
+`command`/`args`/`type` is out of schema contract: promptdeploy always passes
+it through verbatim (consuming tools that runtime-expand those fields --
+Claude Code and Droid both expand stdio `command`/`args`/`env` -- still do so
+themselves).
 
-- **Claude Code (local)** -- `env`/`headers` `${VAR}` are strict-expanded at
-  deploy time and the resolved values are baked into `.claude.json` (mode
-  `0600`). A missing variable raises `EnvVarError` and the deploy exits 1.
-  The manifest hash folds current env values, so **rotating a referenced
-  secret triggers a redeploy**.
-- **Claude Code (remote)** -- `env`/`headers` `${VAR}` are **strict-expanded
-  at deploy time** (like OpenCode) and the resolved value is baked into the
-  remote `.claude.json` (transported only over the encrypted SSH channel, at
-  rest at mode `0600`). A missing variable raises `EnvVarError` and the deploy
-  exits 1 (never ships an empty secret). The manifest hash folds current env
-  values, so **rotating a referenced secret triggers a redeploy**, and
-  **running `status`/`deploy` without the referenced secret exported reports
-  the server as `changed`** (export it; note that `deploy` auto-loads `.env`
-  but `status` does not). `${VAR}` is only honored in `env`/`headers`; in
-  `command`/`args`/`url` it is out of schema and is baked verbatim (and, on
-  remote, never expanded).
-- **Factory Droid** -- `env` and `headers` are copied verbatim into
+- **Claude Code (local)** -- `env`/`headers`/`url` `${VAR}` are
+  strict-expanded at deploy time and the resolved values are baked into
+  `.claude.json` (mode `0600`). A missing variable raises `EnvVarError` and
+  the deploy exits 1. Claude Code itself would also runtime-expand
+  `${VAR}`/`${VAR:-default}` in `url`, `headers`, and stdio
+  `command`/`args`/`env` of `.claude.json`, leaving an unset reference as the
+  literal text plus a warning; baking anyway is a **deliberate policy
+  decision**: it keeps the deployed config independent of the environment
+  used to later launch `claude` (a GUI- or service-launched session sees no
+  `.env`, and a reference left unexpanded at runtime is a broken server), and
+  it matches the remote-claude bake below. Exception: a `--target-root`
+  preview writes `${VAR}` verbatim (`expand_secrets=False`), so secrets are
+  never baked into the user-chosen preview directory. The manifest hash folds
+  current env values, so **rotating a referenced secret triggers a
+  redeploy**.
+- **Claude Code (remote)** -- `env`/`headers`/`url` `${VAR}` are
+  **strict-expanded at deploy time** (like OpenCode) and the resolved value
+  is baked into the remote `.claude.json` (transported only over the
+  encrypted SSH channel, at rest at mode `0600`). A missing variable raises
+  `EnvVarError` and the deploy exits 1 (never ships an empty secret). The
+  manifest hash folds current env values, so **rotating a referenced secret
+  triggers a redeploy**, and **running `status`/`deploy` without the
+  referenced secret exported reports the server as `changed`** (export it;
+  note that `deploy` auto-loads `.env` but `status` does not). `${VAR}` is
+  honored in `env`/`headers`/`url`; in `command`/`args` it is out of schema
+  contract: promptdeploy bakes it verbatim, but the remote Claude Code still
+  runtime-expands `${VAR}`/`${VAR:-default}` in stdio `command`/`args`/`env`
+  of `.claude.json` at load (an unset variable is left as the literal text
+  with a warning).
+- **Factory Droid** -- `env`, `headers`, and `url` are copied verbatim into
   `mcp.json`; promptdeploy expands nothing in MCP definitions for this target
-  (only the models provider `api_key` is expanded, leniently).
-- **OpenCode** -- strict deploy-time expansion of both `env` and `headers`
+  (only the models provider `api_key` is expanded, leniently). Verbatim is
+  correct here: Droid documents runtime expansion of
+  `${VAR}`/`${VAR:-default}` in `url` and `headers` (plus
+  `command`/`args`/`env`), resolved in memory at load time; an unset variable
+  leaves the placeholder in place with a warning at server start.
+- **OpenCode** -- strict deploy-time expansion of `env`, `headers`, and `url`
   via `expand_env_vars_strict`: a missing variable raises `EnvVarError` and
   the deploy exits 1, since OpenCode runs from a directory where shell
-  variables won't be set.
+  variables won't be set. (OpenCode's own substitution syntax is `{env:VAR}`,
+  not `${VAR}`, and it silently turns unset variables into empty strings, so
+  a deploy-time error is the correct failure mode.)
 - **OpenAI Codex** -- deployed into `~/.codex/config.toml` as
-  `[mcp_servers.<name>]`. `env` values are strict-expanded at deploy time and
-  written to Codex's `env` table, matching OpenCode's behavior and avoiding a
-  dependency on the environment used later to launch `codex`. A missing
-  variable raises `EnvVarError` and the deploy exits 1. Header references are
-  mapped to Codex's `env_http_headers` or, for
-  `Authorization: "Bearer ${TOKEN}"`, `bearer_token_env_var`. Other
-  Codex-native keys can be supplied directly, including explicit `env_vars`
-  entries when runtime forwarding is desired, or under `codex:` when they
-  should override the shared definition only for Codex.
+  `[mcp_servers.<name>]`. `env` values and `url` are strict-expanded at
+  deploy time (Codex performs no env expansion anywhere in `config.toml` --
+  a `url` is used literally -- so a URL-borne secret must be baked), matching
+  OpenCode's behavior and avoiding a dependency on the environment used later
+  to launch `codex`. A missing variable raises `EnvVarError` and the deploy
+  exits 1. Header references are mapped to Codex's name-based indirection:
+  `env_http_headers` or, for `Authorization: "Bearer ${TOKEN}"`,
+  `bearer_token_env_var`. Other Codex-native keys can be supplied directly,
+  including explicit `env_vars` entries when runtime forwarding is desired,
+  or under `codex:` when they should override the shared definition only for
+  Codex.
 
-`promptdeploy validate` warns when an `env` or `headers` value references a
-`${VAR}` that is not declared in `.env.example` (the check is skipped when no
-`.env.example` exists).
+`promptdeploy validate` warns when an `env`, `headers`, or `url` value
+references a `${VAR}` that is not declared in `.env.example` (the check is
+skipped when no `.env.example` exists).
 
 ## How Deployed Servers Reach Claude Code
 
@@ -116,8 +147,9 @@ Two consequences:
   a failed merge leaves the manifest untouched and the next run retries
   automatically. `--dry-run` performs no SSH merge and no write (it still does
   a read-only `ssh_pull` in `prepare`), and `--target-root` previews a
-  remote-MCP target as a **local `.claude.json` write with deploy-time-expanded
-  `${VAR}` values** (it does NOT exercise the SSH-stdin merge transport).
+  remote-MCP target as a **local `.claude.json` write with verbatim `${VAR}`**
+  (it does NOT exercise the SSH-stdin merge transport, and it does NOT bake
+  expanded secrets into the preview directory).
   **Requirement:** `python3` must be on the remote non-interactive SSH PATH
   (NixOS and Amazon Linux both ship it); if absent (exit 127) the deploy fails
   loudly with a clear hint. Because real secrets now transit the channel,
