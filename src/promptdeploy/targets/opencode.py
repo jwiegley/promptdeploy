@@ -203,6 +203,16 @@ class OpenCodeTarget(Target):
     ) -> bool:
         return item_type in ("hook", "settings", "marketplace")
 
+    def content_fingerprint(self, item_type: str) -> str | None:
+        if item_type == "mcp":
+            # Bump when the deployed opencode.json entry format changes so
+            # existing deployments refresh even though the source YAML (and
+            # the env-folded hash, which has always substituted ${VAR} in
+            # every string) is unchanged.
+            # v2: ${VAR} in url is now strict-expanded like env/headers.
+            return "opencode-mcp-v2"
+        return None
+
     @property
     def mcp_hash_includes_env(self) -> bool:
         return True
@@ -372,7 +382,12 @@ class OpenCodeTarget(Target):
                     )
                     for k, v in headers.items()
                 }
-            # Copy any remaining non-metadata, non-handled keys.
+            # Copy any remaining non-metadata, non-handled keys. The url
+            # gets the same strict deploy-time expansion as env/headers, for
+            # the same reason: OpenCode's own substitution syntax is
+            # {env:VAR} (not ${VAR}) and silently empties unset vars, and
+            # OpenCode runs from a directory where these vars are not set,
+            # so a deploy-time EnvVarError is the correct failure mode.
             for k, v in config.items():
                 if k not in _MCP_STRIP_KEYS and k not in (
                     "command",
@@ -380,7 +395,12 @@ class OpenCodeTarget(Target):
                     "env",
                     "headers",
                 ):
-                    oc_config[k] = v
+                    if k == "url" and isinstance(v, str):
+                        oc_config[k] = expand_env_vars_strict(
+                            v, context=f"mcp.{name}.url"
+                        )
+                    else:
+                        oc_config[k] = v
             data.setdefault("mcp", {})[name] = oc_config
 
         self._save_json(oc_path, data)

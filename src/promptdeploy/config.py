@@ -30,6 +30,11 @@ class TargetConfig:
     host: str | None = None
     labels: list[str] = None  # type: ignore[assignment]
     model: str | None = None
+    # True when this config was produced by remap_targets_to_root() for a
+    # --target-root preview. Preview deploys must never bake expanded
+    # secrets into the user-chosen preview directory, so claude targets
+    # write ${VAR} references verbatim instead of strict-expanding them.
+    preview: bool = False
 
     def __post_init__(self) -> None:
         if self.labels is None:
@@ -149,7 +154,9 @@ def remap_targets_to_root(config: Config, root: Path) -> Config:
 
     Each target's path is replaced with ``root / target_id``, allowing
     deployment to be previewed in a scratch directory without touching real
-    configuration files.
+    configuration files. The remapped targets are marked ``preview=True``
+    so secret-bearing ``${VAR}`` references are written verbatim rather
+    than expanded into the preview directory.
 
     Args:
         config: The original configuration.
@@ -172,6 +179,7 @@ def remap_targets_to_root(config: Config, root: Path) -> Config:
             host=None,
             labels=list(tc.labels),
             model=tc.model,
+            preview=True,
         )
     return Config(
         source_root=config.source_root,

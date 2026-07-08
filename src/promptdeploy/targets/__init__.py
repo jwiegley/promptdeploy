@@ -48,7 +48,14 @@ def create_target(
 
     factories: dict[str, Callable[[TargetConfig, Path], Target]] = {
         "claude": lambda tc, p: ClaudeTarget(
-            tc.id, p, model=effective_model, manage_mcp=not is_remote
+            tc.id,
+            p,
+            model=effective_model,
+            manage_mcp=not is_remote,
+            # --target-root previews (tc.preview) must never bake expanded
+            # secrets into the user-chosen preview directory: write ${VAR}
+            # verbatim there instead of strict-expanding at deploy time.
+            expand_secrets=not tc.preview,
         ),
         "codex": lambda tc, p: CodexTarget(tc.id, p),
         "droid": lambda tc, p: DroidTarget(tc.id, p),

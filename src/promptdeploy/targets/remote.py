@@ -179,16 +179,20 @@ class RemoteTarget(Target):
 
     @staticmethod
     def _expand_entry_secrets(name: str, entry: dict[str, Any]) -> dict[str, Any]:
-        """Strict-expand ${VAR} in the entry's env/headers values for the
-        remote bake.
+        """Strict-expand ${VAR} in the entry's env/headers values and url for
+        the remote bake.
 
         A missing variable raises EnvVarError (envsubst), which cli.py catches
         -> exit 1, so we never ship an empty secret to the remote .claude.json.
-        Only env and headers carry secrets per the MCP schema; ${VAR} in any
-        other field (command, args, url, type, ...) is out of schema contract
-        and passes through VERBATIM -- and, unlike local where runtime never
-        expands non-env/headers fields either, it will NOT be expanded on the
-        remote. Returns a NEW dict; the source entry is not mutated.
+        Per the MCP schema contract, env and headers values and the url carry
+        secrets (a URL can embed one in a query parameter) and are
+        strict-expanded here, mirroring the local claude bake; ${VAR} in any
+        other field (command, args, type, ...) remains out of schema contract
+        and passes through VERBATIM from promptdeploy -- though the remote
+        Claude Code itself still runtime-expands ${VAR}/${VAR:-default} in
+        stdio command/args/env of .claude.json at load (an unset variable is
+        left as the literal text with a warning). Returns a NEW dict; the
+        source entry is not mutated.
         """
         from ..envsubst import expand_env_vars_strict
 
@@ -204,6 +208,9 @@ class RemoteTarget(Target):
                     )
                     for k, v in block.items()
                 }
+        url = entry.get("url")
+        if isinstance(url, str):
+            out["url"] = expand_env_vars_strict(url, context=f"mcp.{name}.url")
         return out
 
     def deploy_models(self, config: dict[str, Any]) -> None:

@@ -428,6 +428,37 @@ class TestDeployMcpServer:
                 },
             )
 
+    def test_env_var_expanded_in_url(self, tmp_path: Path, monkeypatch):
+        # OpenCode's own substitution syntax is {env:VAR} (not ${VAR}) and
+        # silently empties unset vars, and OpenCode runs from a directory
+        # where these vars are not set -- so a url secret is baked at deploy
+        # time like env/headers.
+        monkeypatch.setenv("MCP_URL_KEY", "secret-url-key")
+        target = _make_target(tmp_path)
+        target.deploy_mcp_server(
+            "remote",
+            {
+                "url": "https://mcp.example.com/mcp?apiKey=${MCP_URL_KEY}",
+                "timeout": 30,
+            },
+        )
+
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
+        srv = result["mcp"]["remote"]
+        assert srv["url"] == "https://mcp.example.com/mcp?apiKey=secret-url-key"
+        # Other passthrough keys are copied unchanged.
+        assert srv["timeout"] == 30
+
+    def test_missing_env_var_in_url_raises(self, tmp_path: Path, monkeypatch):
+        from promptdeploy.envsubst import EnvVarError
+
+        monkeypatch.delenv("MCP_URL_MISSING", raising=False)
+        target = _make_target(tmp_path)
+        with pytest.raises(EnvVarError, match=r"MCP_URL_MISSING.*mcp\.remote\.url"):
+            target.deploy_mcp_server(
+                "remote", {"url": "https://x/mcp?apiKey=${MCP_URL_MISSING}"}
+            )
+
     def test_preserves_other_servers(self, tmp_path: Path):
         target = _make_target(tmp_path)
         oc_path = tmp_path / ".opencode" / "opencode.json"
@@ -979,6 +1010,19 @@ class TestTargetProperties:
     def test_mcp_hash_includes_env(self, tmp_path: Path):
         target = _make_target(tmp_path)
         assert target.mcp_hash_includes_env is True
+
+    def test_content_fingerprint_mcp(self, tmp_path: Path):
+        # The fingerprint bumps when the deployed opencode.json entry format
+        # changes (v2: ${VAR} in url is strict-expanded) so already-deployed
+        # servers self-heal on the next run even though the env-folded hash
+        # is unchanged.
+        target = _make_target(tmp_path)
+        assert target.content_fingerprint("mcp") == "opencode-mcp-v2"
+
+    def test_content_fingerprint_other_types_none(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        assert target.content_fingerprint("agent") is None
+        assert target.content_fingerprint("models") is None
 
 
 # ------------------------------------------------------------------

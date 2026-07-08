@@ -505,6 +505,31 @@ class TestRemoteMcpDeployServer:
         assert remote_mcp_target._mcp_ops == []
         assert remote_mcp_target._mcp_seen == set()
 
+    def test_deploy_mcp_server_url_strict_expanded(
+        self, remote_mcp_target: RemoteTarget, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A url can carry a secret in a query parameter; it is baked into
+        # the remote entry exactly like env/headers values.
+        monkeypatch.setenv("REF_KEY", "secret-ref")
+        remote_mcp_target.deploy_mcp_server(
+            "srv",
+            {"name": "srv", "url": "https://api.example.com/mcp?apiKey=${REF_KEY}"},
+        )
+        entry = remote_mcp_target._mcp_ops[0]["entry"]
+        assert entry["url"] == "https://api.example.com/mcp?apiKey=secret-ref"
+
+    def test_deploy_mcp_server_url_missing_env_raises(
+        self, remote_mcp_target: RemoteTarget, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from promptdeploy.envsubst import EnvVarError
+
+        monkeypatch.delenv("ABSENT_URL_KEY", raising=False)
+        with pytest.raises(EnvVarError, match=r"ABSENT_URL_KEY.*mcp\.srv\.url"):
+            remote_mcp_target.deploy_mcp_server(
+                "srv", {"name": "srv", "url": "https://x?k=${ABSENT_URL_KEY}"}
+            )
+        assert remote_mcp_target._mcp_ops == []
+
     def test_deploy_mcp_server_disabled_queues_pop(
         self, remote_mcp_target: RemoteTarget
     ) -> None:
@@ -739,7 +764,7 @@ class TestRemoteMcpGuardrails:
         includes = remote_mcp_target.rsync_includes() or []
         assert ".claude.json" not in includes
 
-    def test_target_root_previews_remote_mcp_as_local_expanded(
+    def test_target_root_previews_remote_mcp_as_local_verbatim(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from promptdeploy.config import (
@@ -761,11 +786,15 @@ class TestRemoteMcpGuardrails:
         assert target.remote_mcp_hash is False
         assert target.mcp_hash_includes_env is True
         monkeypatch.setenv("TOK", "value")
-        # ${VAR} is expanded locally, no ssh_stdin.
+        # No ssh_stdin, and ${VAR} stays VERBATIM: a preview must never bake
+        # expanded secrets into the user-chosen preview directory (this is
+        # NOT the remote baked form).
         with patch("promptdeploy.targets.remote.ssh_stdin") as mock_stdin:
             target.deploy_mcp_server(
                 "srv", {"name": "srv", "command": "c", "env": {"K": "${TOK}"}}
             )
         mock_stdin.assert_not_called()
-        claude_json = json.loads((target._config_path / ".claude.json").read_text())
-        assert claude_json["mcpServers"]["srv"]["env"]["K"] == "value"
+        text = (target._config_path / ".claude.json").read_text()
+        claude_json = json.loads(text)
+        assert claude_json["mcpServers"]["srv"]["env"]["K"] == "${TOK}"
+        assert "value" not in text

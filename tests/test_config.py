@@ -257,6 +257,14 @@ class TestRemapTargetsToRoot:
         remapped = remap_targets_to_root(config, root)
         assert remapped is not config
 
+    def test_marks_targets_as_preview(self, config: Config, tmp_path: Path) -> None:
+        # Remapped targets carry preview=True so claude targets write ${VAR}
+        # verbatim instead of baking expanded secrets into the preview dir.
+        remapped = remap_targets_to_root(config, tmp_path / "preview")
+        assert all(tc.preview for tc in remapped.targets.values())
+        # Regular (non-remapped) configs default to preview=False.
+        assert all(not tc.preview for tc in config.targets.values())
+
     def test_original_config_unchanged(self, config: Config, tmp_path: Path) -> None:
         original_paths = {tid: tc.path for tid, tc in config.targets.items()}
         remap_targets_to_root(config, tmp_path / "preview")

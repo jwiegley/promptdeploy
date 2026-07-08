@@ -38,6 +38,7 @@ class ClaudeTarget(Target):
         *,
         model: str | None = None,
         manage_mcp: bool = True,
+        expand_secrets: bool = True,
     ) -> None:
         self._id = target_id
         self._config_path = config_path.expanduser().resolve()
@@ -46,6 +47,10 @@ class ClaudeTarget(Target):
         # MCP servers deploy into .claude.json, which is machine-specific and
         # never rsynced; remote claude targets therefore cannot manage MCP.
         self._manage_mcp = manage_mcp
+        # False only for --target-root previews: ${VAR} in MCP
+        # env/headers/url is then written verbatim so secrets are never
+        # expanded into the user-chosen preview directory.
+        self._expand_secrets = expand_secrets
         # Warnings collected during the most recent deploy_prompt calls;
         # drained via consume_warnings() by the deploy loop.
         self._warnings: list[tuple[str, list[str]]] = []
@@ -146,7 +151,8 @@ class ClaudeTarget(Target):
             # Bump when the deployed .claude.json entry format changes (e.g.
             # the URL-server "type" field or env expansion policy) so existing
             # deployments refresh even though the source YAML is unchanged.
-            return "claude-mcp-entry-v3"
+            # v4: ${VAR} in url is now strict-expanded like env/headers.
+            return "claude-mcp-entry-v4"
         return None
 
     @property
@@ -216,10 +222,12 @@ class ClaudeTarget(Target):
     def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:
         # MCP servers deploy into .claude.json (user scope) -- the surface
         # Claude Code actually reads. It never reads settings.json's
-        # mcpServers. ${VAR} references in env/headers are expanded at deploy
-        # time so `claude /doctor` does not depend on launcher environment.
-        # Only the named server key is touched; every other key in the
-        # app-owned file is preserved.
+        # mcpServers. ${VAR} references in env/headers/url are expanded at
+        # deploy time so `claude /doctor` does not depend on launcher
+        # environment -- except under a --target-root preview
+        # (expand_secrets=False), which writes ${VAR} verbatim so secrets
+        # never land in the preview directory. Only the named server key is
+        # touched; every other key in the app-owned file is preserved.
         path = self._claude_json_path()
         data = self._load_json(path)
 
@@ -229,7 +237,7 @@ class ClaudeTarget(Target):
                 servers.pop(name, None)
         else:
             self._ensure_dict(data, "mcpServers")[name] = self._claude_mcp_entry(
-                config, name=name
+                config, name=name, expand_secrets=self._expand_secrets
             )
 
         self._save_json(path, data)
@@ -243,10 +251,25 @@ class ClaudeTarget(Target):
     ) -> dict[str, Any]:
         """Build the ``.claude.json`` ``mcpServers`` entry for a server.
 
-        Strips deployment metadata (:data:`_MCP_STRIP_KEYS`). URL-transport
-        servers get an explicit ``type`` (default ``http``) because Claude
-        Code treats a ``type``-less entry as stdio and rejects it for the
-        missing ``command`` ("command: expected string, received undefined").
+        Strips deployment metadata (:data:`_MCP_STRIP_KEYS`). With
+        ``expand_secrets`` (the local deploy path), ``${VAR}`` references in
+        ``env``/``headers`` values and in a string ``url`` are strict-expanded
+        -- a URL can carry a secret in a query parameter -- so the deployed
+        config never depends on the launcher environment. Baking is a
+        deliberate policy decision even though Claude Code runtime-expands
+        ``${VAR}``/``${VAR:-default}`` in these fields of ``.claude.json``
+        itself: at runtime an unset reference is left as literal text (a
+        broken server when ``claude`` launches without the repo ``.env``),
+        whereas the deploy-time bake fails loudly (``EnvVarError``) and
+        matches the remote path, which passes ``expand_secrets=False`` and
+        applies its own expansion (see
+        ``RemoteTarget._expand_entry_secrets``). ``--target-root`` previews
+        also pass ``expand_secrets=False`` (via the constructor flag) but
+        apply no expansion at all: secrets must never be baked into the
+        user-chosen preview directory. URL-transport servers get an
+        explicit ``type`` (default ``http``) because Claude Code treats a
+        ``type``-less entry as stdio and rejects it for the missing
+        ``command`` ("command: expected string, received undefined").
         An explicit ``type`` in the source (e.g. ``sse``) is preserved.
         """
         from ..envsubst import expand_env_vars_strict
@@ -271,6 +294,15 @@ class ClaudeTarget(Target):
                         )
                         for k, v in value.items()
                     }
+            # Deliberate policy: Claude Code would runtime-expand ${VAR} in
+            # url too, but an unset variable survives to runtime as literal
+            # text (a broken server when `claude` launches without .env), so
+            # bake at deploy time like env/headers above and the remote path.
+            url = entry.get("url")
+            if isinstance(url, str):
+                entry["url"] = expand_env_vars_strict(
+                    url, context=f"mcp.{name}.url" if name else "mcp.url"
+                )
         if "url" in entry and "type" not in entry:
             entry["type"] = "http"
         return entry

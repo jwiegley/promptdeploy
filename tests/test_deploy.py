@@ -515,6 +515,43 @@ class TestMcpDeploy:
         assert "my-server" in claude_json["mcpServers"]
         assert not (tc.path / "settings.json").exists()
 
+    def test_target_root_preview_writes_secrets_verbatim(
+        self, tmp_path: Path, monkeypatch
+    ):
+        # End to end: a --target-root preview (remap_targets_to_root marks
+        # targets preview=True -> create_target passes expand_secrets=False)
+        # writes ${VAR} verbatim into the preview .claude.json even when the
+        # variables are set -- secrets never land in the preview directory.
+        from promptdeploy.config import remap_targets_to_root
+
+        monkeypatch.setenv("PREVIEW_SECRET", "super-secret")
+        src = tmp_path / "source"
+        src.mkdir()
+        mcp_dir = src / "mcp"
+        mcp_dir.mkdir()
+        (mcp_dir / "srv.yaml").write_bytes(
+            b"name: srv\n"
+            b"url: https://x/mcp?apiKey=${PREVIEW_SECRET}\n"
+            b"headers:\n"
+            b"  Authorization: Bearer ${PREVIEW_SECRET}\n"
+        )
+
+        tc = _make_claude_target(tmp_path)
+        config = remap_targets_to_root(
+            _make_config(src, {tc.id: tc}), tmp_path / "preview"
+        )
+        preview_dir = config.targets[tc.id].path
+        preview_dir.mkdir(parents=True)
+        deploy(config)
+
+        text = (preview_dir / ".claude.json").read_text()
+        srv = json.loads(text)["mcpServers"]["srv"]
+        assert srv["url"] == "https://x/mcp?apiKey=${PREVIEW_SECRET}"
+        assert srv["headers"] == {"Authorization": "Bearer ${PREVIEW_SECRET}"}
+        assert "super-secret" not in text
+        # The real target directory is untouched.
+        assert not (tc.path / ".claude.json").exists()
+
     def test_removes_stale_mcp_server(self, tmp_path: Path):
         src = tmp_path / "source"
         src.mkdir()
@@ -2580,6 +2617,85 @@ class TestRemoteMcpDeploy:
         h1 = compute_item_hash(item, target, config)
         monkeypatch.setenv("TOK", "v2")
         assert compute_item_hash(item, target, config) != h1
+
+    @staticmethod
+    def _url_mcp_item_and_config(src: Path):
+        """Write a url-with-${VAR} mcp source under ``src`` and return the item."""
+        from promptdeploy.source import SourceDiscovery
+
+        src.mkdir(exist_ok=True)
+        mcp_dir = src / "mcp"
+        mcp_dir.mkdir(exist_ok=True)
+        (mcp_dir / "srv.yaml").write_bytes(
+            b'name: srv\nurl: "https://x/mcp?apiKey=${URL_TOK}"\n'
+        )
+        return next(
+            i for i in SourceDiscovery(src).discover_all() if i.item_type == "mcp"
+        )
+
+    def test_remote_mcp_hash_changes_when_url_env_rotates(
+        self, tmp_path: Path, monkeypatch
+    ):
+        # Remote-mcp targets bake the deploy-time-expanded url secret into
+        # the remote .claude.json; compute_item_hash folds env values over
+        # the WHOLE mcp metadata (gated on mcp_hash_includes_env), so a
+        # rotated secret referenced from url must change the hash.
+        from promptdeploy.deploy import compute_item_hash
+        from promptdeploy.targets import create_target
+
+        src = tmp_path / "source"
+        item = self._url_mcp_item_and_config(src)
+        tc = TargetConfig(
+            id="rc", type="claude", path=tmp_path / "rc", host="user@fakehost"
+        )
+        config = _make_config(src, {tc.id: tc})
+        target = create_target(tc)
+
+        monkeypatch.setenv("URL_TOK", "v1")
+        h1 = compute_item_hash(item, target, config)
+        monkeypatch.setenv("URL_TOK", "v2")
+        assert compute_item_hash(item, target, config) != h1
+
+    def test_local_claude_mcp_hash_changes_when_url_env_rotates(
+        self, tmp_path: Path, monkeypatch
+    ):
+        # Local claude also bakes the url secret at deploy time
+        # (ClaudeTarget.mcp_hash_includes_env is True), so its hash folds
+        # env values referenced from url just like the remote path.
+        from promptdeploy.deploy import compute_item_hash
+        from promptdeploy.targets import create_target
+
+        src = tmp_path / "source"
+        item = self._url_mcp_item_and_config(src)
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        target = create_target(tc)
+
+        monkeypatch.setenv("URL_TOK", "v1")
+        h1 = compute_item_hash(item, target, config)
+        monkeypatch.setenv("URL_TOK", "v2")
+        assert compute_item_hash(item, target, config) != h1
+
+    def test_droid_mcp_hash_ignores_url_env_rotation(self, tmp_path: Path, monkeypatch):
+        # Droid writes the url verbatim (it expands ${VAR} itself at
+        # runtime), so its mcp hash stays source-bytes only
+        # (mcp_hash_includes_env is False) and a rotated secret must NOT
+        # trigger a redeploy.
+        from promptdeploy.deploy import compute_item_hash
+        from promptdeploy.targets import create_target
+
+        src = tmp_path / "source"
+        item = self._url_mcp_item_and_config(src)
+        target_dir = tmp_path / "droid"
+        target_dir.mkdir()
+        tc = TargetConfig(id="d", type="droid", path=target_dir)
+        config = _make_config(src, {tc.id: tc})
+        target = create_target(tc)
+
+        monkeypatch.setenv("URL_TOK", "v1")
+        h1 = compute_item_hash(item, target, config)
+        monkeypatch.setenv("URL_TOK", "v2")
+        assert compute_item_hash(item, target, config) == h1
 
     def test_flush_remote_mcp_helper_noop_for_non_remote_target(self, tmp_path: Path):
         from promptdeploy.deploy import _flush_remote_mcp

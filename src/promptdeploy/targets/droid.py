@@ -216,6 +216,10 @@ class DroidTarget(Target):
                 if k not in _MCP_STRIP_KEYS and k != "url":
                     droid_config[k] = v
                 elif k == "url":
+                    # Verbatim on purpose: Droid itself expands
+                    # ${VAR}/${VAR:-default} in url (and env/headers) at
+                    # load time; an unset variable leaves the placeholder in
+                    # place with a warning at server start.
                     droid_config["url"] = v
             # Disabled servers never reach this branch: ``enabled: false``
             # removes the entry from mcp.json entirely (handled above), so

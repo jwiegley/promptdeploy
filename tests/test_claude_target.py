@@ -486,6 +486,80 @@ class TestDeployMcpServer:
                 {"name": "srv", "command": "x", "env": {"KEY": "${MISSING_KEY}"}},
             )
 
+    def test_url_strict_expanded(self, tmp_path: Path, monkeypatch):
+        # A url can carry a secret in a query parameter; it is baked at
+        # deploy time exactly like env/headers values.
+        monkeypatch.setenv("REF_KEY", "secret-ref")
+        target = _make_target(tmp_path)
+        target.deploy_mcp_server(
+            "srv",
+            {"name": "srv", "url": "https://api.example.com/mcp?apiKey=${REF_KEY}"},
+        )
+
+        srv = json.loads(_claude_json(tmp_path).read_text())["mcpServers"]["srv"]
+        assert srv["url"] == "https://api.example.com/mcp?apiKey=secret-ref"
+
+    def test_url_missing_env_var_raises(self, tmp_path: Path, monkeypatch):
+        monkeypatch.delenv("MISSING_URL_KEY", raising=False)
+        target = _make_target(tmp_path)
+        with pytest.raises(EnvVarError, match=r"MISSING_URL_KEY.*mcp\.srv\.url"):
+            target.deploy_mcp_server(
+                "srv",
+                {"name": "srv", "url": "https://x/mcp?apiKey=${MISSING_URL_KEY}"},
+            )
+
+    def test_url_missing_env_var_nameless_context(self, monkeypatch):
+        # Without a server name the error context falls back to "mcp.url",
+        # mirroring the env/headers context naming.
+        monkeypatch.delenv("MISSING_URL_KEY", raising=False)
+        with pytest.raises(EnvVarError, match=r"MISSING_URL_KEY.*mcp\.url"):
+            ClaudeTarget._claude_mcp_entry({"url": "https://x?k=${MISSING_URL_KEY}"})
+
+    def test_url_verbatim_when_expand_secrets_false(self, monkeypatch):
+        # The remote path builds the entry unexpanded and applies its own
+        # strict expansion afterwards (RemoteTarget._expand_entry_secrets).
+        monkeypatch.delenv("SOME_URL_KEY", raising=False)
+        entry = ClaudeTarget._claude_mcp_entry(
+            {"name": "srv", "url": "https://x?k=${SOME_URL_KEY}"},
+            name="srv",
+            expand_secrets=False,
+        )
+        assert entry["url"] == "https://x?k=${SOME_URL_KEY}"
+
+    def test_preview_target_writes_secrets_verbatim(self, tmp_path: Path, monkeypatch):
+        # A --target-root preview constructs the target with
+        # expand_secrets=False: even with the variables set, deploy writes
+        # ${VAR} verbatim so secrets never land in the preview directory.
+        monkeypatch.setenv("PREVIEW_URL_KEY", "url-secret")
+        monkeypatch.setenv("PREVIEW_ENV_KEY", "env-secret")
+        monkeypatch.setenv("PREVIEW_HDR_KEY", "hdr-secret")
+        config = tmp_path / ".claude"
+        config.mkdir()
+        target = ClaudeTarget("preview-target", config, expand_secrets=False)
+        target.deploy_mcp_server(
+            "srv",
+            {
+                "name": "srv",
+                "url": "https://x/mcp?apiKey=${PREVIEW_URL_KEY}",
+                "env": {"KEY": "${PREVIEW_ENV_KEY}"},
+                "headers": {"Authorization": "Bearer ${PREVIEW_HDR_KEY}"},
+            },
+        )
+
+        text = _claude_json(tmp_path).read_text()
+        srv = json.loads(text)["mcpServers"]["srv"]
+        assert srv["url"] == "https://x/mcp?apiKey=${PREVIEW_URL_KEY}"
+        assert srv["env"] == {"KEY": "${PREVIEW_ENV_KEY}"}
+        assert srv["headers"] == {"Authorization": "Bearer ${PREVIEW_HDR_KEY}"}
+        for secret in ("url-secret", "env-secret", "hdr-secret"):
+            assert secret not in text
+
+    def test_non_string_url_passes_through(self):
+        # Expansion applies only to string urls; anything else is left for
+        # Claude Code itself to reject.
+        entry = ClaudeTarget._claude_mcp_entry({"name": "srv", "url": 123}, name="srv")
+        assert entry["url"] == 123
+
     def test_local_target_manages_mcp_remote_skips(self, tmp_path: Path):
         # Local claude targets manage MCP; remote ones cannot (.claude.json is
         # machine-specific and never rsynced), so they skip mcp items.
@@ -528,11 +602,14 @@ class TestDeployMcpServer:
         assert srv == {"type": "sse", "url": "https://x"}
 
     def test_mcp_fingerprint_refreshes_existing_deployments(self, tmp_path: Path):
-        # The deployed entry format (URL "type") changed without the source
-        # YAML changing, so MCP items carry a content fingerprint that
-        # invalidates stale manifest hashes and forces a one-time refresh.
+        # The deployed entry format changed without the source YAML changing
+        # (v3: URL "type" defaulting; v4: url joins the strict-expansion
+        # contract), so MCP items carry a content fingerprint that invalidates
+        # stale manifest hashes and forces a one-time refresh. Pin the exact
+        # value: a silent revert would skip that migration for existing
+        # deployments.
         target = _make_target(tmp_path)
-        assert target.content_fingerprint("mcp") is not None
+        assert target.content_fingerprint("mcp") == "claude-mcp-entry-v4"
 
 
 class TestRemoveMcpServer:

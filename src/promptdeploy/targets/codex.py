@@ -134,7 +134,8 @@ class CodexTarget(Target):
         if item_type == "agent":
             return "codex-agent-v2"
         if item_type == "mcp":
-            return "codex-mcp-v3"
+            # v4: ${VAR} in url is now strict-expanded like env values.
+            return "codex-mcp-v4"
         if item_type in ("models", "hook"):
             return "codex-target-v1"
         if item_type in ("command", "prompt"):
@@ -517,6 +518,12 @@ class CodexTarget(Target):
                     env[env_key] = env_value
                 if env:
                     entry["env"] = env
+                continue
+            if key == "url" and isinstance(value, str):
+                # Codex performs no env expansion anywhere in config.toml --
+                # a url is used literally -- so a URL-borne secret must be
+                # baked at deploy time, matching the env values above.
+                entry[key] = expand_env_vars_strict(value, context=f"mcp.{name}.url")
                 continue
             if key != "env_vars":
                 entry[key] = value

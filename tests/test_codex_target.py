@@ -73,7 +73,7 @@ def test_should_skip_settings_marketplaces_and_non_codex_models(tmp_path: Path):
         metadata={"providers": {"p": {"display_name": "P", "codex": {}}}},
     )
     assert target.content_fingerprint("agent") == "codex-agent-v2"
-    assert target.content_fingerprint("mcp") == "codex-mcp-v3"
+    assert target.content_fingerprint("mcp") == "codex-mcp-v4"
     assert target.content_fingerprint("models") == "codex-target-v1"
     assert target.content_fingerprint("command") == "codex-command-skill-v3"
     assert target.content_fingerprint("skill") is None
@@ -476,6 +476,40 @@ def test_deploy_mcp_strict_expands_missing_env_refs(tmp_path: Path):
         target.deploy_mcp_server(
             "srv",
             {"command": "cmd", "env": {"TOKEN": "${MISSING}"}},
+        )
+
+
+def test_deploy_mcp_url_strict_expanded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    # Codex performs no env expansion anywhere in config.toml -- a url is
+    # used literally -- so a URL-borne secret must be baked at deploy time.
+    monkeypatch.setenv("REF_KEY", "secret-ref")
+    target = _make_target(tmp_path)
+    target.deploy_mcp_server(
+        "srv", {"url": "https://api.example.com/mcp?apiKey=${REF_KEY}"}
+    )
+
+    server = _read_toml(tmp_path / ".codex" / "config.toml")["mcp_servers"]["srv"]
+    assert server["url"] == "https://api.example.com/mcp?apiKey=secret-ref"
+
+
+def test_deploy_mcp_url_without_refs_unchanged(tmp_path: Path):
+    target = _make_target(tmp_path)
+    target.deploy_mcp_server("srv", {"url": "https://api.example.com/mcp"})
+
+    server = _read_toml(tmp_path / ".codex" / "config.toml")["mcp_servers"]["srv"]
+    assert server["url"] == "https://api.example.com/mcp"
+
+
+def test_deploy_mcp_url_missing_env_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv("MISSING_URL_KEY", raising=False)
+    target = _make_target(tmp_path)
+    with pytest.raises(EnvVarError, match=r"MISSING_URL_KEY.*mcp\.srv\.url"):
+        target.deploy_mcp_server(
+            "srv", {"url": "https://x/mcp?apiKey=${MISSING_URL_KEY}"}
         )
 
 

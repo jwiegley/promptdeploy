@@ -407,6 +407,21 @@ class TestDeployMcpServer:
         assert srv["type"] == "http"
         assert srv["headers"] == {"Authorization": "Bearer token"}
 
+    def test_url_env_ref_stays_verbatim(self, tmp_path: Path, monkeypatch):
+        # Contract: Droid natively expands ${VAR}/${VAR:-default} in url at
+        # runtime (unset leaves the placeholder in place with a warning at
+        # server start), so promptdeploy must write it verbatim -- never
+        # expand it, never fail on an unset variable.
+        monkeypatch.delenv("DROID_URL_KEY", raising=False)
+        target = _make_target(tmp_path)
+        target.deploy_mcp_server(
+            "web-srv", {"url": "https://example.com/mcp?apiKey=${DROID_URL_KEY}"}
+        )
+
+        result = json.loads((tmp_path / ".droid" / "mcp.json").read_text())
+        srv = result["mcpServers"]["web-srv"]
+        assert srv["url"] == "https://example.com/mcp?apiKey=${DROID_URL_KEY}"
+
     def test_creates_mcp_json_if_missing(self, tmp_path: Path):
         target = _make_target(tmp_path)
         target.deploy_mcp_server("srv", {"command": "echo", "args": []})
