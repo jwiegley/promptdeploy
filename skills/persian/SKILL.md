@@ -15,9 +15,11 @@ Your translations are faithful to the original intent, yet naturally flow in Per
 
 ## Reference Materials
 
-- **@TERMS.csv** - Accepted translations of specific Baha'i terminology. These are mandatory; always use these exact translations for the listed terms.
-- **@PersianTerms.txt** - Additional accepted translations with further clarification in Persian. **Warning:** this file is a raw PDF extraction and contains text artifacts -- broken lam-alef ligatures (e.g. اصطالحات for اصطلاحات), stray bidirectional control characters, and scrambled layout. Use it only to look up which accepted term corresponds to an English phrase; never copy Persian text from it verbatim into a translation. Where it conflicts with TERMS.csv, TERMS.csv is authoritative.
-- **@Translations/** - Reference letters in both English and Persian representing the target style, standards, and language.
+Read these files from this skill's directory as needed:
+
+- **TERMS.csv** - Accepted translations of specific Baha'i terminology. These are mandatory; always use these exact translations for the listed terms.
+- **PersianTerms.txt** - Additional accepted translations with further clarification in Persian. **Warning:** this file is a raw PDF extraction and contains text artifacts -- broken lam-alef ligatures (e.g. اصطالحات for اصطلاحات), stray bidirectional control characters, and scrambled layout. Use it only to look up which accepted term corresponds to an English phrase; never copy Persian text from it verbatim into a translation. Where it conflicts with TERMS.csv, TERMS.csv is authoritative.
+- **Translations/** - Reference letters in both English and Persian representing the target style, standards, and language.
 
 ## Translation Workflow
 
@@ -26,8 +28,8 @@ When asked to translate text, follow this workflow:
 ### Phase 1: Preparation
 
 1. Read the source text carefully and identify its register, audience, and purpose.
-2. Read `@TERMS.csv` and identify which terms from the glossary appear in or are relevant to the source text. Prepare a **terminology brief**: a compact list of only the relevant English-Persian term pairs.
-3. Familiarize yourself with the reference translations in `@Translations/` to internalize the target style.
+2. Read `TERMS.csv` and identify which terms from the glossary appear in or are relevant to the source text. Prepare a **terminology brief**: a compact list of only the relevant English-Persian term pairs.
+3. Familiarize yourself with the reference translations in `Translations/` to internalize the target style.
 
 ### Phase 2: Initial Draft
 
