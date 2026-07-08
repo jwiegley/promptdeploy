@@ -45,10 +45,21 @@ generic_instructions = true
 frontmatter_validation = true
 xml_balance = true
 import_references = true
-disabled_rules = []
+# CC-SK-017 (unknown frontmatter field) fires on the only/except keys in
+# skills/forge and skills/retest, which are promptdeploy deploy filters
+# stripped by transform_for_target before they ever reach Claude Code.
+# It is disabled globally because agnix 0.37.5 does not honor per-file
+# [[overrides]] for this rule (the matching override block below is kept
+# for documentation and for when a future agnix version fixes that).
+disabled_rules = ["CC-SK-017"]
 disabled_validators = []
 
 [tool_versions]
+# Pinned to the CLI versions installed on this machine (2026-07-08) so
+# version-dependent rules validate against real behavior instead of
+# default assumptions (VER-001).
+claude_code = "2.1.204"
+codex = "0.143.0"
 
 [spec_revisions]
 
@@ -56,3 +67,50 @@ disabled_validators = []
 include_as_memory = []
 include_as_generic = []
 exclude = []
+
+# A single comprehensive project-instruction file is deliberate; splitting
+# via @import would load the same tokens anyway.
+[[overrides]]
+paths = ["CLAUDE.md"]
+disabled_rules = ["CC-MEM-009"]
+
+# Positional keyword heuristics conflict with a comprehensive reference
+# document whose Key Patterns section (security prohibitions like "must
+# never be rsynced") necessarily sits mid-file and cannot be reworded
+# without losing normative force.
+[[overrides]]
+paths = ["CLAUDE.md"]
+disabled_rules = ["CC-MEM-008", "PE-001"]
+
+# The ~/.local/state path documents the literal XDG default of
+# $XDG_STATE_HOME; the path itself is the fact being stated.
+[[overrides]]
+paths = ["CLAUDE.md"]
+disabled_rules = ["XP-003"]
+
+# The target table and per-target override example document the literal
+# ~/.config/... paths from deploy.yaml (the stated source of truth), so
+# the paths are factual content, not portability defects.
+[[overrides]]
+paths = ["PROMPTDEPLOY.md"]
+disabled_rules = ["XP-003"]
+
+# The .cursor/ path is the instructional content itself: these commands
+# tell the agent to search for Cursor rules (.cursor/rules/, .cursorrules)
+# in the analyzed repo.
+[[overrides]]
+paths = ["commands/initialize.md", "commands/prepare-with.md"]
+disabled_rules = ["XP-003"]
+
+# Documents the literal fixed path (~/.codex/config.toml) where OpenAI
+# Codex reads its config; the hard-coded path is the fact being documented.
+[[overrides]]
+paths = ["mcp/schema.md"]
+disabled_rules = ["XP-003"]
+
+# only/except are promptdeploy deploy filters, stripped by
+# transform_for_target at deploy time so they never reach Claude Code or
+# any other deployed client.
+[[overrides]]
+paths = ["skills/forge/SKILL.md", "skills/retest/SKILL.md"]
+disabled_rules = ["CC-SK-017", "XP-SK-001"]
