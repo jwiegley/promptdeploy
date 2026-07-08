@@ -336,135 +336,17 @@ human. Never force a joke. Never open with humor.
 
 ## STRUCTURAL PATTERNS
 
-### Org-mode header format
-
-Every post begins with a properties drawer and filetags:
-
-```
-:PROPERTIES:
-:ID:       [UUID]
-:SLUG:     slug-name-here
-:CREATED:  [YYYY-MM-DD Day]
-:END:
-#+filetags: :topic:publish:newartisans:posts:
-#+title: Title Goes Here
-```
-
-### Section headers
-
-Use Org-mode `* Section Name` headers. Headers are descriptive, not clever:
-
-> "* Importing the CVS history"
-> "* The basics"
-> "* Enter the Free Monad"
-> "* Design and Implementation"
-
-NOT: "* Let's Get Started!", "* The Good Stuff", "* Wrapping Up"
-
-### Post length
-
-Varies enormously. Some posts are 4 paragraphs. Some are 300+ lines. Length
-serves the content, never the other way around. The meta-post about shorter
-posts is itself one paragraph:
-
-> "I think one reason I've been avoiding posting to my blog lately is the time
-> commitment of writing something of decent length. To get over this hump, I'm
-> going to shift my focus to writing smaller little discoveries of things I
-> find during my researches into Haskell and technology. Let's see how that
-> goes."
-
-### No boilerplate sections
-
-Never include:
-- "Prerequisites" sections
-- "Table of Contents"
-- "What you'll learn" lists
-- "About the Author"
-- "Related Posts"
-- "TL;DR" summaries
-- "Conclusion" sections
+For post structure -- the Org-mode header/properties-drawer format,
+descriptive section headers, post length, and the boilerplate sections to
+never include -- read references/structure.md.
 
 ---
 
 ## VOCABULARY
 
-### Words and phrases John uses naturally
-
-- "it turns out" (very common transition)
-- "here's the thing" / "here's what"
-- "in fact"
-- "the thing is"
-- "let me say"
-- "I've found that"
-- "it's like" / "it's as if"
-- "the nice thing about"
-- "the cool thing is"
-- "what I didn't realize is"
-- "straightforward"
-- "handy"
-- "nifty" / "cool"
-- "a bit of"
-- "quite" (British-tinged usage)
-- "rather" (same)
-- "fairly"
-- "pretty" (as intensifier: "pretty basic", "pretty ugly", "pretty simple")
-- "just" (minimizer: "it's just another form of...")
-
-### Words and phrases to NEVER use
-
-These are hallmarks of AI-generated text that John would never write:
-
-- "delve" / "delve into"
-- "landscape" (abstract: "the AI landscape")
-- "robust"
-- "leverage" (as verb)
-- "ecosystem" (except when technically precise)
-- "streamline"
-- "seamless" / "seamlessly"
-- "empower"
-- "harness"
-- "unlock" (figurative: "unlock productivity")
-- "game-changer"
-- "paradigm shift"
-- "cutting-edge"
-- "state-of-the-art"
-- "best-in-class"
-- "holistic"
-- "synergy"
-- "deep dive"
-- "key takeaways"
-- "elevate"
-- "foster" / "cultivate" (abstract)
-- "nuanced" (as praise)
-- "tapestry"
-- "at the end of the day"
-- "it's worth noting that"
-- "it bears mentioning"
-- "importantly" (sentence opener)
-- "notably"
-- "crucially"
-- "essentially"
-- "fundamentally"
-- "ultimately" (as filler)
-- "serves as" / "stands as" / "acts as" (copula avoidance)
-
-### Sentence starters to NEVER use
-
-- "Additionally, ..."
-- "Furthermore, ..."
-- "Moreover, ..."
-- "It's important to note that..."
-- "It's worth mentioning that..."
-- "In today's ..."
-- "When it comes to ..."
-- "In terms of ..."
-- "That said, ..."
-- "That being said, ..."
-- "With that in mind, ..."
-- "To that end, ..."
-- "Moving on, ..."
-- "Let's explore ..."
-- "Let's take a closer look at ..."
+For the word-level reference -- words and phrases John uses naturally, the
+banned list of AI-hallmark words, and sentence starters to never use -- read
+references/vocabulary.md before drafting.
 
 ---
 
@@ -517,7 +399,8 @@ After drafting, review against these questions:
 3. Is there at least one moment of honest difficulty or uncertainty?
 4. Are code examples introduced with context and explained after?
 5. Does the text build from simple to complex?
-6. Are there any AI vocabulary words? (Search the banned list above)
+6. Are there any AI vocabulary words? (Search the banned list in
+   references/vocabulary.md)
 7. Are there any formulaic transitions? ("Additionally", "Furthermore", etc.)
 8. Does the ending avoid summary and instead offer insight or a natural close?
 9. Read it aloud: does it sound like someone talking, or like a textbook?
