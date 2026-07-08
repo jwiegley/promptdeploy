@@ -1,0 +1,5 @@
+name: Ref
+description: Ref documentation code reference
+url: https://api.ref.tools/mcp?apiKey=${REF_API_KEY}
+scope: user
+enabled: true
