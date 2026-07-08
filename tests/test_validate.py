@@ -1874,7 +1874,7 @@ class TestBrokenSkillSymlinkWarning:
 
 
 class TestValidateEnvExampleRefs:
-    """MCP ${VAR} refs in env/headers must be declared in .env.example."""
+    """MCP ${VAR} refs in env/headers/url must be declared in .env.example."""
 
     @staticmethod
     def _config(tmp_path: Path) -> Config:
@@ -1897,7 +1897,7 @@ class TestValidateEnvExampleRefs:
         assert warnings[0].level == "warning"
         assert warnings[0].file_path == mcp_dir / "srv.yaml"
         assert ".env.example" in warnings[0].message
-        assert "empty" in warnings[0].message
+        assert "unexpanded" in warnings[0].message
 
     def test_headers_ref_missing_from_env_example_warns(self, tmp_path: Path) -> None:
         mcp_dir = tmp_path / "mcp"
@@ -1922,6 +1922,55 @@ class TestValidateEnvExampleRefs:
         (tmp_path / ".env.example").write_text("DECLARED_KEY=sk-...\n")
         issues = validate_all(self._config(tmp_path))
         assert issues == []
+
+    def test_url_ref_missing_from_env_example_warns(self, tmp_path: Path) -> None:
+        mcp_dir = tmp_path / "mcp"
+        mcp_dir.mkdir()
+        (mcp_dir / "srv.yaml").write_bytes(
+            b"name: srv\n"
+            b'url: "https://api.example.com/mcp?apiKey=${UNDECLARED_URL_KEY}"\n'
+        )
+        (tmp_path / ".env.example").write_text("OTHER_KEY=...\n")
+        issues = validate_all(self._config(tmp_path))
+        warnings = [i for i in issues if "UNDECLARED_URL_KEY" in i.message]
+        assert len(warnings) == 1
+        assert warnings[0].level == "warning"
+        assert warnings[0].file_path == mcp_dir / "srv.yaml"
+        assert ".env.example" in warnings[0].message
+
+    def test_url_ref_declared_does_not_warn(self, tmp_path: Path) -> None:
+        mcp_dir = tmp_path / "mcp"
+        mcp_dir.mkdir()
+        (mcp_dir / "srv.yaml").write_bytes(
+            b"name: srv\n"
+            b'url: "https://api.example.com/mcp?apiKey=${DECLARED_URL_KEY}"\n'
+        )
+        (tmp_path / ".env.example").write_text("DECLARED_URL_KEY=ref-...\n")
+        issues = validate_all(self._config(tmp_path))
+        assert issues == []
+
+    def test_no_env_example_skips_url_check(self, tmp_path: Path) -> None:
+        mcp_dir = tmp_path / "mcp"
+        mcp_dir.mkdir()
+        (mcp_dir / "srv.yaml").write_bytes(
+            b"name: srv\n"
+            b'url: "https://api.example.com/mcp?apiKey=${UNDECLARED_URL_KEY}"\n'
+        )
+        issues = validate_all(self._config(tmp_path))
+        assert issues == []
+
+    def test_codex_override_url_ref_missing_warns(self, tmp_path: Path) -> None:
+        mcp_dir = tmp_path / "mcp"
+        mcp_dir.mkdir()
+        (mcp_dir / "srv.yaml").write_bytes(
+            b"name: srv\ncommand: npx\ncodex:\n"
+            b'  url: "https://x/mcp?apiKey=${UNDECLARED_CODEX_URL_KEY}"\n'
+        )
+        (tmp_path / ".env.example").write_text("OTHER_KEY=...\n")
+        issues = validate_all(self._config(tmp_path))
+        warnings = [i for i in issues if "UNDECLARED_CODEX_URL_KEY" in i.message]
+        assert len(warnings) == 1
+        assert warnings[0].level == "warning"
 
     def test_codex_override_ref_missing_from_env_example_warns(
         self, tmp_path: Path

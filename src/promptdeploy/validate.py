@@ -34,9 +34,9 @@ def validate_all(config: Config) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     discovery = SourceDiscovery(config.source_root)
 
-    # ${VAR} references in MCP env/headers are checked against .env.example
-    # so a typo'd or undocumented variable surfaces at validate time. None
-    # (no .env.example) disables the check entirely.
+    # ${VAR} references in MCP env/headers/url are checked against
+    # .env.example so a typo'd or undocumented variable surfaces at validate
+    # time. None (no .env.example) disables the check entirely.
     env_keys = read_env_example_keys(config.source_root / ".env.example")
 
     all_items: list[SourceItem] = []
@@ -303,8 +303,8 @@ def validate_item(
 
     ``env_example_keys`` is the set of variable names declared in
     ``.env.example``; when provided, MCP ``${VAR}`` references in
-    ``env``/``headers`` that are not declared there produce warnings.
-    ``None`` skips that check.
+    ``env``/``headers`` values and in ``url`` that are not declared there
+    produce warnings. ``None`` skips that check.
     """
     issues: list[ValidationIssue] = []
 
@@ -517,12 +517,16 @@ def validate_item(
                 )
             )
         if env_example_keys is not None:
-            refs = find_env_refs(metadata.get("env")) | find_env_refs(
-                metadata.get("headers")
+            refs = (
+                find_env_refs(metadata.get("env"))
+                | find_env_refs(metadata.get("headers"))
+                | find_env_refs(metadata.get("url"))
             )
             if isinstance(codex_override, dict):
-                refs |= find_env_refs(codex_override.get("env")) | find_env_refs(
-                    codex_override.get("headers")
+                refs |= (
+                    find_env_refs(codex_override.get("env"))
+                    | find_env_refs(codex_override.get("headers"))
+                    | find_env_refs(codex_override.get("url"))
                 )
             for var in sorted(refs - env_example_keys):
                 issues.append(
@@ -530,8 +534,9 @@ def validate_item(
                         level="warning",
                         message=(
                             f"MCP references ${{{var}}} which is not declared "
-                            f"in .env.example; an unset variable expands to "
-                            f"empty at runtime"
+                            f"in .env.example; an unset variable fails "
+                            f"deploy-time expansion or is left unexpanded at "
+                            f"runtime"
                         ),
                         file_path=item.path,
                     )
