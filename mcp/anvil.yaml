@@ -1,8 +1,9 @@
 name: anvil
-description: Live Emacs session on hera via anvil.el — the Elisp eval suite (emacs-eval sync/async/jobs, nelisp REPL) against the running GUI Emacs daemon
-command: /Users/johnw/.emacs.d/anvil-mcp.sh
+description: >-
+  Cross-platform Anvil MCP surface: 12 interactive Emacs tools, 42 NeLisp
+  standalone tools, or 88 unified tools from a dedicated Emacs daemon.
+command: anvil-mcp
 args:
-  - "--socket=/tmp/johnw-emacs/server"
   - "--server-id=anvil"
 scope: user
 enabled: true
@@ -13,20 +14,22 @@ only:
   - codex-hera
   - droid
   - opencode-hera
-# Requires the GUI Emacs daemon on hera with (anvil-enable) +
-# (anvil-server-start) active (anvil-server-autostart-on-request covers the
-# transport after restarts). The wrapper resolves emacsclient beside the
-# *running* Emacs.app nix-store process — there is no emacsclient on PATH
-# here — and execs anvil-stdio.sh, which relays JSON-RPC over emacsclient.
-# The socket path is fixed by `server-socket-dir' in init.org.
+  - codex-clio
+  - opencode-clio
+  - claude-vulcan
+  - opencode-vulcan
+  - claude-vps
+  - claude-andoria
+  - codex-andoria
+# Nix supplies the PATH-stable launcher on every selected host. Its local
+# boolean chooses NeLisp or dedicated Emacs on Linux, and interactive or
+# dedicated Emacs on Darwin; promptdeploy does not encode either choice.
 #
-# Scoping is BY MACHINE (hera), not by run-locality, and the `only' list
-# must keep codex-local and codex-hera in agreement: when the deploy runs
-# on hera itself, codex-hera resolves to the SAME ~/.codex as codex-local
-# (create_target treats host == current host as local), and any item that
-# one target includes and the other filters out is created and then removed
-# again in every run. A `local' filetag was exactly that mistake.
+# The Andoria targets write the shared NFS-hosted agent configuration once.
+# At runtime the launcher derives the actual short hostname, so andoria-08,
+# andoria-t2, delphi-3bd4, and gpu-server use distinct host-local sockets.
 #
-# Sibling server: anvil-tools (same bridge, --server-id=emacs-eval) exposes
-# the 43 typed file/org/git/data tools. The `anvil` skill teaches agents how
-# to use both surfaces well.
+# Dedicated mode mirrors all 76 typed tools into this primary registration,
+# yielding 88 unique tools. Interactive mode keeps the split anvil-tools
+# registration, while NeLisp intentionally exposes its 42-tool standalone
+# surface only through this server ID.

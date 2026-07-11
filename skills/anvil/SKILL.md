@@ -1,56 +1,69 @@
 ---
 name: anvil
-description: Drive the user's live Emacs session through the anvil MCP servers — `anvil` (Elisp eval suite) and `anvil-tools` (typed file/org/git/data tools). This skill should be used when the user says "use the anvil skill", and on any host where these MCP tools are available whenever a task touches org files, files open in Emacs, the running Emacs configuration, bulk file edits, or needs structured git/agenda/project queries. Covers tool selection, progressive-disclosure reads, batched token-efficient edits, async eval for heavy work, and live-session safety.
+description: Use the available Anvil MCP backend — interactive Emacs, dedicated headless Emacs, or NeLisp — for structured file, Org, Git, data, and Elisp work. Detect the advertised capabilities, prefer typed and token-efficient operations, and apply live-session safety only where the backend actually reaches the user's interactive Emacs.
 ---
 
-# Anvil — the live-Emacs workbench
+# Anvil — the Emacs and NeLisp workbench
 
-Anvil (anvil.el) bridges MCP to the user's *running* Emacs session over
-`emacsclient`. Two servers expose it:
+Anvil is deployed through one stable primary MCP registration, but its local
+backend varies:
 
-- **`anvil`** — the eval suite: `emacs-eval`, `emacs-eval-async`,
-  `emacs-eval-result`, `emacs-eval-jobs`, `nelisp-eval`, `nelisp-eval-reset`.
-  The universal escape hatch: anything Emacs can do, this can do.
-- **`anvil-tools`** — 43 typed tools for files, org-mode, git, JSON/state,
-  workers, and telemetry. Prefer these over raw eval: they are
-  schema-checked, cheaper in tokens, and safe on large files.
+- **Interactive Emacs** — 12 primary eval/navigation tools plus a separate
+  65-tool typed registry. This backend reaches the user's development Emacs.
+- **Dedicated Emacs** — a separate headless process with 76 direct typed tools;
+  those tools are also mirrored into the primary registry, yielding 88 unique
+  primary tools. Its buffers, workers, sockets, and mutable state are isolated
+  from the development Emacs.
+- **NeLisp** — an Emacs-free 42-tool standalone registry for host, file, data,
+  and shell operations. It has no `emacs-eval`, Org engine, or live buffers.
 
-See `references/tools.md` for the full catalog with parameters. Client
-prefixes vary (Claude Code: `mcp__anvil__emacs-eval`,
-`mcp__anvil-tools__file-batch`); this document uses bare names.
+See `references/tools.md` for the backend manifests and tool guide. Client
+prefixes vary, and the dedicated primary registration may contain tools that
+interactive clients expose under `anvil-tools`; use advertised bare tool
+names rather than assuming a fixed prefix.
 
 ## Availability gate
 
-Apply this skill only where the tools actually exist. Check the available
-tool list for `emacs-eval` and `file-batch` (one from each server). If they
-are absent, or a probe call errors with a connection failure, state that
-anvil is unavailable on this host and fall back to standard tools — never
-treat anvil as a hard dependency. A cheap liveness probe:
-`emacs-eval` with `(emacs-version)`.
+Apply this skill when any Anvil tools are advertised; do not require an
+Emacs-only tool before using NeLisp. Identify the backend from capabilities:
 
-If `emacs-eval` works but typed tools error "No active MCP server", the
-Emacs session needs `(anvil-enable)` + `(anvil-server-start)` run — report
-this to the user rather than working around it.
+- `emacs-eval` present: Emacs-backed. Probe with `(emacs-version)`, then
+  evaluate `(getenv "ANVIL_EMACS_STATE_DIR")`: a non-empty value identifies
+  the dedicated daemon, as does an 88-tool unified primary surface. An unset
+  value with a split 12-tool primary and 65-tool typed sibling identifies the
+  interactive backend. If the distinction remains ambiguous, do not claim
+  that modified-buffer checks cover the user's development Emacs.
+- `emacs-eval` absent but `file-exists-p` or `anvil-host-info` present:
+  NeLisp. Probe with a read-only file or host call that is actually advertised.
+- Neither surface present, or the probe reports a transport failure: state
+  that Anvil is unavailable on this host and use standard tools.
+
+If `emacs-eval` works but an advertised typed tool reports "No active MCP
+server", report the incomplete Emacs initialization rather than silently
+working around it.
 
 ## Core rules
 
-1. **Typed tool first, eval second.** Reach for `emacs-eval` only when no
-   typed tool covers the operation (introspecting variables, driving modes,
-   invoking user functions, buffer manipulation).
+1. **Use the most specific advertised tool.** Prefer schema-checked typed
+   operations; use `emacs-eval` only when it exists and no typed tool covers
+   the operation.
 2. **Never read a whole file to answer a structural question.** Use the
-   layered read surface (below).
-3. **Batch edits.** N separate edit calls waste N-1 round trips; use
-   `file-batch` / `file-batch-across`.
-4. **Respect the live session.** The user is working in this Emacs. Follow
-   the safety rules at the end — they override everything else here.
+   layered read surface when the backend advertises it.
+3. **Batch edits when supported.** Use `file-batch` /
+   `file-batch-across` on Emacs-backed surfaces; NeLisp has a smaller file
+   API, so use its available operations directly.
+4. **Respect the backend boundary.** Interactive Emacs is the user's live
+   session. Dedicated Emacs is isolated. NeLisp has no Emacs state.
 
 ## Reading efficiently (progressive disclosure)
 
-Work down the layers; stop as soon as the question is answered:
+On an Emacs typed surface, work down the layers and stop as soon as the
+question is answered. NeLisp exposes `file-read` but not every progressive
+disclosure tool, so never invent a missing layer:
 
 1. `file-outline` — structural outline without the body (headings, defuns,
    sections; format inferred). Answers "what is in this file / where is X".
-2. `file-read` with `start-line`/`end-line` pagination — just the region
+2. `file-read` with `offset`/`limit` pagination — just the region
    that matters. For org files prefer `org-read-headline` / `org-read-by-id`
    (subtree only) over reading the file.
 3. `file-read-delta` for files read earlier in the session — a byte-identical
@@ -62,6 +75,10 @@ For git state, use the structured queries (`git-status`, `git-log`,
 instead of shelling out and parsing porcelain output.
 
 ## Editing efficiently
+
+Use only operations advertised by the active backend. The richer batch,
+regexp, import, and structured-edit guidance below applies to Emacs-backed
+typed surfaces; NeLisp provides a smaller literal file/data API.
 
 - Single literal change: `file-replace-string`. Regexp change:
   `file-replace-regexp` (Emacs regexp syntax — `\\(...\\)` groups, `\\1`
@@ -86,8 +103,10 @@ Verify edits from the return plist (e.g. `(:replaced 3 ...)`) — a count of
 
 ## Org-mode work
 
-Org files may be gated by an allowlist — check `org-get-allowed-files`
-when a call errors on file access.
+Org tools require an Emacs-backed backend. Dedicated Emacs configures
+`~/org` as its agenda and semantic root and permits explicit Org paths;
+NeLisp has no Org engine. On an interactive backend, files may be gated by
+an allowlist — check `org-get-allowed-files` when a call errors on access.
 
 - Discover: `org-read-outline` (hierarchy as JSON), then `org-read-headline`
   (subtree by path) or `org-read-by-id` (stable across refiles; prefer IDs
@@ -102,7 +121,10 @@ when a call errors on file access.
   `org-get-todo-config` / `org-get-tag-config` before constructing TODO
   states or tags by hand.
 
-## Eval — the escape hatch
+## Emacs-backed eval — the conditional escape hatch
+
+This section applies only when `emacs-eval` is advertised. NeLisp tools
+must be used directly and must not be preceded by an Emacs probe.
 
 - `emacs-eval` for anything under ~30 s: query variables, call functions,
   inspect buffers, drive packages. Return values print as Elisp data —
@@ -121,16 +143,21 @@ when a call errors on file access.
 - `metrics-token-report` reports per-tool payload telemetry — use it when
   asked to audit or tune MCP token usage.
 
-## Live-session safety (overrides all of the above)
+## Backend safety (overrides all of the above)
 
-- The session belongs to the user. Never kill buffers you did not create,
-  never `save-buffers-kill-emacs`, never toggle global modes or mutate
-  user configuration unless that is the task.
-- Before disk-editing a file the user may have open: check
+Modified-buffer checks protect user work only when the backend reaches the
+interactive Emacs. A dedicated daemon or NeLisp cannot prove that another
+Emacs process has no unsaved copy; state that boundary instead of presenting
+its empty buffer list as evidence.
+
+- An interactive session belongs to the user. Never kill buffers you did not
+  create, never `save-buffers-kill-emacs`, and never toggle global modes or
+  mutate user configuration unless that is the task.
+- Before disk-editing a file through interactive Emacs, check
   `(let ((b (find-buffer-visiting FILE))) (and b (buffer-modified-p b)))`.
-  If it is modified, do not edit the file on disk — the user has unsaved
-  work; either operate on the buffer via eval (edit, then leave saving to
-  the user) or ask.
+  If modified, do not edit the file on disk; operate on the live buffer or
+  ask. On dedicated/NeLisp backends, do not claim this check covers a separate
+  interactive editor.
 - Keep synchronous eval short; route heavy work through async or workers.
 - Prefer read-only forms when only reading: don't "query" with mutating
   functions.
@@ -141,9 +168,20 @@ when a call errors on file access.
 
 ## When NOT to use anvil
 
-- The host has no anvil tools (gate above) — standard tools, no commentary.
-- Plain project file edits when nothing is open in Emacs, no org
-  structure is involved, and one small edit suffices — native Edit/Write
-  tools are fine; anvil adds value with scale, structure, or live state.
-- Long-lived shell processes (servers, watchers) — that is not what the
-  eval bridge is for.
+- The host advertises no Anvil tools, or its transport probe fails.
+- The requested operation requires Emacs-only capabilities but the active
+  backend is NeLisp; explain the boundary and use an authorized fallback.
+- Long-lived shell processes (servers, watchers) — no Anvil backend is a
+  process supervisor.
+
+## Anvil Checkpoints
+
+These checkpoints remain mandatory. On dedicated Emacs or NeLisp, explicitly
+record that their buffer view cannot cover a separate interactive Emacs.
+
+1. Session start: probe Anvil, check modified Emacs buffers, and inspect git status.
+2. Before every edit batch: check modified buffers and name files to be edited.
+3. After every edit batch: inspect changed files and git diff through Anvil.
+4. Before committing: recheck modified buffers, status, and diff.
+5. After interruption/resume: repeat the session-start checkpoint.
+6. Use shell/apply_patch only where required; state the reason for fallback.

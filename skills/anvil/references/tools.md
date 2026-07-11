@@ -1,13 +1,16 @@
 # Anvil tool catalog
 
-Authoritative reference for the two anvil MCP surfaces, generated from the live
-server's `tools/list` (2026-07-08). Client tool-name prefixes vary (Claude Code:
-`mcp__anvil__*` / `mcp__anvil-tools__*`); bare names are used here.
+Backend-aware reference for the Anvil MCP surfaces, checked against the live
+interactive server and the reproducible dedicated/NeLisp manifests on
+2026-07-11. Interactive Emacs exposes 12 primary and 65 typed tools. Dedicated
+Emacs exposes 76 typed tools and mirrors them into the primary registry for 88
+unique primary tools. NeLisp exposes a separate 42-tool standalone surface.
+Client prefixes vary; bare names are used here.
 
-## Server `anvil` — the eval suite
+## Primary server `anvil`
 
 ### emacs-eval
-Evaluate Emacs Lisp synchronously in the user's live session and return the
+Evaluate Emacs Lisp synchronously in the active Emacs backend and return the
 printed result. For quick operations (< 30s): querying state, small edits,
 reading data. Param: `expression` (string).
 
@@ -30,7 +33,12 @@ globals but persistent across calls). Param: `expression` (string).
 ### nelisp-eval-reset
 Reset the NeLisp REPL state. No params.
 
-## Server `anvil-tools` — typed tools (server-id `emacs-eval`)
+The Emacs-backed primary registry also includes `diagnostics`,
+`imenu_list_symbols`, `project_info`, `treesit_info`,
+`xref_find_apropos`, and `xref_find_references`. Dedicated mode additionally
+mirrors every typed tool below into this registry.
+
+## Emacs typed registry (server-id `emacs-eval`)
 
 
 ### Reading files
@@ -120,6 +128,27 @@ Reset the NeLisp REPL state. No params.
 
 *Params:* `path`, `lookup-key`, `add-key`, `map-json`, `on-existing?`, `on-missing?`, `scope-regex?`, `apply?`
 
+
+### Emacs Lisp and ERT
+
+`elisp-byte-compile-file`, `elisp-describe-function`,
+`elisp-describe-variable`, `elisp-ert-run`,
+`elisp-get-function-definition`, `elisp-read-source-file`, and
+`ert-run-distilled` provide schema-checked source inspection, compilation,
+and test execution.
+
+### S-expression transforms
+
+`sexp-macroexpand`, `sexp-read-file`, `sexp-rename-symbol`,
+`sexp-replace-call`, `sexp-replace-defun`, `sexp-surrounding-form`,
+`sexp-verify`, and `sexp-wrap-form` operate on parsed Elisp forms rather
+than textual approximations.
+
+### Semantic search and SQLite
+
+`notes-lexical-search`, `semantic-embed-index`, `semantic-reindex`,
+`semantic-search`, `semantic-status`, and `sqlite-query` use the
+host-local SQLite state configured by the dedicated daemon.
 
 ### Org-mode
 
@@ -230,6 +259,23 @@ Reset the NeLisp REPL state. No params.
 *Params:* `top_n?`, `sort?`, `reset?`
 
 
-*Param names suffixed `?` are optional. Full JSON schemas ship with the live
-server; when a call is rejected, re-check the schema via the client's tool
-definition rather than guessing.*
+## Dedicated-only typed extensions
+
+The dedicated configuration adds 11 tools to the 65-tool interactive typed
+surface: `context-compress`, `context-retrieve`, `context-stats`,
+`cron-list`, `cron-run`, `cron-status`, `shell-filter`, `shell-gain`,
+`shell-run`, `shell-tee-get`, and `shell-tee-grep`. They are available
+both through the direct typed registry and the unified primary registry.
+
+## NeLisp standalone surface
+
+NeLisp has no live Emacs process and therefore no `emacs-eval` or Org engine;
+its evaluator is internal and is not exposed as a general Elisp-eval tool. Its
+exact 42-tool manifest covers host inspection, file/directory operations, JSON
+path operations, and shell execution. Probe the advertised
+tool list and use those tools directly; do not require an Emacs-only probe
+before using the standalone backend.
+
+*Param names suffixed `?` are optional. Full JSON schemas ship with the
+active server; when a call is rejected, re-check the client tool definition
+rather than guessing.*

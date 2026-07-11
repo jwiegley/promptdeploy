@@ -7,7 +7,7 @@ discovers and deploys them to the configured targets; see the repository
 
 ## Index
 
-- **anvil** -- Drive the live Emacs session through the anvil MCP servers: token-efficient file, org, git, and Elisp operations.
+- **anvil** -- Use the available Anvil backend -- interactive Emacs, dedicated Emacs, or NeLisp -- for token-efficient file, org, git, and Elisp operations.
 - **caveman** -- Compress and simplify prompts to preserve meaning while reducing use of context.
 - **comment-audit** -- Exhaustively verify code comments against the current state of a project.
 - **forge** -- Multi-phase, multi-model deep analysis workflow for complex problems.

@@ -1,25 +1,20 @@
 name: anvil-tools
-description: Typed anvil.el tool surface — 43 schema-checked tools for files (incl. token-efficient file-batch), org-mode structure editing and agenda, git queries, JSON/state, workers, and telemetry
-command: /Users/johnw/.emacs.d/anvil-mcp.sh
+description: >-
+  Direct typed Anvil registry for Emacs-backed macOS hosts: 65 tools in the
+  interactive configuration and 76 tools in the dedicated configuration.
+command: anvil-mcp
 args:
-  - "--socket=/tmp/johnw-emacs/server"
   - "--server-id=emacs-eval"
 scope: user
 enabled: true
 only:
-  - claude-personal
-  - claude-positron
-  - codex-local
-  - codex-hera
-  - droid
-  - opencode-hera
-# Same bridge as the `anvil` server, different anvil.el server-id: the anvil
-# modules register their typed tools under the (historical) server-id
-# "emacs-eval", while the eval suite registers under "anvil". A server-id
-# mismatch is NOT an error — anvil silently serves an empty tools table — so
-# keep this arg exactly in sync with `anvil-server--tools' registrations.
+  - hera
+  - clio
+# Host-group scoping is intentional: host-less targets belong to whichever
+# machine runs promptdeploy. The hera/clio groups include those targets only
+# when the current host is Darwin, while still reaching explicit remote Mac
+# targets from another machine. This prevents an Emacs-only registration from
+# colliding with the shared Linux configurations.
 #
-# Requires the same running GUI Emacs daemon as the anvil server; see the
-# comments in anvil.yaml for the wrapper/socket details, the reason the
-# `only' list must keep codex-local and codex-hera in agreement, and the
-# `anvil` skill for tool-selection guidance.
+# The historical server ID remains "emacs-eval". Dedicated mode also mirrors
+# these tools into the primary anvil registration.
