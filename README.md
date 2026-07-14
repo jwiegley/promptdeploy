@@ -164,6 +164,13 @@ the pinned promptdeploy configuration on every `home-manager switch`:
     # Optional: narrow deployment to local target IDs or labels.
     # Empty means all targets owned by the current host.
     targets = [ ];
+
+    # Both deployment and verification are restricted to these items.
+    exactItems = [
+      "mcp:anvil"
+      "mcp:anvil-tools"
+      "skill:anvil"
+    ];
   };
 }
 ```
@@ -173,10 +180,11 @@ pinned `inputs.promptdeploy` revision. The module rejects mutable source
 paths, missing revision metadata, or a package and source from different
 revisions.
 
-Activation unsets `PROMPTDEPLOY_HOST`, runs a forced
-`deploy --local-only`, then strictly verifies `mcp:anvil`,
-`mcp:anvil-tools`, and `skill:anvil`. Remote targets are excluded even if
-named in `targets`. A deploy failure, verification failure, lock timeout, or
+Activation unsets `PROMPTDEPLOY_HOST`, then runs a forced
+`deploy --local-only` and strict verification with both operations restricted
+to `exactItems`. Unrelated items and their deployment-time secrets are never
+part of the activation transaction. Remote targets are excluded even if named
+in `targets`. A deploy failure, verification failure, lock timeout, or
 transaction timeout aborts Home Manager activation.
 
 The combined deploy-and-verify transaction is serialized through

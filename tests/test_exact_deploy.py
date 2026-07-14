@@ -135,6 +135,23 @@ def test_exact_item_preserves_unselected_stale_sibling(tmp_path: Path) -> None:
     assert "beta" in manifest.items["mcp_servers"]
 
 
+def test_exact_item_skips_unselected_missing_secret(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path)
+    missing = "PD_TEST_EXACT_UNSELECTED_SECRET"
+    monkeypatch.delenv(missing, raising=False)
+    (config.source_root / "mcp" / "secret.yaml").write_text(
+        'name: secret\nurl: "https://x/mcp?apiKey=${' + missing + '}"\n'
+    )
+
+    actions = deploy(config, item_selectors=[("mcp", "alpha")])
+
+    assert {(action.item_type, action.name) for action in actions} == {("mcp", "alpha")}
+    data = json.loads((config.targets["local"].path / ".claude.json").read_text())
+    assert set(data["mcpServers"]) == {"alpha"}
+
+
 def test_empty_exact_selection_changes_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
