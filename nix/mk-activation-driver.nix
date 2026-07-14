@@ -22,7 +22,7 @@ let
     set -euo pipefail
     unset PROMPTDEPLOY_HOST
     cd -- ${lib.escapeShellArg (toString source)}
-    ${lib.getExe package} deploy --local-only --force --quiet ${targetArgs}
+    ${lib.getExe package} deploy --local-only --force --quiet ${targetArgs} ${itemArgs}
     ${lib.getExe package} verify --local-only ${targetArgs} ${itemArgs}
   '';
   psutilPath = "${pkgs.python3Packages.psutil}/${pkgs.python3.sitePackages}";

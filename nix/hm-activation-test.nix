@@ -124,7 +124,7 @@ pkgs.runCommand "promptdeploy-hm-activation-test"
       PROMPTDEPLOY_HOST=must-be-unset \
       ${exactDriver}/bin/promptdeploy-home-activation
     printf '%s\n' \
-      'exact|deploy|--local-only|--force|--quiet|--target|claude-hera|--target|codex-local|host=unset' \
+      'exact|deploy|--local-only|--force|--quiet|--target|claude-hera|--target|codex-local|--only-item|mcp:anvil|--only-item|mcp:anvil-tools|--only-item|skill:anvil|host=unset' \
       'exact|verify|--local-only|--target|claude-hera|--target|codex-local|--only-item|mcp:anvil|--only-item|mcp:anvil-tools|--only-item|skill:anvil|host=unset' \
       >"$TMPDIR/exact.expected"
     cmp "$TMPDIR/exact.expected" "$exact_trace"
@@ -140,7 +140,7 @@ pkgs.runCommand "promptdeploy-hm-activation-test"
     status=$?
     set -e
     test "$status" -eq 41
-    grep -Fqx 'case|deploy|--local-only|--force|--quiet|host=unset' "$TMPDIR/deploy-failure.trace"
+    grep -Fqx 'case|deploy|--local-only|--force|--quiet|--only-item|mcp:anvil|--only-item|mcp:anvil-tools|--only-item|skill:anvil|host=unset' "$TMPDIR/deploy-failure.trace"
     ! grep -Fq 'verify' "$TMPDIR/deploy-failure.trace"
     grep -Fq 'DEPLOY_SECRET_MUST_STAY_PRIVATE' "$state_root/deploy-failure/deploy.log"
     ! grep -Fq 'DEPLOY_SECRET_MUST_STAY_PRIVATE' "$TMPDIR/deploy-failure.console"
