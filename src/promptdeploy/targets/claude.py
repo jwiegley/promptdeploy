@@ -12,11 +12,26 @@ from typing import Any
 
 from ..frontmatter import transform_for_target
 from ..manifest import MANIFEST_FILENAME
-from .base import Target
+from .base import (
+    ANVIL_MCP_NAMES,
+    Target,
+    install_skill_tree_atomically,
+    transformed_skill_tree_matches,
+)
 
 # Keys that are deployment metadata, not part of the Claude MCP server config.
 _MCP_STRIP_KEYS = frozenset(
-    {"name", "description", "scope", "enabled", "only", "except"}
+    {
+        "name",
+        "description",
+        "scope",
+        "enabled",
+        "only",
+        "except",
+        "claude",
+        "codex",
+        "opencode",
+    }
 )
 
 
@@ -108,30 +123,11 @@ class ClaudeTarget(Target):
         return warnings
 
     def deploy_skill(self, name: str, source_dir: Path) -> None:
-        dest = self._config_path / "skills" / name
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        # Stage the full copy (including the SKILL.md transform) in a temp
-        # directory next to the destination, then swap it into place so a
-        # failure mid-copy never leaves a partially-written skill behind.
-        tmp_dir = Path(tempfile.mkdtemp(dir=dest.parent, prefix=".promptdeploy-"))
-        try:
-            staged = tmp_dir / "skill"
-            # Resolve symlinks so the deployed copy is self-contained.
-            shutil.copytree(source_dir.resolve(), staged, symlinks=False)
-            # Transform the SKILL.md inside the staged copy.
-            skill_md = staged / "SKILL.md"
-            if skill_md.exists():
-                self._write_bytes(
-                    skill_md,
-                    transform_for_target(skill_md.read_bytes(), inject=self._injected),
-                )
-            if dest.is_symlink():
-                dest.unlink()
-            elif dest.exists():
-                shutil.rmtree(dest)
-            os.replace(staged, dest)
-        finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+        install_skill_tree_atomically(
+            source_dir,
+            self._config_path / "skills" / name,
+            lambda contents: transform_for_target(contents, inject=self._injected),
+        )
 
     def should_skip(
         self,
@@ -151,8 +147,9 @@ class ClaudeTarget(Target):
             # Bump when the deployed .claude.json entry format changes (e.g.
             # the URL-server "type" field or env expansion policy) so existing
             # deployments refresh even though the source YAML is unchanged.
-            # v4: ${VAR} in url is now strict-expanded like env/headers.
-            return "claude-mcp-entry-v4"
+            # v6: Codex and OpenCode overrides are stripped while Claude's
+            # native per-server timeout remains in the rendered entry.
+            return "claude-mcp-entry-v6"
         return None
 
     @property
@@ -274,6 +271,7 @@ class ClaudeTarget(Target):
         """
         from ..envsubst import expand_env_vars_strict
 
+        config = ClaudeTarget._apply_claude_mcp_overrides(config)
         entry = {k: v for k, v in config.items() if k not in _MCP_STRIP_KEYS}
         if expand_secrets:
             for field in ("env", "headers"):
@@ -306,6 +304,15 @@ class ClaudeTarget(Target):
         if "url" in entry and "type" not in entry:
             entry["type"] = "http"
         return entry
+
+    @staticmethod
+    def _apply_claude_mcp_overrides(config: dict[str, Any]) -> dict[str, Any]:
+        override = config.get("claude")
+        if not isinstance(override, dict):
+            return config
+        merged = {k: v for k, v in config.items() if k != "claude"}
+        merged.update(override)
+        return merged
 
     @staticmethod
     def _strip_marketplace(settings: dict[str, Any], name: str) -> None:
@@ -483,6 +490,34 @@ class ClaudeTarget(Target):
                 for key in settings.get("enabledPlugins", {})
             )
         return False
+
+    def item_matches_source(
+        self,
+        item_type: str,
+        name: str,
+        content: bytes,
+        metadata: dict[str, Any] | None,
+        source_path: Path | None = None,
+    ) -> bool | None:
+        if item_type == "skill":
+            if source_path is None:
+                return None
+            return transformed_skill_tree_matches(
+                source_path.parent,
+                self._config_path / "skills" / name,
+                lambda contents: transform_for_target(contents, inject=self._injected),
+            )
+        if item_type != "mcp" or name not in ANVIL_MCP_NAMES or metadata is None:
+            return None
+
+        missing = object()
+        data = self._load_json(self._claude_json_path())
+        servers = data.get("mcpServers")
+        actual = servers.get(name, missing) if isinstance(servers, dict) else missing
+        if not metadata.get("enabled", True):
+            return actual is missing
+        expected = self._claude_mcp_entry(metadata, name=name)
+        return actual == expected
 
     def would_deploy_bytes(
         self,

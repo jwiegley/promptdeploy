@@ -12,10 +12,12 @@ from promptdeploy.manifest import (
     MANIFEST_VERSION,
     Manifest,
     ManifestItem,
+    UnsafeManifestError,
     compute_directory_hash,
     compute_file_hash,
     has_changed,
     load_manifest,
+    load_manifest_strict,
     save_manifest,
 )
 
@@ -113,7 +115,7 @@ class TestLoadManifest:
                 "agents": {
                     "rust-pro": {
                         "source_hash": "sha256:abc123",
-                        "target_path": "/home/.claude/agents/rust-pro.md",
+                        "target_path": "agents/rust-pro.md",
                     }
                 },
                 "commands": {},
@@ -130,7 +132,7 @@ class TestLoadManifest:
         assert "rust-pro" in manifest.items["agents"]
         item = manifest.items["agents"]["rust-pro"]
         assert item.source_hash == "sha256:abc123"
-        assert item.target_path == "/home/.claude/agents/rust-pro.md"
+        assert item.target_path == "agents/rust-pro.md"
 
 
 class TestLoadManifestRobustness:
@@ -171,7 +173,7 @@ class TestLoadManifestRobustness:
                 "agents": {
                     "a": {
                         "source_hash": "sha256:abc",
-                        "target_path": "/x/a.md",
+                        "target_path": "agents/a.md",
                         "shiny_new_field": {"nested": True},
                     }
                 }
@@ -183,19 +185,184 @@ class TestLoadManifestRobustness:
         assert manifest.version == 99
         item = manifest.items["agents"]["a"]
         assert item.source_hash == "sha256:abc"
-        assert item.target_path == "/x/a.md"
+        assert item.target_path == "agents/a.md"
         err = capsys.readouterr().err
         assert "version" in err
 
     def test_missing_source_hash_defaults_to_empty(self, tmp_path: Path) -> None:
         data = {
             "version": MANIFEST_VERSION,
-            "items": {"agents": {"a": {"target_path": "/x/a.md"}}},
+            "items": {"agents": {"a": {"target_path": "agents/a.md"}}},
         }
         path = tmp_path / MANIFEST_FILENAME
         path.write_text(json.dumps(data))
         manifest = load_manifest(path)
         assert manifest.items["agents"]["a"].source_hash == ""
+
+    @pytest.mark.parametrize(
+        "target_path",
+        [
+            "/absolute",
+            "../escape",
+            "nested/../escape",
+            "nested//file",
+            "./file",
+            "windows\\escape",
+            "control\nfile",
+            "control\x85file",
+            "bidi\u202efile",
+        ],
+    )
+    def test_unsafe_recorded_path_fails_closed(
+        self, target_path: str, tmp_path: Path
+    ) -> None:
+        path = tmp_path / MANIFEST_FILENAME
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "items": {
+                        "prompts": {
+                            "safe": {
+                                "source_hash": "sha256:x",
+                                "target_path": target_path,
+                            }
+                        }
+                    },
+                }
+            )
+        )
+        with pytest.raises(UnsafeManifestError):
+            load_manifest(path)
+
+    def test_unsafe_manifest_item_name_fails_closed(self, tmp_path: Path) -> None:
+        path = tmp_path / MANIFEST_FILENAME
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "items": {
+                        "skills": {
+                            "../../victim": {"source_hash": "sha256:x"},
+                        }
+                    },
+                }
+            )
+        )
+        with pytest.raises(UnsafeManifestError, match="Unsafe skill name"):
+            load_manifest(path)
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"items": []},
+            {"items": {"agents": []}},
+            {"items": {"agents": {"name": []}}},
+            {"items": {}, "deployed_at": []},
+            {
+                "items": {
+                    "agents": {
+                        "name": {
+                            "source_hash": 3,
+                        }
+                    }
+                }
+            },
+            {
+                "items": {
+                    "agents": {
+                        "name": {
+                            "source_hash": "sha256:x",
+                            "managed_keys": "not-a-list",
+                        }
+                    }
+                }
+            },
+        ],
+    )
+    def test_malformed_known_mapping_falls_back_to_empty(
+        self,
+        payload: dict[str, object],
+        tmp_path: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        path = tmp_path / MANIFEST_FILENAME
+        path.write_text(json.dumps(payload))
+        assert load_manifest(path).items == {}
+        assert "WARNING" in capsys.readouterr().err
+
+
+class TestLoadManifestStrict:
+    def test_loads_known_schema(self, tmp_path: Path) -> None:
+        path = tmp_path / MANIFEST_FILENAME
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "deployed_at": "2026-07-13T00:00:00+00:00",
+                    "items": {
+                        "prompts": {
+                            "safe": {
+                                "source_hash": "sha256:x",
+                                "target_path": "safe.md",
+                                "managed_keys": ["one"],
+                            }
+                        }
+                    },
+                }
+            )
+        )
+        item = load_manifest_strict(path).items["prompts"]["safe"]
+        assert item.target_path == "safe.md"
+        assert item.managed_keys == ["one"]
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            {"source_hash": 3},
+            {"source_hash": "sha256:x", "target_path": []},
+            {"source_hash": "sha256:x", "managed_keys": ["ok", 3]},
+        ],
+    )
+    def test_rejects_wrong_known_field_types(
+        self, entry: dict[str, object], tmp_path: Path
+    ) -> None:
+        path = tmp_path / MANIFEST_FILENAME
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "items": {"prompts": {"safe": entry}},
+                }
+            )
+        )
+        with pytest.raises(ValueError):
+            load_manifest_strict(path)
+
+    @pytest.mark.parametrize(
+        ("raw", "message"),
+        [
+            ("{broken", "readable manifest"),
+            ("[]", "object manifest"),
+            (json.dumps({"items": []}), "object manifest items"),
+            (
+                json.dumps({"items": {"agents": []}}),
+                "object manifest categories",
+            ),
+            (
+                json.dumps({"items": {"agents": {"name": []}}}),
+                "object manifest entries",
+            ),
+            (json.dumps({"version": True, "items": {}}), "unsupported manifest"),
+        ],
+    )
+    def test_rejects_malformed_schema_before_conversion(
+        self, raw: str, message: str, tmp_path: Path
+    ) -> None:
+        path = tmp_path / MANIFEST_FILENAME
+        path.write_text(raw)
+        with pytest.raises(ValueError, match=message):
+            load_manifest_strict(path)
 
 
 class TestSaveManifest:
@@ -216,7 +383,7 @@ class TestSaveManifest:
         manifest = Manifest()
         manifest.items.setdefault("agents", {})["test-agent"] = ManifestItem(
             source_hash="sha256:deadbeef",
-            target_path="/dest/agent.md",
+            target_path="agents/test-agent.md",
         )
         save_manifest(manifest, path)
 
@@ -225,7 +392,7 @@ class TestSaveManifest:
         assert "test-agent" in data["items"]["agents"]
         agent = data["items"]["agents"]["test-agent"]
         assert agent["source_hash"] == "sha256:deadbeef"
-        assert agent["target_path"] == "/dest/agent.md"
+        assert agent["target_path"] == "agents/test-agent.md"
 
 
 class TestSaveManifestError:
@@ -283,14 +450,14 @@ class TestRoundTrip:
         )
         original.items.setdefault("agents", {})["my-agent"] = ManifestItem(
             source_hash="sha256:aaa",
-            target_path="/agents/my-agent.md",
+            target_path="agents/my-agent.md",
         )
         original.items.setdefault("skills", {})["my-skill"] = ManifestItem(
             source_hash="sha256:bbb",
         )
         original.items.setdefault("mcp_servers", {})["server1"] = ManifestItem(
             source_hash="sha256:ccc",
-            target_path="/mcp/server1.json",
+            target_path="mcp/server1.json",
         )
         save_manifest(original, path)
 
@@ -300,7 +467,7 @@ class TestRoundTrip:
 
         agent = loaded.items["agents"]["my-agent"]
         assert agent.source_hash == "sha256:aaa"
-        assert agent.target_path == "/agents/my-agent.md"
+        assert agent.target_path == "agents/my-agent.md"
 
         skill = loaded.items["skills"]["my-skill"]
         assert skill.source_hash == "sha256:bbb"
@@ -308,7 +475,7 @@ class TestRoundTrip:
 
         server = loaded.items["mcp_servers"]["server1"]
         assert server.source_hash == "sha256:ccc"
-        assert server.target_path == "/mcp/server1.json"
+        assert server.target_path == "mcp/server1.json"
 
 
 class TestHasChanged:

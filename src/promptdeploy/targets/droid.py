@@ -17,11 +17,26 @@ from ..frontmatter import (
     transform_for_target,
 )
 from ..manifest import MANIFEST_FILENAME
-from .base import Target
+from .base import (
+    ANVIL_MCP_NAMES,
+    Target,
+    install_skill_tree_atomically,
+    transformed_skill_tree_matches,
+)
 
 # Keys that are deployment metadata, not part of the MCP server config.
 _MCP_STRIP_KEYS = frozenset(
-    {"name", "description", "scope", "enabled", "only", "except"}
+    {
+        "name",
+        "description",
+        "scope",
+        "enabled",
+        "only",
+        "except",
+        "claude",
+        "codex",
+        "opencode",
+    }
 )
 
 
@@ -77,6 +92,12 @@ class DroidTarget(Target):
             return True
         return False
 
+    def content_fingerprint(self, item_type: str) -> str | None:
+        if item_type == "mcp":
+            # v2: Claude, Codex, and OpenCode override metadata are stripped.
+            return "droid-mcp-v2"
+        return None
+
     # ------------------------------------------------------------------
     # Deploy
     # ------------------------------------------------------------------
@@ -130,15 +151,11 @@ class DroidTarget(Target):
         return warnings
 
     def deploy_skill(self, name: str, source_dir: Path) -> None:
-        dest = self._config_path / "skills" / name
-        if dest.is_symlink():
-            dest.unlink()
-        elif dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(source_dir.resolve(), dest, symlinks=False)
-        skill_md = dest / "SKILL.md"
-        if skill_md.exists():
-            skill_md.write_bytes(transform_for_target(skill_md.read_bytes()))
+        install_skill_tree_atomically(
+            source_dir,
+            self._config_path / "skills" / name,
+            transform_for_target,
+        )
 
     def deploy_hook(self, name: str, config: dict[str, Any]) -> None:
         pass
@@ -205,29 +222,32 @@ class DroidTarget(Target):
         if not config.get("enabled", True):
             data.get("mcpServers", {}).pop(name, None)
         else:
-            droid_config: dict[str, Any] = {}
-            # Determine type based on presence of url vs command.
-            if "url" in config:
-                droid_config["type"] = "http"
-            else:
-                droid_config["type"] = "stdio"
-            # Copy non-metadata keys.
-            for k, v in config.items():
-                if k not in _MCP_STRIP_KEYS and k != "url":
-                    droid_config[k] = v
-                elif k == "url":
-                    # Verbatim on purpose: Droid itself expands
-                    # ${VAR}/${VAR:-default} in url (and env/headers) at
-                    # load time; an unset variable leaves the placeholder in
-                    # place with a warning at server start.
-                    droid_config["url"] = v
-            # Disabled servers never reach this branch: ``enabled: false``
-            # removes the entry from mcp.json entirely (handled above), so
-            # every server written here is enabled.
-            droid_config["disabled"] = False
-            data.setdefault("mcpServers", {})[name] = droid_config
+            data.setdefault("mcpServers", {})[name] = self._droid_mcp_entry(config)
 
         self._save_json(mcp_path, data)
+
+    @staticmethod
+    def _droid_mcp_entry(config: dict[str, Any]) -> dict[str, Any]:
+        entry: dict[str, Any] = {}
+        # Determine type based on presence of url vs command.
+        if "url" in config:
+            entry["type"] = "http"
+        else:
+            entry["type"] = "stdio"
+        # Copy non-metadata keys.
+        for key, value in config.items():
+            if key not in _MCP_STRIP_KEYS and key != "url":
+                entry[key] = value
+            elif key == "url":
+                # Verbatim on purpose: Droid itself expands
+                # ${VAR}/${VAR:-default} in url (and env/headers) at
+                # load time; an unset variable leaves the placeholder in
+                # place with a warning at server start.
+                entry["url"] = value
+        # Disabled servers never reach this renderer: ``enabled: false``
+        # removes the entry from mcp.json entirely.
+        entry["disabled"] = False
+        return entry
 
     # ------------------------------------------------------------------
     # Remove
@@ -293,6 +313,34 @@ class DroidTarget(Target):
             data = self._load_json(self._config_path / "settings.json")
             return bool(data.get("customModels"))
         return False
+
+    def item_matches_source(
+        self,
+        item_type: str,
+        name: str,
+        content: bytes,
+        metadata: dict[str, Any] | None,
+        source_path: Path | None = None,
+    ) -> bool | None:
+        if item_type == "skill":
+            if source_path is None:
+                return None
+            return transformed_skill_tree_matches(
+                source_path.parent,
+                self._config_path / "skills" / name,
+                transform_for_target,
+            )
+        if item_type != "mcp" or name not in ANVIL_MCP_NAMES or metadata is None:
+            return None
+
+        missing = object()
+        data = self._load_json(self._mcp_path())
+        servers = data.get("mcpServers")
+        actual = servers.get(name, missing) if isinstance(servers, dict) else missing
+        if not metadata.get("enabled", True):
+            return actual is missing
+        expected = self._droid_mcp_entry(metadata)
+        return actual == expected
 
     def would_deploy_bytes(
         self,

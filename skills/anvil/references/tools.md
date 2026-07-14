@@ -2,10 +2,11 @@
 
 Backend-aware reference for the Anvil MCP surfaces, checked against the live
 interactive server and the reproducible dedicated/NeLisp manifests on
-2026-07-11. Interactive Emacs exposes 12 primary and 65 typed tools. Dedicated
-Emacs exposes 76 typed tools and mirrors them into the primary registry for 88
-unique primary tools. NeLisp exposes a separate 42-tool standalone surface.
-Client prefixes vary; bare names are used here.
+2026-07-11. Promptdeploy registers only the primary server named `anvil`:
+interactive Emacs exposes 13 primary tools, dedicated Emacs exposes 89 unified
+primary tools (including 76 typed tools), and NeLisp exposes a 42-tool
+standalone surface. The legacy split typed registration is retired. Client
+prefixes vary; bare names are used here.
 
 ## Primary server `anvil`
 
@@ -38,7 +39,7 @@ The Emacs-backed primary registry also includes `diagnostics`,
 `xref_find_apropos`, and `xref_find_references`. Dedicated mode additionally
 mirrors every typed tool below into this registry.
 
-## Emacs typed registry (server-id `emacs-eval`)
+## Emacs typed tools (unified in dedicated primary mode)
 
 
 ### Reading files

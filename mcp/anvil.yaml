@@ -1,10 +1,17 @@
 name: anvil
 description: >-
-  Cross-platform Anvil MCP surface: 12 interactive Emacs tools, 42 NeLisp
-  standalone tools, or 88 unified tools from a dedicated Emacs daemon.
+  Cross-platform Anvil MCP surface: 13 interactive Emacs tools, 42 NeLisp
+  standalone tools, or 89 unified tools from a dedicated Emacs daemon.
 command: anvil-mcp
 args:
   - "--server-id=anvil"
+claude:
+  timeout: 210000
+codex:
+  startup_timeout_sec: 180
+  tool_timeout_sec: 210
+opencode:
+  timeout: 210000
 scope: user
 enabled: true
 only:
@@ -29,7 +36,6 @@ only:
 # At runtime the launcher derives the actual short hostname, so andoria-08,
 # andoria-t2, delphi-3bd4, and gpu-server use distinct host-local sockets.
 #
-# Dedicated mode mirrors all 76 typed tools into this primary registration,
-# yielding 88 unique tools. Interactive mode keeps the split anvil-tools
-# registration, while NeLisp intentionally exposes its 42-tool standalone
-# surface only through this server ID.
+# Dedicated mode mirrors all typed tools into this one primary registration.
+# The legacy anvil-tools sibling remains only as a disabled removal tombstone;
+# clients must launch this server alone.

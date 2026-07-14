@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,8 +21,10 @@ from .manifest import (
     compute_file_hash,
     has_changed,
     load_manifest,
+    load_manifest_strict,
     save_manifest,
 )
+from .names import require_canonical_item_name
 from .settings import render_settings
 from .source import SourceDiscovery, SourceItem
 from .targets import create_target
@@ -52,6 +55,63 @@ _CLI_TYPE_TO_ITEM_TYPE = {
     "prompts": "prompt",
     "settings": "settings",
 }
+_CATEGORY_TO_TYPE = {
+    category: item_type for item_type, category in _TYPE_TO_CATEGORY.items()
+}
+
+ItemSelector = tuple[str, str]
+
+
+def parse_item_selector(raw: str) -> ItemSelector:
+    """Parse one exact ``TYPE:NAME`` selector using singular item types."""
+    item_type, separator, name = raw.partition(":")
+    invalid = (
+        separator == ""
+        or item_type == ""
+        or name == ""
+        or item_type != item_type.strip()
+        or name != name.strip()
+        or item_type not in _TYPE_TO_CATEGORY
+    )
+    if not invalid:
+        try:
+            require_canonical_item_name(item_type, name)
+        except ValueError:
+            invalid = True
+    if invalid:
+        valid = ", ".join(sorted(_TYPE_TO_CATEGORY))
+        raise ValueError(
+            f"Invalid item selector {raw!r}; expected TYPE:NAME with TYPE in: {valid}"
+        )
+    return item_type, name
+
+
+def resolve_item_selectors(
+    items: list[SourceItem],
+    selectors: list[ItemSelector] | None,
+) -> set[ItemSelector] | None:
+    """Validate exact selectors before target preparation or mutation."""
+    if selectors is None:
+        return None
+    for item_type, name in selectors:
+        if item_type not in _TYPE_TO_CATEGORY:
+            raise ValueError(f"Unknown source item type: {item_type}")
+        require_canonical_item_name(item_type, name)
+    selected = set(selectors)
+    identities = [(item.item_type, item.name) for item in items]
+    for item_type, name in identities:
+        require_canonical_item_name(item_type, name)
+    counts = Counter(identities)
+    ambiguous = sorted(selector for selector in selected if counts[selector] > 1)
+    if ambiguous:
+        rendered = ", ".join(f"{item_type}:{name}" for item_type, name in ambiguous)
+        raise ValueError(f"Ambiguous source item selector(s): {rendered}")
+    available = set(identities)
+    missing = sorted(selected - available)
+    if missing:
+        rendered = ", ".join(f"{item_type}:{name}" for item_type, name in missing)
+        raise ValueError(f"Unknown source item selector(s): {rendered}")
+    return selected
 
 
 # Every action kind deploy() can emit, mypy-enforced via DeployAction.action.
@@ -285,14 +345,42 @@ def _drain_warnings(target: Target) -> dict[str, list[str]]:
     return drained
 
 
-def _disk_matches_source(target: Target, item: SourceItem) -> bool:
-    """Return True when the on-disk artifact already equals deploy bytes.
+def target_item_matches_source(target: Target, item: SourceItem) -> bool | None:
+    """Return whether one deployed item matches its canonical source form.
 
-    Only meaningful for single-file artifacts (agents, commands, prompts).
-    Returns False whenever either side cannot be materialised -- e.g. for
-    skill directories or items that merge into a shared JSON file. The
-    caller treats False as "cannot prove identical, keep pre-existing
-    behaviour".
+    Targets that merge named entries into shared configuration files perform
+    a semantic named-entry comparison through `Target.item_matches_source`.
+    Other targets fall back to the existing single-file byte comparison.
+    `None` means the target cannot prove either match or mismatch.
+    """
+    semantic_match = target.item_matches_source(
+        item.item_type,
+        item.name,
+        item.content,
+        item.metadata,
+        source_path=item.path,
+    )
+    if semantic_match is True:
+        return True
+    if semantic_match is False:
+        return False
+
+    would = target.would_deploy_bytes(
+        item.item_type, item.name, item.content, source_path=item.path
+    )
+    if would is None:
+        return None
+    on_disk = target.read_deployed_bytes(item.item_type, item.name)
+    if on_disk is None:
+        return False
+    return would == on_disk
+
+
+def _disk_matches_source(target: Target, item: SourceItem) -> bool:
+    """Return True when a pre-existing single-file artifact equals source.
+
+    Merged configuration entries deliberately remain outside this adoption
+    path: without a manifest, promptdeploy cannot prove it owns the entry.
     """
     would = target.would_deploy_bytes(
         item.item_type, item.name, item.content, source_path=item.path
@@ -344,7 +432,9 @@ def deploy(
     dry_run: bool = False,
     verbose: bool = False,
     item_types: list[str] | None = None,
+    item_selectors: list[ItemSelector] | None = None,
     force: bool = False,
+    local_host: str | None = None,
 ) -> list[DeployAction]:
     """Deploy source items to targets.
 
@@ -354,8 +444,10 @@ def deploy(
         dry_run: If True, compute actions without writing anything.
         verbose: Print extra detail.
         item_types: CLI --only-type values (plural) to filter by.
-        force: If True, deploy all items regardless of checksum or
+        item_selectors: Exact singular ``(item_type, name)`` pairs to deploy.
+        force: If True, deploy all selected items regardless of checksum or
             pre-existing state.
+        local_host: When set, reject targets that would require SSH.
 
     Returns:
         List of DeployAction records describing what was done.
@@ -363,13 +455,21 @@ def deploy(
     if target_ids is None:
         target_ids = list(config.targets.keys())
 
-    # Resolve --only-type filter to singular item_type values
+    if item_types and item_selectors is not None:
+        raise ValueError("item_types and item_selectors are mutually exclusive")
+
+    # Resolve --only-type filter to singular item_type values.
     allowed_types: set[str] | None = None
     if item_types:
         allowed_types = {_CLI_TYPE_TO_ITEM_TYPE[t] for t in item_types}
 
     discovery = SourceDiscovery(config.source_root)
     all_items = list(discovery.discover_all())
+    for item in all_items:
+        require_canonical_item_name(item.item_type, item.name)
+    exact_selectors = resolve_item_selectors(all_items, item_selectors)
+    if exact_selectors == set():
+        return []
 
     # Resolve the Anthropic default model once from models.yaml; threaded
     # into ClaudeTarget via create_target so that agents/skills receive the
@@ -380,17 +480,28 @@ def deploy(
 
     for target_id in target_ids:
         target_config = config.targets[target_id]
-        target = create_target(target_config, global_model=global_model)
+        target = create_target(
+            target_config,
+            global_model=global_model,
+            local_host=local_host,
+        )
         try:
             target.prepare(verbose=verbose)
-            manifest = load_manifest(target.manifest_path())
+            manifest = (
+                load_manifest_strict(target.manifest_path())
+                if exact_selectors is not None
+                else load_manifest(target.manifest_path())
+            )
             new_manifest = Manifest(deployed_at=datetime.now(UTC).isoformat())
 
             # Track which (category, name) pairs we process for stale detection
             deployed_names: set[tuple[str, str]] = set()
 
             for item in all_items:
-                # Apply --only-type filter
+                selector = (item.item_type, item.name)
+                if exact_selectors is not None and selector not in exact_selectors:
+                    continue
+                # Apply --only-type filter.
                 if allowed_types is not None and item.item_type not in allowed_types:
                     continue
 
@@ -452,25 +563,22 @@ def deploy(
 
                 exists_on_target = target.item_exists(item.item_type, item.name)
 
-                # Drift detection: even when the source hash still matches the
-                # manifest, the deployed bytes may no longer match what we
-                # would write -- e.g. the transformation logic changed in a
-                # newer promptdeploy release, or the artifact was hand-edited
-                # at the target.  When both sides can be materialised, compare
-                # them and redeploy on mismatch so the target always reflects
-                # the current source+transform.
-                if not force and not changed and exists_on_target:
-                    would = target.would_deploy_bytes(
-                        item.item_type,
-                        item.name,
-                        item.content,
-                        source_path=item.path,
-                    )
-                    on_disk = target.read_deployed_bytes(item.item_type, item.name)
-                    if would is not None and (on_disk is None or would != on_disk):
+                # Drift detection is independent of the manifest hash. Named
+                # merged entries (notably MCP registrations) are compared
+                # semantically; single-file artifacts retain byte comparison.
+                # A disabled MCP tombstone can prove that absence is the
+                # desired current state, so `not exists_on_target` alone is
+                # not enough to force a repeated removal.
+                source_match: bool | None = None
+                if not force and not changed:
+                    source_match = target_item_matches_source(target, item)
+                    if source_match is False:
                         changed = True
 
-                if force or changed or not exists_on_target:
+                needs_materialization = (
+                    not exists_on_target and source_match is not True
+                )
+                if force or changed or needs_materialization:
                     # Determine if create or update
                     is_update = (
                         category in manifest.items
@@ -595,7 +703,21 @@ def deploy(
                 for name in items_dict:
                     if (category, name) in deployed_names:
                         continue
-                    # If --only-type is active, only remove items of matching types
+                    category_type = _CATEGORY_TO_TYPE.get(category)
+                    old_selector = (
+                        (category_type, name) if category_type is not None else None
+                    )
+                    if (
+                        exact_selectors is not None
+                        and old_selector not in exact_selectors
+                    ):
+                        # Exact selection preserves same-category siblings and
+                        # unknown future manifest categories semantically.
+                        new_manifest.items.setdefault(category, {})[name] = items_dict[
+                            name
+                        ]
+                        continue
+                    # If --only-type is active, only remove items of matching types.
                     if allowed_types is not None:
                         cat_type = {v: k for k, v in _TYPE_TO_CATEGORY.items()}.get(
                             category

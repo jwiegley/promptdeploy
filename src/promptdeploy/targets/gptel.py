@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from ..manifest import MANIFEST_FILENAME
+from ..names import require_canonical_item_name
 from ..poet import POET_EXTENSIONS, parse_poet, render_for_gptel
 from .base import Target
 
@@ -82,6 +83,7 @@ class GptelTarget(Target):
 
     def _artifact_name(self, name: str, source_path: Path) -> str:
         """Filename this target writes for ``name`` given the source extension."""
+        require_canonical_item_name("prompt", name)
         ext = source_path.suffix
         if ext in _RENDERED_POET_EXTENSIONS:
             return f"{name}.json"
@@ -142,10 +144,18 @@ class GptelTarget(Target):
     # ------------------------------------------------------------------
 
     def remove_prompt(self, name: str, target_path: Path | None = None) -> None:
+        require_canonical_item_name("prompt", name)
         # When the manifest recorded the exact deployed path, unlink only
         # that file. This avoids destroying user-authored prompts that
         # happen to share the prompt's stem (e.g. an unrelated ``foo.md``).
         if target_path is not None:
+            allowed_paths = {
+                Path(f"{name}{extension}") for extension in _GPTEL_EXTENSIONS
+            }
+            if target_path not in allowed_paths:
+                raise ValueError(
+                    "Recorded gptel prompt path does not match its item name"
+                )
             with contextlib.suppress(FileNotFoundError):
                 (self._config_path / target_path).unlink()
             return
@@ -181,6 +191,7 @@ class GptelTarget(Target):
     def item_exists(self, item_type: str, name: str) -> bool:
         if item_type != "prompt":
             return False
+        require_canonical_item_name("prompt", name)
         for ext in _GPTEL_EXTENSIONS:
             if (self._config_path / f"{name}{ext}").exists():
                 return True
@@ -207,6 +218,7 @@ class GptelTarget(Target):
     def read_deployed_bytes(self, item_type: str, name: str) -> bytes | None:
         if item_type != "prompt":
             return None
+        require_canonical_item_name("prompt", name)
         # Prefer the artifact recorded by the most recent
         # would_deploy_bytes() call -- the file deploy owns for this
         # prompt. Probing extensions here would let an unrelated

@@ -41,7 +41,17 @@ endpoint set `type: sse` explicitly; an explicit `type` is always preserved.
 | `enabled` | bool     | `true`  | Set to `false` to disable without deleting the definition    |
 | `only`    | string[] | `[]`    | If non-empty, only include this server for listed profiles   |
 | `except`  | string[] | `[]`    | Exclude this server for listed profiles                      |
+| `claude`  | mapping  | `{}`    | Claude-only field overrides merged before writing `.claude.json` |
 | `codex`   | mapping  | `{}`    | Codex-only field overrides merged before writing `~/.codex/config.toml` |
+| `opencode` | mapping | `{}`    | OpenCode-only field overrides merged before writing `opencode.json` |
+
+`claude.timeout` is Claude Code's positive-integer per-server stdio
+tool-call timeout in milliseconds. `opencode.timeout` is OpenCode's per-server
+MCP timeout in milliseconds. Each target renderer merges only its own override
+mapping and strips every other client mapping, so client-specific fields cannot
+leak across configurations. Claude Code startup remains controlled by the
+launch environment's process-wide `MCP_TIMEOUT`; promptdeploy does not own or
+emit that variable.
 
 ## Environment Variable Expansion
 
@@ -181,12 +191,20 @@ args:
   - "@example/mcp-server"
 env:
   API_KEY: "${MY_API_KEY}"
+claude:
+  timeout: 210000
 codex:
   command: my-server
+  startup_timeout_sec: 180
+  tool_timeout_sec: 210
+opencode:
+  timeout: 210000
 scope: user
 enabled: true
 only:
   - claude
+  - codex
+  - opencode
 ```
 
 ## Filename Tags

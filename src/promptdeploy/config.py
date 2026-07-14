@@ -41,6 +41,26 @@ class TargetConfig:
             self.labels = []
 
 
+def target_is_local(target: TargetConfig, runtime_host: str | None = None) -> bool:
+    """Return whether TARGET can be opened without an SSH-backed wrapper."""
+    host = current_host() if runtime_host is None else runtime_host
+    return target.host is None or target.host == host
+
+
+def filter_local_target_ids(
+    config: "Config",
+    target_ids: list[str],
+    *,
+    runtime_host: str,
+) -> list[str]:
+    """Keep only targets whose runtime path is local to RUNTIME_HOST."""
+    return [
+        target_id
+        for target_id in target_ids
+        if target_is_local(config.targets[target_id], runtime_host)
+    ]
+
+
 @dataclass
 class Config:
     source_root: Path

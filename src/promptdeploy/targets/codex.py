@@ -20,10 +20,25 @@ from ..frontmatter import (
     transform_for_target,
 )
 from ..manifest import MANIFEST_FILENAME
-from .base import Target
+from .base import (
+    ANVIL_MCP_NAMES,
+    Target,
+    install_skill_tree_atomically,
+    transformed_skill_tree_matches,
+)
 
 _MCP_STRIP_KEYS = frozenset(
-    {"name", "description", "scope", "enabled", "only", "except", "codex"}
+    {
+        "name",
+        "description",
+        "scope",
+        "enabled",
+        "only",
+        "except",
+        "claude",
+        "codex",
+        "opencode",
+    }
 )
 _MODEL_STRIP_KEYS = frozenset(
     {
@@ -134,8 +149,9 @@ class CodexTarget(Target):
         if item_type == "agent":
             return "codex-agent-v2"
         if item_type == "mcp":
-            # v4: ${VAR} in url is now strict-expanded like env values.
-            return "codex-mcp-v4"
+            # v6: Claude and OpenCode overrides are stripped before Codex-only
+            # overrides are merged into the rendered entry.
+            return "codex-mcp-v6"
         if item_type in ("models", "hook"):
             return "codex-target-v1"
         if item_type in ("command", "prompt"):
@@ -202,22 +218,11 @@ class CodexTarget(Target):
         return warnings
 
     def deploy_skill(self, name: str, source_dir: Path) -> None:
-        dest = self._skills_path / name
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        tmp_dir = Path(tempfile.mkdtemp(dir=dest.parent, prefix=".promptdeploy-"))
-        try:
-            staged = tmp_dir / "skill"
-            shutil.copytree(source_dir.resolve(), staged, symlinks=False)
-            skill_md = staged / "SKILL.md"
-            if skill_md.exists():
-                self._write_bytes(skill_md, transform_for_target(skill_md.read_bytes()))
-            if dest.is_symlink():
-                dest.unlink()
-            elif dest.exists():
-                shutil.rmtree(dest)
-            os.replace(staged, dest)
-        finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+        install_skill_tree_atomically(
+            source_dir,
+            self._skills_path / name,
+            transform_for_target,
+        )
 
     def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:
         if not config.get("enabled", True):
@@ -370,6 +375,33 @@ class CodexTarget(Target):
             )
             return has_hook or self._has_managed_block("notify", name)
         return False
+
+    def item_matches_source(
+        self,
+        item_type: str,
+        name: str,
+        content: bytes,
+        metadata: dict[str, Any] | None,
+        source_path: Path | None = None,
+    ) -> bool | None:
+        if item_type == "skill":
+            if source_path is None:
+                return None
+            return transformed_skill_tree_matches(
+                source_path.parent,
+                self._skills_path / name,
+                transform_for_target,
+            )
+        if item_type != "mcp" or name not in ANVIL_MCP_NAMES or metadata is None:
+            return None
+
+        missing = object()
+        servers = self._parsed_config().get("mcp_servers")
+        actual = servers.get(name, missing) if isinstance(servers, dict) else missing
+        if not metadata.get("enabled", True):
+            return actual is missing
+        expected = self._codex_mcp_entry(name, metadata)
+        return actual == expected
 
     def would_deploy_bytes(
         self,

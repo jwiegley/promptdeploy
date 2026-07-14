@@ -1,8 +1,170 @@
 from __future__ import annotations
 
+import contextlib
+import os
+import shutil
+import stat
+import tempfile
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+from ..skilltree import scan_skill_source
+
+ANVIL_MCP_NAMES = frozenset({"anvil", "anvil-tools"})
+
+
+def _make_tree_owner_writable(root: Path) -> None:
+    """Make a copied/staged tree removable and transformable by its owner."""
+    if root.is_symlink() or not root.exists():
+        return
+    for current, directories, files in os.walk(
+        root, followlinks=False, onerror=_raise_walk_error
+    ):
+        current_path = Path(current)
+        current_stat = current_path.lstat()
+        current_path.chmod(stat.S_IMODE(current_stat.st_mode) | 0o700)
+        for name in directories:
+            child = current_path / name
+            child_stat = child.lstat()
+            if stat.S_ISDIR(child_stat.st_mode):
+                child.chmod(stat.S_IMODE(child_stat.st_mode) | 0o700)
+        for name in files:
+            child = current_path / name
+            child_stat = child.lstat()
+            if stat.S_ISREG(child_stat.st_mode):
+                child.chmod(stat.S_IMODE(child_stat.st_mode) | 0o600)
+
+
+def _replace_read_only_file(path: Path, contents: bytes) -> None:
+    """Atomically replace PATH with private writable transformed contents."""
+    descriptor, temporary = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(contents)
+        os.replace(temporary, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        raise
+
+
+def materialize_skill_tree(
+    source_dir: Path,
+    destination: Path,
+    transform_skill_md: Callable[[bytes], bytes],
+) -> None:
+    """Copy and transform one complete, source-confined skill tree."""
+    source, _files = scan_skill_source(source_dir)
+    try:
+        shutil.copytree(source, destination, symlinks=False)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            _make_tree_owner_writable(destination)
+        raise
+    _make_tree_owner_writable(destination)
+    skill_md = destination / "SKILL.md"
+    if skill_md.exists():
+        transformed = transform_skill_md(skill_md.read_bytes())
+        _replace_read_only_file(skill_md, transformed)
+
+
+def install_skill_tree_atomically(
+    source_dir: Path,
+    destination: Path,
+    transform_skill_md: Callable[[bytes], bytes],
+) -> None:
+    """Stage a skill, swap it into place, and restore the old tree on failure."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(dir=destination.parent, prefix=".promptdeploy-"))
+    staged = temporary / "skill"
+    backup = temporary / "previous"
+    had_destination = destination.is_symlink() or destination.exists()
+    cleanup_temporary = True
+    try:
+        materialize_skill_tree(source_dir, staged, transform_skill_md)
+        if had_destination:
+            os.replace(destination, backup)
+        try:
+            os.replace(staged, destination)
+        except BaseException:
+            if had_destination:
+                try:
+                    os.replace(backup, destination)
+                except BaseException as restore_error:
+                    cleanup_temporary = False
+                    raise RuntimeError(
+                        "Skill installation failed and the prior tree could not be "
+                        f"restored; backup retained at {backup}"
+                    ) from restore_error
+            raise
+    finally:
+        if cleanup_temporary:
+            with contextlib.suppress(OSError):
+                _make_tree_owner_writable(temporary)
+            shutil.rmtree(temporary, ignore_errors=True)
+
+
+def _raise_walk_error(error: OSError) -> None:
+    raise error
+
+
+def _skill_tree_snapshot(
+    root: Path,
+) -> tuple[tuple[str, str, int, bytes | None], ...] | None:
+    """Return a strict recursive snapshot, or None for unsafe node types."""
+    if root.is_symlink() or not root.is_dir():
+        return None
+    entries: list[tuple[str, str, int, bytes | None]] = []
+    try:
+        for current, directories, files in os.walk(
+            root, followlinks=False, onerror=_raise_walk_error
+        ):
+            directories.sort()
+            files.sort()
+            current_path = Path(current)
+            current_stat = current_path.lstat()
+            if not stat.S_ISDIR(current_stat.st_mode):
+                return None
+            relative_dir = current_path.relative_to(root).as_posix() or "."
+            entries.append(
+                ("directory", relative_dir, stat.S_IMODE(current_stat.st_mode), None)
+            )
+            for name in directories:
+                child_stat = (current_path / name).lstat()
+                if not stat.S_ISDIR(child_stat.st_mode):
+                    return None
+            for name in files:
+                child = current_path / name
+                child_stat = child.lstat()
+                if not stat.S_ISREG(child_stat.st_mode):
+                    return None
+                entries.append(
+                    (
+                        "file",
+                        child.relative_to(root).as_posix(),
+                        stat.S_IMODE(child_stat.st_mode),
+                        child.read_bytes(),
+                    )
+                )
+    except OSError:
+        return None
+    return tuple(entries)
+
+
+def transformed_skill_tree_matches(
+    source_dir: Path,
+    destination: Path,
+    transform_skill_md: Callable[[bytes], bytes],
+) -> bool:
+    """Compare a deployed skill with the complete target-specific rendering."""
+    with tempfile.TemporaryDirectory(prefix="promptdeploy-skill-verify-") as temp:
+        expected = Path(temp) / "skill"
+        materialize_skill_tree(source_dir, expected, transform_skill_md)
+        expected_snapshot = _skill_tree_snapshot(expected)
+        deployed_snapshot = _skill_tree_snapshot(destination)
+        return expected_snapshot is not None and expected_snapshot == deployed_snapshot
 
 
 class Target(ABC):
@@ -202,6 +364,27 @@ class Target(ABC):
         promptdeploy and should not be overwritten or removed.
         """
         ...
+
+    def item_matches_source(
+        self,
+        item_type: str,
+        name: str,
+        content: bytes,
+        metadata: dict[str, Any] | None,
+        source_path: Path | None = None,
+    ) -> bool | None:
+        """Compare one deployed item with the canonical source rendering.
+
+        Return ``True`` or ``False`` only when the target can inspect the
+        named item without comparing unrelated state. Return ``None`` when
+        semantic comparison is unsupported; the deploy loop then falls back
+        to the single-file byte comparison methods below.
+
+        Merged configuration targets use this hook for named MCP entries so a
+        matching manifest hash cannot hide a stale or missing registration.
+        """
+
+        return None
 
     def would_deploy_bytes(
         self,

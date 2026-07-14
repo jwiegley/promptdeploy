@@ -17,11 +17,26 @@ from ..frontmatter import (
     strip_deployment_fields,
 )
 from ..manifest import MANIFEST_FILENAME
-from .base import Target
+from .base import (
+    ANVIL_MCP_NAMES,
+    Target,
+    install_skill_tree_atomically,
+    transformed_skill_tree_matches,
+)
 
 # Keys that are deployment metadata, not part of the MCP server config.
 _MCP_STRIP_KEYS = frozenset(
-    {"name", "description", "scope", "enabled", "only", "except"}
+    {
+        "name",
+        "description",
+        "scope",
+        "enabled",
+        "only",
+        "except",
+        "claude",
+        "codex",
+        "opencode",
+    }
 )
 
 # Frontmatter fields that use Claude Code format and are incompatible
@@ -209,8 +224,9 @@ class OpenCodeTarget(Target):
             # existing deployments refresh even though the source YAML (and
             # the env-folded hash, which has always substituted ${VAR} in
             # every string) is unchanged.
-            # v2: ${VAR} in url is now strict-expanded like env/headers.
-            return "opencode-mcp-v2"
+            # v4: OpenCode overrides are merged before rendering, while other
+            # client override metadata is stripped from the resulting entry.
+            return "opencode-mcp-v4"
         return None
 
     @property
@@ -259,17 +275,11 @@ class OpenCodeTarget(Target):
         return transformed
 
     def deploy_skill(self, name: str, source_dir: Path) -> None:
-        dest = self._config_path / "skills" / name
-        if dest.is_symlink():
-            dest.unlink()
-        elif dest.exists():
-            shutil.rmtree(dest)
-        shutil.copytree(source_dir.resolve(), dest, symlinks=False)
-        skill_md = dest / "SKILL.md"
-        if skill_md.exists():
-            skill_md.write_bytes(
-                self._transform_collecting_warnings(name, skill_md.read_bytes())
-            )
+        install_skill_tree_atomically(
+            source_dir,
+            self._config_path / "skills" / name,
+            lambda contents: self._transform_collecting_warnings(name, contents),
+        )
 
     def deploy_hook(self, name: str, config: dict[str, Any]) -> None:
         pass
@@ -336,8 +346,6 @@ class OpenCodeTarget(Target):
         self._save_json(oc_path, data)
 
     def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:
-        from ..envsubst import expand_env_vars_strict
-
         oc_path = self._opencode_path()
         data = self._load_json(oc_path)
 
@@ -345,65 +353,75 @@ class OpenCodeTarget(Target):
         if not config.get("enabled", True):
             data.get("mcp", {}).pop(name, None)
         else:
-            oc_config: dict[str, Any] = {}
-            # Determine type based on presence of url vs command.
-            cmd = config.get("command")
-            args = config.get("args", [])
-            if "url" in config:
-                oc_config["type"] = "remote"
-            elif cmd is not None:
-                oc_config["type"] = "local"
-            # command is an array: command + args combined.
-            if cmd is not None:
-                oc_config["command"] = [cmd, *list(args)]
-            # "environment" key, not "env".  Expand ${VAR} at deploy time
-            # since OpenCode runs from a directory that won't have these
-            # vars set; an unresolved reference raises EnvVarError.
-            env = config.get("env")
-            if env:
-                oc_config["environment"] = {
-                    k: (
-                        expand_env_vars_strict(v, context=f"mcp.{name}.env.{k}")
-                        if isinstance(v, str)
-                        else v
-                    )
-                    for k, v in env.items()
-                }
-            # HTTP headers get the same strict deploy-time expansion as
-            # env values, and for the same reason: OpenCode will not
-            # expand ${VAR} at runtime.
-            headers = config.get("headers")
-            if headers:
-                oc_config["headers"] = {
-                    k: (
-                        expand_env_vars_strict(v, context=f"mcp.{name}.headers.{k}")
-                        if isinstance(v, str)
-                        else v
-                    )
-                    for k, v in headers.items()
-                }
-            # Copy any remaining non-metadata, non-handled keys. The url
-            # gets the same strict deploy-time expansion as env/headers, for
-            # the same reason: OpenCode's own substitution syntax is
-            # {env:VAR} (not ${VAR}) and silently empties unset vars, and
-            # OpenCode runs from a directory where these vars are not set,
-            # so a deploy-time EnvVarError is the correct failure mode.
-            for k, v in config.items():
-                if k not in _MCP_STRIP_KEYS and k not in (
-                    "command",
-                    "args",
-                    "env",
-                    "headers",
-                ):
-                    if k == "url" and isinstance(v, str):
-                        oc_config[k] = expand_env_vars_strict(
-                            v, context=f"mcp.{name}.url"
-                        )
-                    else:
-                        oc_config[k] = v
-            data.setdefault("mcp", {})[name] = oc_config
+            data.setdefault("mcp", {})[name] = self._opencode_mcp_entry(name, config)
 
         self._save_json(oc_path, data)
+
+    @staticmethod
+    def _opencode_mcp_entry(name: str, config: dict[str, Any]) -> dict[str, Any]:
+        from ..envsubst import expand_env_vars_strict
+
+        config = OpenCodeTarget._apply_opencode_mcp_overrides(config)
+        entry: dict[str, Any] = {}
+        # Determine type based on presence of url vs command.
+        cmd = config.get("command")
+        args = config.get("args", [])
+        if "url" in config:
+            entry["type"] = "remote"
+        elif cmd is not None:
+            entry["type"] = "local"
+        # command is an array: command + args combined.
+        if cmd is not None:
+            entry["command"] = [cmd, *list(args)]
+        # "environment" key, not "env". Expand ${VAR} at deploy time since
+        # OpenCode runs without these source-repository variables.
+        env = config.get("env")
+        if env:
+            entry["environment"] = {
+                key: (
+                    expand_env_vars_strict(value, context=f"mcp.{name}.env.{key}")
+                    if isinstance(value, str)
+                    else value
+                )
+                for key, value in env.items()
+            }
+        # HTTP headers use the same strict deploy-time expansion.
+        headers = config.get("headers")
+        if headers:
+            entry["headers"] = {
+                key: (
+                    expand_env_vars_strict(value, context=f"mcp.{name}.headers.{key}")
+                    if isinstance(value, str)
+                    else value
+                )
+                for key, value in headers.items()
+            }
+        # Copy remaining non-metadata, non-handled keys. OpenCode's own
+        # substitution syntax is {env:VAR}, not ${VAR}, so URLs also expand
+        # strictly at deployment.
+        for key, value in config.items():
+            if key not in _MCP_STRIP_KEYS and key not in (
+                "command",
+                "args",
+                "env",
+                "headers",
+            ):
+                if key == "url" and isinstance(value, str):
+                    entry[key] = expand_env_vars_strict(
+                        value, context=f"mcp.{name}.url"
+                    )
+                else:
+                    entry[key] = value
+        return entry
+
+    @staticmethod
+    def _apply_opencode_mcp_overrides(config: dict[str, Any]) -> dict[str, Any]:
+        override = config.get("opencode")
+        if not isinstance(override, dict):
+            return config
+        merged = {k: v for k, v in config.items() if k != "opencode"}
+        merged.update(override)
+        return merged
 
     # ------------------------------------------------------------------
     # Remove
@@ -462,6 +480,34 @@ class OpenCodeTarget(Target):
             data = self._load_json(self._opencode_path())
             return bool(data.get("provider"))
         return False
+
+    def item_matches_source(
+        self,
+        item_type: str,
+        name: str,
+        content: bytes,
+        metadata: dict[str, Any] | None,
+        source_path: Path | None = None,
+    ) -> bool | None:
+        if item_type == "skill":
+            if source_path is None:
+                return None
+            return transformed_skill_tree_matches(
+                source_path.parent,
+                self._config_path / "skills" / name,
+                _transform_for_opencode,
+            )
+        if item_type != "mcp" or name not in ANVIL_MCP_NAMES or metadata is None:
+            return None
+
+        missing = object()
+        data = self._load_json(self._opencode_path())
+        servers = data.get("mcp")
+        actual = servers.get(name, missing) if isinstance(servers, dict) else missing
+        if not metadata.get("enabled", True):
+            return actual is missing
+        expected = self._opencode_mcp_entry(name, metadata)
+        return actual == expected
 
     def would_deploy_bytes(
         self,

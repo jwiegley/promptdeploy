@@ -1,10 +1,11 @@
 """Tests for source item discovery against the actual repo structure."""
 
+import os
 from pathlib import Path
 
 import pytest
 
-from promptdeploy.source import SourceDiscovery, SourceItem
+from promptdeploy.source import DiscoveryError, SourceDiscovery, SourceItem
 
 # Test against the actual repo at the project root
 REPO_ROOT = Path(__file__).parent.parent
@@ -123,14 +124,13 @@ class TestDiscoverSkills:
 
     def test_symlinked_skills_discovered(self, tmp_path):
         # Create a real skill directory and symlink to it
-        real_skill = tmp_path / "real-skill"
-        real_skill.mkdir()
+        src = tmp_path / "source"
+        src.mkdir()
+        real_skill = src / "shared" / "real-skill"
+        real_skill.mkdir(parents=True)
         (real_skill / "SKILL.md").write_bytes(
             b"---\nname: linked-skill\ndescription: A linked skill\n---\nBody.\n"
         )
-
-        src = tmp_path / "source"
-        src.mkdir()
         skills_dir = src / "skills"
         skills_dir.mkdir()
         (skills_dir / "linked-skill").symlink_to(real_skill)
@@ -155,6 +155,140 @@ class TestDiscoverSkills:
         skills = list(discovery.discover_skills())
         skill_dirs = {s.path.parent.name for s in skills}
         assert "humanizer" not in skill_dirs
+
+    def test_unsafe_skill_is_reported_leniently(self, tmp_path):
+        src = tmp_path / "source"
+        unsafe = src / "skills" / "unsafe"
+        unsafe.mkdir(parents=True)
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "SKILL.md").write_text("secret")
+        unsafe.rmdir()
+        unsafe.symlink_to(outside, target_is_directory=True)
+        errors: list[DiscoveryError] = []
+
+        assert list(SourceDiscovery(src).discover_skills(errors=errors)) == []
+        assert len(errors) == 1
+        assert "inside its promptdeploy repository" in errors[0].message
+
+
+class TestSourceFileSafety:
+    @pytest.mark.parametrize(
+        ("category", "filename", "method_name"),
+        [
+            ("agents", "leak.md", "discover_agents"),
+            ("commands", "leak.md", "discover_commands"),
+            ("prompts", "leak.md", "discover_prompts"),
+            ("skills", "leak/SKILL.md", "discover_skills"),
+            ("mcp", "leak.yaml", "discover_mcp_servers"),
+            ("marketplaces", "leak.yaml", "discover_marketplaces"),
+            ("hooks", "leak.yaml", "discover_hooks"),
+        ],
+    )
+    def test_external_category_symlink_is_rejected_before_enumeration(
+        self, tmp_path, category, filename, method_name
+    ):
+        src = tmp_path / "source"
+        src.mkdir()
+        outside = tmp_path / f"outside-{category}"
+        file_path = outside / filename
+        file_path.parent.mkdir(parents=True)
+        file_path.write_text("---\nname: leak\n---\nsecret\n")
+        (src / category).symlink_to(outside, target_is_directory=True)
+
+        discover = getattr(SourceDiscovery(src), method_name)
+        with pytest.raises(ValueError, match="directory leaves"):
+            list(discover())
+
+    def test_broken_and_unreadable_category_directory_is_rejected(
+        self, tmp_path, monkeypatch
+    ):
+        src = tmp_path / "source"
+        src.mkdir()
+        agents = src / "agents"
+        agents.symlink_to(tmp_path / "missing", target_is_directory=True)
+
+        with pytest.raises(ValueError, match="directory is not safely readable"):
+            list(SourceDiscovery(src).discover_agents())
+
+        agents.unlink()
+        agents.mkdir()
+        real_lstat = Path.lstat
+
+        def fail_agents(path, *args, **kwargs):
+            if path == agents:
+                raise PermissionError("agents denied")
+            return real_lstat(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "lstat", fail_agents)
+        with pytest.raises(ValueError, match="directory is not safely readable"):
+            list(SourceDiscovery(src).discover_agents())
+
+    def test_regular_file_category_is_not_enumerated(self, tmp_path):
+        src = tmp_path / "source"
+        src.mkdir()
+        (src / "agents").write_text("not a directory")
+
+        assert list(SourceDiscovery(src).discover_agents()) == []
+
+    def test_top_level_linked_skill_cannot_discover_parent_secret(self, tmp_path):
+        src = tmp_path / "source"
+        (src / "skills").mkdir(parents=True)
+        linked_root = src / "shared"
+        linked_root.mkdir()
+        secret = src / ".repository-secret.md"
+        secret.write_text("---\nname: leaked\n---\nsecret\n")
+        (linked_root / "SKILL.md").symlink_to(secret)
+        (src / "skills" / "leak").symlink_to(linked_root, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="outside its allowed tree"):
+            list(SourceDiscovery(src).discover_skills())
+
+    def test_external_markdown_symlink_is_rejected_leniently(self, tmp_path):
+        src = tmp_path / "source"
+        agents = src / "agents"
+        agents.mkdir(parents=True)
+        outside = tmp_path / "outside.md"
+        outside.write_text("secret")
+        (agents / "linked.md").symlink_to(outside)
+        errors: list[DiscoveryError] = []
+
+        assert list(SourceDiscovery(src).discover_agents(errors=errors)) == []
+        assert len(errors) == 1
+        assert "leaves the source repository" in errors[0].message
+
+    def test_internal_markdown_symlink_is_allowed(self, tmp_path):
+        src = tmp_path / "source"
+        agents = src / "agents"
+        shared = src / "shared"
+        agents.mkdir(parents=True)
+        shared.mkdir()
+        real = shared / "agent.md"
+        real.write_text("---\nname: linked\n---\nbody\n")
+        (agents / "linked.md").symlink_to(real)
+
+        items = list(SourceDiscovery(src).discover_agents())
+        assert [item.name for item in items] == ["linked"]
+        assert items[0].content.endswith(b"body\n")
+
+    @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="platform lacks FIFOs")
+    def test_markdown_fifo_is_rejected_without_reading(self, tmp_path):
+        src = tmp_path / "source"
+        agents = src / "agents"
+        agents.mkdir(parents=True)
+        os.mkfifo(agents / "blocked.md")
+
+        with pytest.raises(ValueError, match="regular file"):
+            list(SourceDiscovery(src).discover_agents())
+
+    def test_broken_markdown_symlink_is_rejected(self, tmp_path):
+        src = tmp_path / "source"
+        agents = src / "agents"
+        agents.mkdir(parents=True)
+        (agents / "broken.md").symlink_to(src / "missing.md")
+
+        with pytest.raises(ValueError, match="not safely readable"):
+            list(SourceDiscovery(src).discover_agents())
 
 
 class TestDiscoverMcpServers:

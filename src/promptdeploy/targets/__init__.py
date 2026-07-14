@@ -18,7 +18,10 @@ if TYPE_CHECKING:
 
 
 def create_target(
-    target_config: TargetConfig, *, global_model: str | None = None
+    target_config: TargetConfig,
+    *,
+    global_model: str | None = None,
+    local_host: str | None = None,
 ) -> Target:
     """Create a Target instance from a TargetConfig.
 
@@ -34,9 +37,13 @@ def create_target(
     its own ``model`` override. The per-target ``TargetConfig.model`` wins
     when both are set. ``None`` disables injection entirely.
     """
-    from ..config import current_host
+    from ..config import target_is_local
 
-    is_remote = target_config.host is not None and target_config.host != current_host()
+    is_remote = not target_is_local(target_config, local_host)
+    if local_host is not None and is_remote:
+        raise ValueError(
+            f"Target '{target_config.id}' is remote from runtime host '{local_host}'"
+        )
     if is_remote:
         staging_path = Path(
             tempfile.mkdtemp(prefix=f"promptdeploy-{target_config.id}-")

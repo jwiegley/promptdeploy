@@ -16,6 +16,7 @@ from .config import (
 from .envsubst import find_env_refs, read_env_example_keys
 from .filetags import parse_filetags
 from .frontmatter import FrontmatterError, parse_frontmatter
+from .names import require_canonical_item_name
 from .poet import POET_EXTENSIONS, PoetError, parse_poet
 from .source import DiscoveryError, SourceDiscovery, SourceItem
 
@@ -307,6 +308,17 @@ def validate_item(
     produce warnings. ``None`` skips that check.
     """
     issues: list[ValidationIssue] = []
+
+    try:
+        require_canonical_item_name(item.item_type, item.name)
+    except ValueError as exc:
+        issues.append(
+            ValidationIssue(
+                level="error",
+                message=str(exc),
+                file_path=item.path,
+            )
+        )
 
     _VALID_HOOK_EVENTS = frozenset(
         {

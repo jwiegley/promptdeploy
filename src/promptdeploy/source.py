@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import stat
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,6 +17,7 @@ from promptdeploy.poet import (
     POET_EXTENSIONS,
     extract_comment_frontmatter,
 )
+from promptdeploy.skilltree import scan_skill_source
 
 PROMPT_EXTENSIONS = POET_EXTENSIONS | PLAIN_EXTENSIONS | {".json"}
 
@@ -61,6 +63,45 @@ class SourceDiscovery:
     def __init__(self, source_root: Path) -> None:
         self.source_root = source_root
 
+    def _source_directory(self, name: str) -> Path | None:
+        """Return a source-confined category directory before enumerating it."""
+        boundary = self.source_root.resolve()
+        path = self.source_root / name
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise ValueError(
+                f"Source directory is not safely readable: {path}"
+            ) from exc
+        try:
+            resolved = path.resolve(strict=True)
+            resolved_stat = resolved.stat()
+        except OSError as exc:
+            raise ValueError(
+                f"Source directory is not safely readable: {path}"
+            ) from exc
+        if not resolved.is_relative_to(boundary):
+            raise ValueError("Source directory leaves the source repository")
+        if not stat.S_ISDIR(resolved_stat.st_mode):
+            return None
+        return path
+
+    def _read_regular_source_file(self, path: Path) -> bytes:
+        """Read one regular source without following links outside the source root."""
+        boundary = self.source_root.resolve()
+        try:
+            readable = path.resolve(strict=True)
+            path_stat = readable.stat()
+            if not readable.is_relative_to(boundary):
+                raise ValueError("Source file leaves the source repository")
+            if not stat.S_ISREG(path_stat.st_mode):
+                raise ValueError("Source item must be a regular file")
+            return readable.read_bytes()
+        except OSError as exc:
+            raise ValueError(f"Source item is not safely readable: {path}") from exc
+
     def discover_all(self) -> Iterator[SourceItem]:
         """Yield all discoverable source items."""
         yield from self.discover_agents()
@@ -80,16 +121,16 @@ class SourceDiscovery:
 
     def discover_prompts(self) -> Iterator[SourceItem]:
         """Discover prompts from prompts/*.{poet,j2,jinja,jinja2,txt,md,org,json}."""
-        prompts_dir = self.source_root / "prompts"
-        if not prompts_dir.is_dir():
+        prompts_dir = self._source_directory("prompts")
+        if prompts_dir is None:
             return
         for path in sorted(prompts_dir.iterdir()):
             if path.name.startswith(".") or path.suffix not in PROMPT_EXTENSIONS:
                 continue
-            if not path.is_file():
+            if stat.S_ISDIR(path.lstat().st_mode):
                 continue
             base_name, tags = parse_filetags(path.stem)
-            content = path.read_bytes()
+            content = self._read_regular_source_file(path)
             metadata = extract_comment_frontmatter(content)
             name = _resolve_name(metadata, base_name)
             yield SourceItem(
@@ -110,15 +151,15 @@ class SourceDiscovery:
         appended to it and discovery continues with the next file; otherwise
         the first failure raises FrontmatterError.
         """
-        agents_dir = self.source_root / "agents"
-        if not agents_dir.is_dir():
+        agents_dir = self._source_directory("agents")
+        if agents_dir is None:
             return
         for path in sorted(agents_dir.iterdir()):
             if path.name.startswith(".") or path.suffix != ".md":
                 continue
             try:
                 yield self._load_markdown_item("agent", path)
-            except FrontmatterError as exc:
+            except (FrontmatterError, ValueError) as exc:
                 if errors is None:
                     raise
                 errors.append(DiscoveryError(path=path, message=str(exc)))
@@ -131,15 +172,15 @@ class SourceDiscovery:
         ``errors`` enables lenient per-file error collection as in
         :meth:`discover_agents`.
         """
-        commands_dir = self.source_root / "commands"
-        if not commands_dir.is_dir():
+        commands_dir = self._source_directory("commands")
+        if commands_dir is None:
             return
         for path in sorted(commands_dir.iterdir()):
             if path.name.startswith(".") or path.suffix != ".md":
                 continue
             try:
                 yield self._load_markdown_item("command", path)
-            except FrontmatterError as exc:
+            except (FrontmatterError, ValueError) as exc:
                 if errors is None:
                     raise
                 errors.append(DiscoveryError(path=path, message=str(exc)))
@@ -152,8 +193,8 @@ class SourceDiscovery:
         ``errors`` enables lenient per-file error collection as in
         :meth:`discover_agents`.
         """
-        skills_dir = self.source_root / "skills"
-        if not skills_dir.is_dir():
+        skills_dir = self._source_directory("skills")
+        if skills_dir is None:
             return
         skip_names = {"README.md"}
         for entry in sorted(skills_dir.iterdir()):
@@ -161,14 +202,23 @@ class SourceDiscovery:
                 continue
             if not entry.is_dir():
                 continue
-            skill_md = entry / "SKILL.md"
-            if not skill_md.exists():
+            try:
+                _resolved_root, files = scan_skill_source(entry)
+            except ValueError as exc:
+                if errors is None:
+                    raise ValueError(f"{entry}: {exc}") from exc
+                errors.append(DiscoveryError(path=entry, message=str(exc)))
                 continue
+            validated_files = dict(files)
+            resolved_skill_md = validated_files.get("SKILL.md")
+            if resolved_skill_md is None:
+                continue
+            skill_md = entry / "SKILL.md"
             # Parse filetags from directory name
             base_name, tags = parse_filetags(entry.name)
-            # Resolve symlinks for content but preserve original path
-            resolved = skill_md.resolve()
-            content = resolved.read_bytes()
+            # Read only the regular, source-confined path approved above while
+            # preserving the lexical source path for diagnostics/deployment.
+            content = resolved_skill_md.read_bytes()
             try:
                 metadata, _ = parse_frontmatter(content)
             except FrontmatterError as exc:
@@ -194,8 +244,8 @@ class SourceDiscovery:
         warnings — otherwise a git-tracked skill silently vanishes from
         every target.
         """
-        skills_dir = self.source_root / "skills"
-        if not skills_dir.is_dir():
+        skills_dir = self._source_directory("skills")
+        if skills_dir is None:
             return []
         return [
             entry
@@ -205,14 +255,14 @@ class SourceDiscovery:
 
     def discover_mcp_servers(self) -> Iterator[SourceItem]:
         """Discover MCP server configs from mcp/*.yaml."""
-        mcp_dir = self.source_root / "mcp"
-        if not mcp_dir.is_dir():
+        mcp_dir = self._source_directory("mcp")
+        if mcp_dir is None:
             return
         for path in sorted(mcp_dir.iterdir()):
             if path.name.startswith(".") or path.suffix != ".yaml":
                 continue
             base_name, tags = parse_filetags(path.stem)
-            content = path.read_bytes()
+            content = self._read_regular_source_file(path)
             try:
                 metadata = yaml.safe_load(content)
             except yaml.YAMLError:
@@ -231,14 +281,14 @@ class SourceDiscovery:
 
     def discover_marketplaces(self) -> Iterator[SourceItem]:
         """Discover Claude marketplace configs from marketplaces/*.yaml."""
-        marketplaces_dir = self.source_root / "marketplaces"
-        if not marketplaces_dir.is_dir():
+        marketplaces_dir = self._source_directory("marketplaces")
+        if marketplaces_dir is None:
             return
         for path in sorted(marketplaces_dir.iterdir()):
             if path.name.startswith(".") or path.suffix != ".yaml":
                 continue
             base_name, tags = parse_filetags(path.stem)
-            content = path.read_bytes()
+            content = self._read_regular_source_file(path)
             try:
                 metadata = yaml.safe_load(content)
             except yaml.YAMLError:
@@ -260,7 +310,7 @@ class SourceDiscovery:
         models_path = self.source_root / "models.yaml"
         if not models_path.exists():
             return
-        content = models_path.read_bytes()
+        content = self._read_regular_source_file(models_path)
         try:
             metadata = yaml.safe_load(content)
         except yaml.YAMLError:
@@ -280,7 +330,7 @@ class SourceDiscovery:
         settings_path = self.source_root / "settings.yaml"
         if not settings_path.exists():
             return
-        content = settings_path.read_bytes()
+        content = self._read_regular_source_file(settings_path)
         try:
             metadata = yaml.safe_load(content)
         except yaml.YAMLError:
@@ -297,14 +347,14 @@ class SourceDiscovery:
 
     def discover_hooks(self) -> Iterator[SourceItem]:
         """Discover hook group configs from hooks/*.yaml."""
-        hooks_dir = self.source_root / "hooks"
-        if not hooks_dir.is_dir():
+        hooks_dir = self._source_directory("hooks")
+        if hooks_dir is None:
             return
         for path in sorted(hooks_dir.iterdir()):
             if path.name.startswith(".") or path.suffix != ".yaml":
                 continue
             base_name, tags = parse_filetags(path.stem)
-            content = path.read_bytes()
+            content = self._read_regular_source_file(path)
             try:
                 metadata = yaml.safe_load(content)
             except yaml.YAMLError:
@@ -327,8 +377,7 @@ class SourceDiscovery:
         Raises FrontmatterError naming the offending file on parse failure.
         """
         base_name, tags = parse_filetags(path.stem)
-        resolved = path.resolve()
-        content = resolved.read_bytes()
+        content = self._read_regular_source_file(path)
         try:
             metadata, _ = parse_frontmatter(content)
         except FrontmatterError as exc:

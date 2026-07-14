@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from .config import Config, load_anthropic_default_model
 from .deploy import _TYPE_TO_CATEGORY, compute_item_hash, item_selected
 from .manifest import has_changed, load_manifest
+from .names import require_canonical_item_name
 from .source import SourceDiscovery
 from .targets import create_target
 
@@ -40,6 +41,8 @@ def get_status(
     entries: list[StatusEntry] = []
     discovery = SourceDiscovery(config.source_root)
     items = list(discovery.discover_all())
+    for item in items:
+        require_canonical_item_name(item.item_type, item.name)
 
     # Resolve the Anthropic default model exactly as deploy() does so that
     # claude targets report the same content fingerprint (injected model
@@ -71,7 +74,14 @@ def get_status(
                     else:
                         state = "new"
                 else:
-                    state = "current"
+                    source_match = target.item_matches_source(
+                        item.item_type,
+                        item.name,
+                        item.content,
+                        item.metadata,
+                        source_path=item.path,
+                    )
+                    state = "changed" if source_match is False else "current"
 
                 entries.append(StatusEntry(item.item_type, item.name, target_id, state))
 

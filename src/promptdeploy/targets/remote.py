@@ -8,12 +8,14 @@ from typing import Any
 
 from ..ssh import (
     build_claude_merge_script,
+    mcp_entry_fingerprint,
     ssh_exists,
     ssh_pull,
     ssh_push,
+    ssh_remote_mcp_fingerprint,
     ssh_stdin,
 )
-from .base import Target
+from .base import ANVIL_MCP_NAMES, Target
 from .claude import ClaudeTarget
 
 
@@ -265,6 +267,36 @@ class RemoteTarget(Target):
                 return True
             return name in self._remote_mcp_manifest_names()
         return self._inner.item_exists(item_type, name)
+
+    def item_matches_source(
+        self,
+        item_type: str,
+        name: str,
+        content: bytes,
+        metadata: dict[str, Any] | None,
+        source_path: Path | None = None,
+    ) -> bool | None:
+        if self._remote_mcp and item_type == "mcp":
+            if name not in ANVIL_MCP_NAMES or metadata is None:
+                return None
+            target_path = f"{self._remote_path}/.claude.json"
+            actual = ssh_remote_mcp_fingerprint(
+                self._host,
+                target_path,
+                name,
+            )
+            if not metadata.get("enabled", True):
+                return actual is None
+            expected = ClaudeTarget._claude_mcp_entry(
+                metadata,
+                name=name,
+                expand_secrets=False,
+            )
+            expected = self._expand_entry_secrets(name, expected)
+            return actual == mcp_entry_fingerprint(expected)
+        return self._inner.item_matches_source(
+            item_type, name, content, metadata, source_path
+        )
 
     def _remote_mcp_manifest_names(self) -> set[str]:
         """mcp_servers names from the staging manifest pulled by prepare().

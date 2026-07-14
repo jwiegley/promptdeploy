@@ -1,8 +1,26 @@
 import argparse
+import os
 import sys
 from pathlib import Path
 
 from .config import Config, expand_target_arg, load_config
+
+
+def _load_source_dotenv(path: Path) -> None:
+    """Load source secrets without allowing it to redefine host identity."""
+    from .envsubst import load_dotenv
+
+    key = "PROMPTDEPLOY_HOST"
+    had_override = key in os.environ
+    original_override = os.environ.get(key)
+    try:
+        load_dotenv(path)
+    finally:
+        if had_override:
+            assert original_override is not None
+            os.environ[key] = original_override
+        else:
+            os.environ.pop(key, None)
 
 
 def _load_config_or_exit() -> Config:
@@ -12,6 +30,32 @@ def _load_config_or_exit() -> Config:
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
+
+
+def _select_operation_targets(
+    config: Config,
+    args: argparse.Namespace,
+    *,
+    runtime_host: str | None = None,
+) -> tuple[list[str], str | None]:
+    """Expand target arguments and enforce the optional no-SSH boundary."""
+    target_ids = expand_target_arg(getattr(args, "target", None), config)
+    if not getattr(args, "local_only", False):
+        return target_ids, None
+
+    from .config import current_host, filter_local_target_ids
+
+    runtime_host = runtime_host or current_host()
+    target_ids = filter_local_target_ids(
+        config,
+        target_ids,
+        runtime_host=runtime_host,
+    )
+    if not target_ids:
+        raise ValueError(
+            f"No selected targets are local to runtime host '{runtime_host}'"
+        )
+    return target_ids, runtime_host
 
 
 def main() -> None:
@@ -34,6 +78,12 @@ def main() -> None:
         "--target", action="append", help="Target environment(s) to deploy to"
     )
     deploy_parser.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Exclude every target that would require SSH",
+    )
+    selection = deploy_parser.add_mutually_exclusive_group()
+    selection.add_argument(
         "--only-type",
         action="append",
         choices=[
@@ -48,6 +98,12 @@ def main() -> None:
             "settings",
         ],
         help="Only deploy specific item types",
+    )
+    selection.add_argument(
+        "--only-item",
+        action="append",
+        metavar="TYPE:NAME",
+        help="Deploy exactly one named item; may be repeated",
     )
     deploy_parser.add_argument("--verbose", action="store_true", help="Verbose output")
     deploy_parser.add_argument("--quiet", action="store_true", help="Suppress output")
@@ -64,6 +120,25 @@ def main() -> None:
             "Redirect all deployment output under DIR"
             " (using target IDs as subdirectories)"
         ),
+    )
+
+    verify_parser = subparsers.add_parser(
+        "verify", help="Strictly verify exact deployed items"
+    )
+    verify_parser.add_argument(
+        "--target", action="append", help="Target environment(s) to verify"
+    )
+    verify_parser.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Exclude every target that would require SSH",
+    )
+    verify_parser.add_argument(
+        "--only-item",
+        action="append",
+        required=True,
+        metavar="TYPE:NAME",
+        help="Verify exactly one named item; may be repeated",
     )
 
     # validate subcommand
@@ -128,6 +203,8 @@ def main() -> None:
 
     if args.command == "deploy":
         _run_deploy(args)
+    elif args.command == "verify":
+        _run_verify(args)
     elif args.command == "validate":
         _run_validate()
     elif args.command == "status":
@@ -144,7 +221,7 @@ def main() -> None:
 
 
 def _run_deploy(args: argparse.Namespace) -> None:
-    from .deploy import deploy
+    from .deploy import deploy, parse_item_selector
     from .filters import FilterError
     from .output import Output, Verbosity
 
@@ -160,19 +237,33 @@ def _run_deploy(args: argparse.Namespace) -> None:
 
     config = _load_config_or_exit()
 
-    from .envsubst import load_dotenv
+    # Capture host identity before the source-controlled dotenv is loaded.
+    # An explicitly exported PROMPTDEPLOY_HOST remains honored by current_host,
+    # while a repository .env cannot spoof a remote target as local.
+    from .config import current_host
 
-    load_dotenv(config.source_root / ".env")
+    selected_runtime_host = current_host()
+    _load_source_dotenv(config.source_root / ".env")
 
-    if args.target_root:
-        from .config import remap_targets_to_root
-
-        config = remap_targets_to_root(config, args.target_root.resolve())
     try:
-        target_ids = expand_target_arg(args.target, config)
+        target_ids, runtime_host = _select_operation_targets(
+            config, args, runtime_host=selected_runtime_host
+        )
+        raw_selectors = getattr(args, "only_item", None)
+        item_selectors = (
+            [parse_item_selector(raw) for raw in raw_selectors]
+            if raw_selectors is not None
+            else None
+        )
     except ValueError as exc:
         out.error(str(exc))
         sys.exit(1)
+
+    target_root = getattr(args, "target_root", None)
+    if target_root:
+        from .config import remap_targets_to_root
+
+        config = remap_targets_to_root(config, target_root.resolve())
 
     from .envsubst import EnvVarError
     from .frontmatter import FrontmatterError
@@ -187,8 +278,10 @@ def _run_deploy(args: argparse.Namespace) -> None:
             target_ids=target_ids,
             dry_run=args.dry_run,
             verbose=args.verbose,
-            item_types=args.only_type,
+            item_types=getattr(args, "only_type", None),
+            item_selectors=item_selectors,
             force=args.force,
+            local_host=runtime_host,
         )
     except (
         FilterError,
@@ -198,6 +291,7 @@ def _run_deploy(args: argparse.Namespace) -> None:
         JsonConfigError,
         PoetError,
         SSHError,
+        ValueError,
     ) as exc:
         out.error(str(exc))
         sys.exit(1)
@@ -229,6 +323,47 @@ def _run_deploy(args: argparse.Namespace) -> None:
     out.summary(
         created, updated, removed, skipped, pre_existing=pre_existing, prefix=prefix
     )
+
+
+def _run_verify(args: argparse.Namespace) -> None:
+    from .config import current_host
+    from .deploy import parse_item_selector
+    from .envsubst import EnvVarError
+    from .filters import FilterError
+    from .frontmatter import FrontmatterError
+    from .ssh import SSHError
+    from .verify import verify_items
+
+    config = _load_config_or_exit()
+    selected_runtime_host = current_host()
+    _load_source_dotenv(config.source_root / ".env")
+    try:
+        target_ids, runtime_host = _select_operation_targets(
+            config, args, runtime_host=selected_runtime_host
+        )
+        selectors = [parse_item_selector(raw) for raw in getattr(args, "only_item", [])]
+        failures = verify_items(
+            config,
+            target_ids=target_ids,
+            item_selectors=selectors,
+            local_host=runtime_host,
+        )
+    except SSHError:
+        print("ERROR: remote verification failed", file=sys.stderr)
+        sys.exit(1)
+    except (EnvVarError, FilterError, FrontmatterError, OSError, ValueError) as exc:
+        print(f"ERROR: verification could not run: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if failures:
+        for failure in failures:
+            print(
+                f"ERROR: {failure.item_type}:{failure.name} -> "
+                f"{failure.target_id}: {failure.reason}",
+                file=sys.stderr,
+            )
+        sys.exit(1)
+    print(f"Verified {len(selectors)} exact item selector(s).")
 
 
 def _run_validate() -> None:

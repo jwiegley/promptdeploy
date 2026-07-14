@@ -299,6 +299,31 @@ class TestDeployMcpServer:
         for key in ("name", "description", "scope", "enabled", "only", "except"):
             assert key not in srv
 
+    def test_applies_only_opencode_overrides(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        source = {
+            "command": "base-server",
+            "args": ["--base"],
+            "claude": {"timeout": 60000},
+            "codex": {"tool_timeout_sec": 60},
+            "opencode": {
+                "command": "opencode-server",
+                "args": ["--dedicated"],
+                "timeout": 210000,
+            },
+        }
+        original = json.loads(json.dumps(source))
+
+        target.deploy_mcp_server("srv", source)
+
+        result = json.loads((tmp_path / ".opencode" / "opencode.json").read_text())
+        assert result["mcp"]["srv"] == {
+            "type": "local",
+            "command": ["opencode-server", "--dedicated"],
+            "timeout": 210000,
+        }
+        assert source == original
+
     def test_command_without_args(self, tmp_path: Path):
         target = _make_target(tmp_path)
         target.deploy_mcp_server("srv", {"command": "echo"})
@@ -1013,11 +1038,12 @@ class TestTargetProperties:
 
     def test_content_fingerprint_mcp(self, tmp_path: Path):
         # The fingerprint bumps when the deployed opencode.json entry format
-        # changes (v2: ${VAR} in url is strict-expanded) so already-deployed
-        # servers self-heal on the next run even though the env-folded hash
-        # is unchanged.
+        # changes (v2: ${VAR} in url is strict-expanded; v3: target-specific
+        # overrides are stripped; v4: OpenCode overrides are merged) so
+        # already-deployed servers self-heal on the next run even though the
+        # env-folded hash is unchanged.
         target = _make_target(tmp_path)
-        assert target.content_fingerprint("mcp") == "opencode-mcp-v2"
+        assert target.content_fingerprint("mcp") == "opencode-mcp-v4"
 
     def test_content_fingerprint_other_types_none(self, tmp_path: Path):
         target = _make_target(tmp_path)

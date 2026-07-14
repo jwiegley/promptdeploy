@@ -78,9 +78,14 @@ Use the `parallelize` skill. As coordinator you keep all git and shared-state ch
 
 ## Use Anvil where the host provides it
 
-At loop start -- and again as part of every post-compaction refresh -- check whether the anvil MCP tools are available on this host (an `emacs-eval` tool from the `anvil` server and typed tools such as `file-batch` from `anvil-tools`; under Claude Code they appear as `mcp__anvil__*` / `mcp__anvil-tools__*`). If they are, invoke the `anvil` skill once and follow its tool-selection rules for the rest of the loop: progressive-disclosure reads for large files, batched typed edits (`file-batch` / `file-batch-across`) over one-at-a-time writes, the org tools for any org-file work, structured git queries for repo state, and async eval for heavy Emacs-side operations. Anvil's live-session safety rules apply unchanged inside the loop -- in particular the unsaved-buffer check before disk edits.
+At loop start -- and again as part of every post-compaction refresh -- check whether the single `anvil` MCP registration is available on this host. Probe an advertised capability appropriate to the backend: `emacs-eval` for Emacs-backed mode, or a typed host/file tool for NeLisp. Dedicated mode advertises typed tools such as `file-batch` under the same `anvil` registration (for example `mcp__anvil__file_batch` in Claude Code); the retired `anvil-tools` sibling must not be required. If Anvil is available, invoke the `anvil` skill once and follow its tool-selection rules for the rest of the loop: progressive-disclosure reads for large files, batched typed edits (`file-batch` / `file-batch-across`) over one-at-a-time writes, the org tools for any org-file work, structured git queries for repo state, and async eval for heavy Emacs-side operations. Anvil's live-session safety rules apply unchanged inside the loop -- in particular the unsaved-buffer check before disk edits.
 
-If the tools are absent or the probe fails, note it once in the handoff document and proceed with standard tools -- anvil is an amplifier, never a hard dependency of the loop.
+If the tools are absent, note that once in the handoff document and proceed
+with standard tools. If a probe fails, follow the Anvil skill's bounded
+recovery policy: fall back only for the current operation, then reprobe at the
+next mandatory checkpoint or after ten minutes. Never turn one failed probe
+into a loop-wide Anvil disablement -- Anvil is an amplifier, never a hard
+dependency of the loop.
 
 ## Confer via PAL for real decisions
 

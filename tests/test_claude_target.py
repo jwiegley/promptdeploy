@@ -260,11 +260,10 @@ class TestDeploySkill:
     def test_resolves_symlinks(self, tmp_path: Path):
         target = _make_target(tmp_path)
 
-        real_file = tmp_path / "real.txt"
-        real_file.write_text("real content")
-
         src = tmp_path / "src-skill"
         src.mkdir()
+        real_file = src / "real.txt"
+        real_file.write_text("real content")
         (src / "link.txt").symlink_to(real_file)
 
         target.deploy_skill("linked", src)
@@ -604,12 +603,13 @@ class TestDeployMcpServer:
     def test_mcp_fingerprint_refreshes_existing_deployments(self, tmp_path: Path):
         # The deployed entry format changed without the source YAML changing
         # (v3: URL "type" defaulting; v4: url joins the strict-expansion
-        # contract), so MCP items carry a content fingerprint that invalidates
+        # contract; v5-v6: target-specific overrides), so MCP items carry a
+        # content fingerprint that invalidates
         # stale manifest hashes and forces a one-time refresh. Pin the exact
         # value: a silent revert would skip that migration for existing
         # deployments.
         target = _make_target(tmp_path)
-        assert target.content_fingerprint("mcp") == "claude-mcp-entry-v4"
+        assert target.content_fingerprint("mcp") == "claude-mcp-entry-v6"
 
 
 class TestRemoveMcpServer:

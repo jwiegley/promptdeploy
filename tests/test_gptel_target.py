@@ -193,6 +193,35 @@ class TestRemovePrompt:
         target = _make_target(tmp_path)
         target.remove_prompt("foo", target_path=Path("foo.json"))
 
+    @pytest.mark.parametrize(
+        "target_path",
+        [
+            Path("../../victim"),
+            Path("/tmp/victim"),
+            Path("nested/foo.md"),
+            Path("unrelated.md"),
+        ],
+    )
+    def test_rejects_recorded_path_not_owned_by_prompt(
+        self, target_path: Path, tmp_path: Path
+    ):
+        target = _make_target(tmp_path)
+        sentinel = tmp_path / "victim"
+        sentinel.write_text("preserve")
+
+        with pytest.raises(ValueError, match="does not match its item name"):
+            target.remove_prompt("foo", target_path=target_path)
+
+        assert sentinel.read_text() == "preserve"
+
+    def test_rejects_unsafe_prompt_name_before_legacy_removal(self, tmp_path: Path):
+        target = _make_target(tmp_path)
+        sentinel = tmp_path / "victim"
+        sentinel.write_text("preserve")
+        with pytest.raises(ValueError, match="Unsafe prompt name"):
+            target.remove_prompt("../../victim")
+        assert sentinel.read_text() == "preserve"
+
     def test_legacy_fallback_without_target_path(self, tmp_path: Path):
         # Legacy manifests (no target_path) fall back to extension probing.
         target = _make_target(tmp_path)

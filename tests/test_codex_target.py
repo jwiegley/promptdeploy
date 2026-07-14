@@ -73,7 +73,7 @@ def test_should_skip_settings_marketplaces_and_non_codex_models(tmp_path: Path):
         metadata={"providers": {"p": {"display_name": "P", "codex": {}}}},
     )
     assert target.content_fingerprint("agent") == "codex-agent-v2"
-    assert target.content_fingerprint("mcp") == "codex-mcp-v4"
+    assert target.content_fingerprint("mcp") == "codex-mcp-v6"
     assert target.content_fingerprint("models") == "codex-target-v1"
     assert target.content_fingerprint("command") == "codex-command-skill-v3"
     assert target.content_fingerprint("skill") is None

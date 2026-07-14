@@ -8,9 +8,13 @@ import json
 import os
 import sys
 import tempfile
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+
+from .names import require_canonical_item_name
+from .skilltree import scan_skill_source
 
 MANIFEST_VERSION = 1
 MANIFEST_FILENAME = ".prompt-deploy-manifest.json"
@@ -53,12 +57,8 @@ def compute_directory_hash(directory: Path) -> str:
     identically.
     """
     h = hashlib.sha256()
-    entries: list[tuple[str, bytes]] = []
-    for root, _dirs, files in os.walk(directory):
-        for fname in files:
-            fpath = Path(root) / fname
-            rel = fpath.relative_to(directory).as_posix()
-            entries.append((rel, fpath.read_bytes()))
+    _root, validated_files = scan_skill_source(directory)
+    entries = [(relative, path.read_bytes()) for relative, path in validated_files]
     entries.sort(key=lambda e: e[0])
     for rel_path, content in entries:
         encoded = rel_path.encode()
@@ -84,6 +84,120 @@ def _fallback_manifest(manifest_path: Path, reason: str) -> Manifest:
     return Manifest()
 
 
+class UnsafeManifestError(ValueError):
+    """Raised when a manifest could steer a filesystem operation unsafely."""
+
+
+_PATH_CATEGORIES = {
+    "agents": "agent",
+    "commands": "command",
+    "skills": "skill",
+    "prompts": "prompt",
+}
+
+
+def _validate_manifest_target_path(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("Manifest target_path must be a string or null")
+    parts = value.split("/")
+    if (
+        not value
+        or value.startswith("/")
+        or "\\" in value
+        or any(part in {"", ".", ".."} for part in parts)
+        or any(unicodedata.category(character) in {"Cc", "Cf"} for character in value)
+    ):
+        raise UnsafeManifestError(
+            "Manifest target_path is not a confined relative path"
+        )
+    return value
+
+
+def _manifest_from_mapping(
+    data: dict[str, object], *, strict: bool = False
+) -> Manifest:
+    version = data.get("version", MANIFEST_VERSION)
+    raw_items = data.get("items", {})
+    if not isinstance(raw_items, dict):
+        raise ValueError("Manifest items must be an object")
+    items: dict[str, dict[str, ManifestItem]] = {}
+    for category, entries in raw_items.items():
+        if not isinstance(category, str) or not isinstance(entries, dict):
+            raise ValueError("Manifest categories must be objects")
+        converted: dict[str, ManifestItem] = {}
+        for name, values in entries.items():
+            if not isinstance(name, str) or not isinstance(values, dict):
+                raise ValueError("Manifest entries must be named objects")
+            item_type = _PATH_CATEGORIES.get(category)
+            if item_type is not None:
+                try:
+                    require_canonical_item_name(item_type, name)
+                except ValueError as exc:
+                    raise UnsafeManifestError(str(exc)) from exc
+            source_hash = values.get("source_hash", "")
+            target_path = values.get("target_path")
+            managed_keys = values.get("managed_keys")
+            if not isinstance(source_hash, str):
+                raise ValueError("Manifest source_hash must be a string")
+            if strict or target_path is not None:
+                target_path = _validate_manifest_target_path(target_path)
+            if managed_keys is not None and (
+                not isinstance(managed_keys, list)
+                or not all(isinstance(key, str) for key in managed_keys)
+            ):
+                raise ValueError(
+                    "Manifest managed_keys must be a list of strings or null"
+                )
+            converted[name] = ManifestItem(
+                source_hash=source_hash,
+                target_path=target_path,
+                managed_keys=managed_keys,
+            )
+        items[category] = converted
+    deployed_at = data.get("deployed_at", "")
+    if not isinstance(deployed_at, str):
+        raise ValueError("Manifest deployed_at must be a string")
+    return Manifest(
+        version=version if isinstance(version, int) else MANIFEST_VERSION,
+        deployed_at=deployed_at,
+        items=items,
+    )
+
+
+def load_manifest_strict(manifest_path: Path) -> Manifest:
+    """Load a manifest without discarding any state exact deploy might rewrite."""
+    if not manifest_path.exists():
+        return Manifest()
+    try:
+        data = json.loads(manifest_path.read_text())
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError("Exact deployment requires a readable manifest") from exc
+    if not isinstance(data, dict):
+        raise ValueError("Exact deployment requires an object manifest")
+    unknown_top = set(data) - {"version", "deployed_at", "items"}
+    if unknown_top:
+        raise ValueError("Exact deployment refuses unknown manifest fields")
+    version = data.get("version", MANIFEST_VERSION)
+    if type(version) is not int or version != MANIFEST_VERSION:
+        raise ValueError("Exact deployment refuses an unsupported manifest version")
+    raw_items = data.get("items", {})
+    if not isinstance(raw_items, dict):
+        raise ValueError("Exact deployment requires object manifest items")
+    for category, entries in raw_items.items():
+        if not isinstance(category, str) or not isinstance(entries, dict):
+            raise ValueError("Exact deployment requires object manifest categories")
+        for name, values in entries.items():
+            if not isinstance(name, str) or not isinstance(values, dict):
+                raise ValueError("Exact deployment requires object manifest entries")
+            if set(values) - {"source_hash", "target_path", "managed_keys"}:
+                raise ValueError(
+                    "Exact deployment refuses unknown manifest item fields"
+                )
+    return _manifest_from_mapping(data, strict=True)
+
+
 def load_manifest(manifest_path: Path) -> Manifest:
     """Load a manifest from disk, returning an empty one if it doesn't exist.
 
@@ -107,21 +221,12 @@ def load_manifest(manifest_path: Path) -> Manifest:
             f"(expected {MANIFEST_VERSION}); loading known fields only",
             file=sys.stderr,
         )
-    items: dict[str, dict[str, ManifestItem]] = {}
-    for category, entries in data.get("items", {}).items():
-        items[category] = {
-            name: ManifestItem(
-                source_hash=vals.get("source_hash", ""),
-                target_path=vals.get("target_path"),
-                managed_keys=vals.get("managed_keys"),
-            )
-            for name, vals in entries.items()
-        }
-    return Manifest(
-        version=version,
-        deployed_at=data.get("deployed_at", ""),
-        items=items,
-    )
+    try:
+        return _manifest_from_mapping(data)
+    except UnsafeManifestError:
+        raise
+    except ValueError as exc:
+        return _fallback_manifest(manifest_path, str(exc))
 
 
 def save_manifest(manifest: Manifest, manifest_path: Path) -> None:

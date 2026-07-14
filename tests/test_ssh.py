@@ -12,18 +12,141 @@ from unittest.mock import call, patch
 import pytest
 
 from promptdeploy.ssh import (
+    _REMOTE_FINGERPRINT_TIMEOUT_SECONDS,
+    _REMOTE_OPERATION_TIMEOUT_SECONDS,
     _RSYNC_SSH,
     _SSH_OPTS,
     SSHError,
     _check_tools,
     _quote_remote_path,
     _rsync_filter_args,
+    _validate_host,
+    build_claude_mcp_fingerprint_script,
     build_claude_merge_script,
+    mcp_entry_fingerprint,
     ssh_exists,
     ssh_pull,
     ssh_push,
+    ssh_remote_mcp_fingerprint,
     ssh_stdin,
 )
+
+
+def _timeout() -> subprocess.TimeoutExpired:
+    return subprocess.TimeoutExpired(
+        cmd=["remote"], timeout=30, output=b"SECRET-SENTINEL"
+    )
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "andoria-08",
+        "host.example.net",
+        "192.0.2.10",
+        "user@host",
+        "[2001:db8::1]",
+        "user@[2001:db8::1]",
+        "user@[fe80::1%en0]",
+    ],
+)
+def test_validate_host_accepts_unambiguous_destinations(host: str) -> None:
+    assert _validate_host(host) == host
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        None,
+        123,
+        "",
+        "-oProxyCommand=/tmp/pwn",
+        "-F/tmp/evil",
+        "host name",
+        "host\nname",
+        "host\tname",
+        "host\x7fname",
+        "user@",
+        "@host",
+        "user@@host",
+        "user@-host",
+        "host:22",
+        "host:",
+        "2001:db8::1",
+        "[2001:db8::1",
+        "2001:db8::1]",
+        "[host]",
+        "user:part@host",
+        "host/path",
+        "host\\path",
+    ],
+)
+def test_validate_host_rejects_option_and_transport_injection(host: object) -> None:
+    with pytest.raises(SSHError) as raised:
+        _validate_host(host)
+    assert str(raised.value) == "Invalid SSH host value"
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["exists", "pull", "push", "fingerprint", "stdin"],
+)
+def test_every_transport_rejects_host_before_subprocess_or_local_mutation(
+    operation: str, tmp_path: Path
+) -> None:
+    local = tmp_path / "staging"
+    with (
+        patch("promptdeploy.ssh.subprocess.run") as run,
+        pytest.raises(SSHError, match="Invalid SSH host value"),
+    ):
+        if operation == "exists":
+            ssh_exists("-oProxyCommand=/tmp/pwn", Path("/remote"))
+        elif operation == "pull":
+            ssh_pull("-oProxyCommand=/tmp/pwn", Path("/remote"), local)
+        elif operation == "push":
+            ssh_push("-oProxyCommand=/tmp/pwn", Path("/remote"), local)
+        elif operation == "fingerprint":
+            ssh_remote_mcp_fingerprint(
+                "-oProxyCommand=/tmp/pwn", "~/.claude.json", "anvil"
+            )
+        else:
+            ssh_stdin("-oProxyCommand=/tmp/pwn", "print('never')")
+    run.assert_not_called()
+    assert not local.exists()
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["exists", "pull", "push-mkdir", "push-rsync", "stdin"],
+)
+def test_remote_operations_have_sanitized_wall_clock_timeouts(
+    operation: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("shutil.which", lambda tool: f"/usr/bin/{tool}")
+    local = tmp_path / "staging"
+    local.mkdir()
+    completed: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(
+        args=[], returncode=0
+    )
+    side_effect: BaseException | list[object] = _timeout()
+    if operation == "pull":
+        monkeypatch.setattr("promptdeploy.ssh.ssh_exists", lambda *_args: True)
+    elif operation == "push-rsync":
+        side_effect = [completed, _timeout()]
+
+    with (
+        patch("promptdeploy.ssh.subprocess.run", side_effect=side_effect),
+        pytest.raises(SSHError, match="timed out") as raised,
+    ):
+        if operation == "exists":
+            ssh_exists("user@host", Path("/remote"))
+        elif operation == "pull":
+            ssh_pull("user@host", Path("/remote"), local)
+        elif operation in {"push-mkdir", "push-rsync"}:
+            ssh_push("user@host", Path("/remote"), local)
+        else:
+            ssh_stdin("user@host", "print('secret')")
+    assert "SECRET-SENTINEL" not in str(raised.value)
 
 
 class TestQuoteRemotePath:
@@ -98,6 +221,7 @@ class TestSSHExists:
         mock_run.assert_called_once_with(
             ["ssh", *_SSH_OPTS, "user@host", "test", "-d", "/remote/path"],
             capture_output=True,
+            timeout=_REMOTE_OPERATION_TIMEOUT_SECONDS,
         )
 
     def test_returns_false_when_dir_missing(
@@ -134,6 +258,7 @@ class TestSSHExists:
         mock_run.assert_called_once_with(
             ["ssh", *_SSH_OPTS, "user@host", "test", "-d", "'/remote/my dir'"],
             capture_output=True,
+            timeout=_REMOTE_OPERATION_TIMEOUT_SECONDS,
         )
 
 
@@ -165,12 +290,14 @@ class TestSSHPull:
                 "--delete",
                 "-e",
                 " ".join(_RSYNC_SSH),
+                "--",
                 "user@host:/remote/path/",
                 str(local) + "/",
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=_REMOTE_OPERATION_TIMEOUT_SECONDS,
         )
 
     def test_verbose_adds_v_flag(
@@ -199,12 +326,14 @@ class TestSSHPull:
                 "-v",
                 "-e",
                 " ".join(_RSYNC_SSH),
+                "--",
                 "user@host:/remote/path/",
                 str(local) + "/",
             ],
             stdout=None,
             stderr=sys.stderr,
             text=True,
+            timeout=_REMOTE_OPERATION_TIMEOUT_SECONDS,
         )
 
     def test_includes_adds_filter_args(
@@ -241,12 +370,14 @@ class TestSSHPull:
                 "*",
                 "-e",
                 " ".join(_RSYNC_SSH),
+                "--",
                 "user@host:/remote/path/",
                 str(local) + "/",
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=_REMOTE_OPERATION_TIMEOUT_SECONDS,
         )
 
     def test_skips_rsync_when_remote_dir_missing(
@@ -312,6 +443,7 @@ class TestSSHPush:
         assert mkdir_call == call(
             ["ssh", *_SSH_OPTS, "user@host", "mkdir", "-p", "/remote"],
             capture_output=True,
+            timeout=_REMOTE_OPERATION_TIMEOUT_SECONDS,
         )
         rsync_call = mock_run.call_args_list[1]
         assert rsync_call == call(
@@ -321,12 +453,14 @@ class TestSSHPush:
                 "--delete",
                 "-e",
                 " ".join(_RSYNC_SSH),
+                "--",
                 str(local) + "/",
                 "user@host:/remote/path/",
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=_REMOTE_OPERATION_TIMEOUT_SECONDS,
         )
 
     def test_verbose_adds_v_flag(
@@ -356,12 +490,14 @@ class TestSSHPush:
                 "-v",
                 "-e",
                 " ".join(_RSYNC_SSH),
+                "--",
                 str(local) + "/",
                 "user@host:/remote/path/",
             ],
             stdout=None,
             stderr=sys.stderr,
             text=True,
+            timeout=_REMOTE_OPERATION_TIMEOUT_SECONDS,
         )
 
     def test_includes_adds_filter_args(
@@ -397,12 +533,14 @@ class TestSSHPush:
                 "*",
                 "-e",
                 " ".join(_RSYNC_SSH),
+                "--",
                 str(local) + "/",
                 "user@host:/remote/path/",
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            timeout=_REMOTE_OPERATION_TIMEOUT_SECONDS,
         )
 
     def test_raises_on_rsync_failure(
@@ -467,6 +605,7 @@ class TestSSHPush:
         assert mkdir_call == call(
             ["ssh", *_SSH_OPTS, "user@host", "mkdir", "-p", "~/'my dir'"],
             capture_output=True,
+            timeout=_REMOTE_OPERATION_TIMEOUT_SECONDS,
         )
 
 
@@ -741,3 +880,173 @@ class TestSSHStdin:
             ):
                 ssh_stdin("user@host", script)
             assert b64 not in str(exc_info.value)
+
+
+class TestRemoteMcpFingerprint:
+    def test_program_emits_only_named_entry_digest(self, tmp_path: Path) -> None:
+        target = tmp_path / ".claude.json"
+        entry = {
+            "command": "anvil-mcp",
+            "args": ["--server-id=anvil"],
+            "env": {"PRIVATE": "SECRET-SENTINEL"},
+        }
+        target.write_text(
+            json.dumps(
+                {
+                    "oauth": {"unrelated": "DO-NOT-EMIT"},
+                    "mcpServers": {"anvil": entry},
+                }
+            )
+        )
+        result = _run_remote_program(
+            build_claude_mcp_fingerprint_script("anvil", str(target))
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.decode().strip() == mcp_entry_fingerprint(entry)
+        assert b"SECRET-SENTINEL" not in result.stdout
+        assert b"DO-NOT-EMIT" not in result.stdout
+        assert result.stderr == b""
+
+    def test_program_reports_missing_without_creating_file(
+        self, tmp_path: Path
+    ) -> None:
+        target = tmp_path / ".claude.json"
+        result = _run_remote_program(
+            build_claude_mcp_fingerprint_script("anvil", str(target))
+        )
+        assert result.returncode == 0
+        assert result.stdout == b"missing\n"
+        assert not target.exists()
+
+    def test_ssh_probe_accepts_only_fingerprint_shape(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("shutil.which", lambda tool: f"/usr/bin/{tool}")
+        digest = mcp_entry_fingerprint({"command": "anvil-mcp"})
+        result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=f"{digest}\n".encode(),
+            stderr=b"",
+        )
+        with patch(
+            "promptdeploy.ssh.subprocess.run",
+            return_value=result,
+        ) as mock_run:
+            assert (
+                ssh_remote_mcp_fingerprint(
+                    "user@host",
+                    "~/.claude/.claude.json",
+                    "anvil",
+                )
+                == digest
+            )
+        args, kwargs = mock_run.call_args
+        assert args[0] == ["ssh", *_SSH_OPTS, "user@host", "python3", "-"]
+        assert kwargs["capture_output"] is True
+        assert kwargs["timeout"] == _REMOTE_FINGERPRINT_TIMEOUT_SECONDS
+        assert b"anvil" in kwargs["input"]
+
+    def test_ssh_probe_timeout_is_bounded_and_sanitized(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("shutil.which", lambda tool: f"/usr/bin/{tool}")
+        timeout = subprocess.TimeoutExpired(
+            cmd=["ssh"], timeout=30, output=b"SECRET-SENTINEL"
+        )
+        with (
+            patch("promptdeploy.ssh.subprocess.run", side_effect=timeout),
+            pytest.raises(SSHError, match="timed out") as raised,
+        ):
+            ssh_remote_mcp_fingerprint("user@host", "~/.claude/.claude.json", "anvil")
+        assert "SECRET-SENTINEL" not in str(raised.value)
+
+    @pytest.mark.parametrize(
+        ("returncode", "stderr", "expected"),
+        [
+            (255, b"connection refused", "SSH connection to user@host failed"),
+            (127, b"python3 missing", "python3 not found on user@host"),
+            (23, b"remote failed", "Remote MCP fingerprint on user@host failed"),
+        ],
+    )
+    def test_ssh_probe_reports_exit_errors(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        returncode: int,
+        stderr: bytes,
+        expected: str,
+    ) -> None:
+        monkeypatch.setattr("shutil.which", lambda tool: f"/usr/bin/{tool}")
+        with (
+            patch(
+                "promptdeploy.ssh.subprocess.run",
+                return_value=_completed(returncode, stderr),
+            ),
+            pytest.raises(SSHError) as exc_info,
+        ):
+            ssh_remote_mcp_fingerprint(
+                "user@host",
+                "~/.claude/.claude.json",
+                "anvil",
+            )
+        assert expected in str(exc_info.value)
+
+    def test_ssh_probe_reports_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("shutil.which", lambda tool: f"/usr/bin/{tool}")
+        result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=b"missing\n",
+            stderr=b"",
+        )
+        with patch("promptdeploy.ssh.subprocess.run", return_value=result):
+            assert (
+                ssh_remote_mcp_fingerprint(
+                    "user@host",
+                    "~/.claude/.claude.json",
+                    "anvil",
+                )
+                is None
+            )
+
+    def test_ssh_probe_rejects_non_ascii_output(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("shutil.which", lambda tool: f"/usr/bin/{tool}")
+        result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=b"\xff",
+            stderr=b"",
+        )
+        with (
+            patch("promptdeploy.ssh.subprocess.run", return_value=result),
+            pytest.raises(SSHError, match="returned invalid output") as exc_info,
+        ):
+            ssh_remote_mcp_fingerprint(
+                "user@host",
+                "~/.claude/.claude.json",
+                "anvil",
+            )
+        assert isinstance(exc_info.value.__cause__, UnicodeDecodeError)
+
+    def test_ssh_probe_rejects_output_without_echoing_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("shutil.which", lambda tool: f"/usr/bin/{tool}")
+        result: subprocess.CompletedProcess[bytes] = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=b"SECRET-SENTINEL",
+            stderr=b"",
+        )
+        with (
+            patch("promptdeploy.ssh.subprocess.run", return_value=result),
+            pytest.raises(SSHError) as exc_info,
+        ):
+            ssh_remote_mcp_fingerprint(
+                "user@host",
+                "~/.claude/.claude.json",
+                "anvil",
+            )
+        assert "SECRET-SENTINEL" not in str(exc_info.value)

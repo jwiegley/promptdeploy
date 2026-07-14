@@ -121,6 +121,11 @@ class TestGetStatusWithManifest:
             for item in SourceDiscovery(source_root).discover_all()
             if item.item_type == "mcp"
         )
+        assert server_item.metadata is not None
+        target.deploy_mcp_server(
+            server_item.name,
+            server_item.metadata,
+        )
         server_hash = compute_item_hash(server_item, target, config)
         self._write_manifest(
             target_path,

@@ -8,19 +8,19 @@ description: Use the available Anvil MCP backend — interactive Emacs, dedicate
 Anvil is deployed through one stable primary MCP registration, but its local
 backend varies:
 
-- **Interactive Emacs** — 12 primary eval/navigation tools plus a separate
-  65-tool typed registry. This backend reaches the user's development Emacs.
+- **Interactive Emacs** — 13 primary eval/navigation tools. This backend
+  reaches the user's development Emacs.
 - **Dedicated Emacs** — a separate headless process with 76 direct typed tools;
-  those tools are also mirrored into the primary registry, yielding 88 unique
+  those tools are mirrored into the primary registry, yielding 89 unique
   primary tools. Its buffers, workers, sockets, and mutable state are isolated
   from the development Emacs.
 - **NeLisp** — an Emacs-free 42-tool standalone registry for host, file, data,
   and shell operations. It has no `emacs-eval`, Org engine, or live buffers.
 
-See `references/tools.md` for the backend manifests and tool guide. Client
-prefixes vary, and the dedicated primary registration may contain tools that
-interactive clients expose under `anvil-tools`; use advertised bare tool
-names rather than assuming a fixed prefix.
+Clients register one MCP server named `anvil`. The former `anvil-tools`
+sibling is a disabled promptdeploy migration tombstone and must not be used.
+See `references/tools.md` for the backend manifests and tool guide; always use
+advertised bare tool names rather than assuming every backend has every tool.
 
 ## Availability gate
 
@@ -29,18 +29,43 @@ Emacs-only tool before using NeLisp. Identify the backend from capabilities:
 
 - `emacs-eval` present: Emacs-backed. Probe with `(emacs-version)`, then
   evaluate `(getenv "ANVIL_EMACS_STATE_DIR")`: a non-empty value identifies
-  the dedicated daemon, as does an 88-tool unified primary surface. An unset
-  value with a split 12-tool primary and 65-tool typed sibling identifies the
-  interactive backend. If the distinction remains ambiguous, do not claim
+  the dedicated daemon, as does an 89-tool unified primary surface. An unset
+  value with a 13-tool primary surface identifies the interactive backend.
+  If the distinction remains ambiguous, do not claim
   that modified-buffer checks cover the user's development Emacs.
 - `emacs-eval` absent but `file-exists-p` or `anvil-host-info` present:
   NeLisp. Probe with a read-only file or host call that is actually advertised.
-- Neither surface present, or the probe reports a transport failure: state
-  that Anvil is unavailable on this host and use standard tools.
+- Neither surface present: state that Anvil is unavailable on this host and
+  use standard tools.
+- A transport failure is temporary. Apply the bounded recovery policy below
+  before falling back; do not convert one failed probe into a session-wide
+  disable.
 
 If `emacs-eval` works but an advertised typed tool reports "No active MCP
 server", report the incomplete Emacs initialization rather than silently
 working around it.
+
+## Failure classification and bounded recovery
+
+Classify the failure before choosing a fallback:
+
+- An operation timeout is not a transport failure. In particular,
+  `anvil-host: shell timeout after Ns` means only that the invoked command
+  exceeded its own limit. Narrow that operation or use the authorized native
+  fallback, then continue using Anvil for other supported operations.
+- For a connection, transport, or readiness failure, perform exactly one
+  bounded read-only liveness reprobe. Use `(emacs-version)` when
+  `emacs-eval` is advertised; otherwise use an advertised read-only NeLisp
+  host or file probe. Do not poll indefinitely.
+- Retry the original request only if the failure explicitly reports
+  `dispatched: false`, or if the original request is read-only. Never replay
+  a mutating request when its dispatch or result is ambiguous; inspect its
+  postcondition or ask before taking another write action.
+- If the liveness reprobe also fails, use standard tools for the current
+  operation and record that Anvil is temporarily unavailable. Do not disable
+  Anvil for the rest of the session. Reprobe at the next mandatory Anvil
+  checkpoint or after ten minutes, whichever comes first. Resume typed Anvil
+  operations as soon as a probe succeeds.
 
 ## Core rules
 
@@ -168,7 +193,9 @@ its empty buffer list as evidence.
 
 ## When NOT to use anvil
 
-- The host advertises no Anvil tools, or its transport probe fails.
+- The host advertises no Anvil tools, or its transport remains unavailable
+  after the bounded recovery probe. Treat the latter as temporary and reprobe
+  on the schedule above.
 - The requested operation requires Emacs-only capabilities but the active
   backend is NeLisp; explain the boundary and use an authorized fallback.
 - Long-lived shell processes (servers, watchers) — no Anvil backend is a

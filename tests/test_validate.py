@@ -23,6 +23,20 @@ def config() -> Config:
 
 
 class TestValidateItem:
+    def test_unsafe_path_item_name_is_an_error(self, config: Config) -> None:
+        item = SourceItem(
+            "agent",
+            "../../victim",
+            Path("/tmp/test.md"),
+            {"name": "../../victim"},
+            b"---\nname: ../../victim\n---\nbody",
+        )
+        issues = validate_item(item, config)
+        assert any(
+            issue.level == "error" and "Unsafe agent name" in issue.message
+            for issue in issues
+        )
+
     def test_valid_agent_no_frontmatter(self, config: Config) -> None:
         item = SourceItem(
             "agent", "test", Path("/tmp/test.md"), None, b"No frontmatter"
