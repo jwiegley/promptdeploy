@@ -155,7 +155,7 @@ def test_anvil_target_matrix_and_retired_tombstone(
     assert primary["args"] == ["--server-id=anvil"]
     assert primary["claude"] == {"timeout": 210000}
     assert primary["codex"] == {
-        "startup_timeout_sec": 180,
+        "startup_timeout_sec": 210,
         "tool_timeout_sec": 210,
     }
     assert primary["opencode"] == {"timeout": 210000}
@@ -197,7 +197,7 @@ def test_primary_anvil_renders_for_all_client_formats(tmp_path: Path) -> None:
     assert codex["mcp_servers"]["anvil"] == {
         "command": "anvil-mcp",
         "args": ["--server-id=anvil"],
-        "startup_timeout_sec": 180,
+        "startup_timeout_sec": 210,
         "tool_timeout_sec": 210,
     }
 
@@ -303,7 +303,7 @@ def _write_mcp_source(
                 "claude:",
                 "  timeout: 210000",
                 "codex:",
-                "  startup_timeout_sec: 180",
+                "  startup_timeout_sec: 210",
                 "  tool_timeout_sec: 210",
                 "opencode:",
                 "  timeout: 210000",
@@ -417,7 +417,7 @@ def _expected_mcp_entry(
     if deadlines and target_type == "claude":
         entry["timeout"] = 210000
     if deadlines and target_type == "codex":
-        entry.update(startup_timeout_sec=180, tool_timeout_sec=210)
+        entry.update(startup_timeout_sec=210, tool_timeout_sec=210)
     return entry
 
 
@@ -448,7 +448,7 @@ def _make_deadlines_stale(target_config: TargetConfig) -> None:
     if target_config.type == "codex":
         path = target_config.path / ".codex" / "config.toml"
         text = path.read_text()
-        text = text.replace("startup_timeout_sec = 180", "startup_timeout_sec = 60")
+        text = text.replace("startup_timeout_sec = 210", "startup_timeout_sec = 60")
         text = text.replace("tool_timeout_sec = 210", "tool_timeout_sec = 60")
         path.write_text(text)
         return

@@ -195,7 +195,7 @@ claude:
   timeout: 210000
 codex:
   command: my-server
-  startup_timeout_sec: 180
+  startup_timeout_sec: 210
   tool_timeout_sec: 210
 opencode:
   timeout: 210000
