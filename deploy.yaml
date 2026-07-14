@@ -1,6 +1,6 @@
 source_root: .
 
-hosts: [hera, clio, vulcan, vps, andoria-08]
+hosts: [hera, clio, vulcan, vps, andoria-08, andoria-t2, delphi-3bd4, gpu-server]
 
 targets:
   claude-personal:
@@ -76,6 +76,48 @@ targets:
     path: "~"
     host: andoria-08
     labels: [codex, personal, positron, remote]
+
+  opencode-andoria-08:
+    type: opencode
+    path: ~/.config/opencode
+    host: andoria-08
+    labels: [positron, remote]
+
+  claude-andoria-t2:
+    type: claude
+    path: ~/.claude
+    host: andoria-t2
+    labels: [claude, positron, remote]
+
+  opencode-andoria-t2:
+    type: opencode
+    path: ~/.config/opencode
+    host: andoria-t2
+    labels: [positron, remote]
+
+  claude-delphi-3bd4:
+    type: claude
+    path: ~/.claude
+    host: delphi-3bd4
+    labels: [claude, positron, remote]
+
+  opencode-delphi-3bd4:
+    type: opencode
+    path: ~/.config/opencode
+    host: delphi-3bd4
+    labels: [positron, remote]
+
+  claude-gpu-server:
+    type: claude
+    path: ~/.claude
+    host: gpu-server
+    labels: [claude, positron, remote]
+
+  opencode-gpu-server:
+    type: opencode
+    path: ~/.config/opencode
+    host: gpu-server
+    labels: [positron, remote]
 
   gptel-emacs:
     type: gptel

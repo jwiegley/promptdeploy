@@ -5,23 +5,54 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
 from promptdeploy import cli
-from promptdeploy.config import Config, TargetConfig
+from promptdeploy.config import Config, TargetConfig, load_config
 from promptdeploy.deploy import deploy
 from promptdeploy.manifest import MANIFEST_FILENAME, load_manifest, save_manifest
 from promptdeploy.targets import create_target
 from promptdeploy.verify import verify_items
+
+ROOT = Path(__file__).resolve().parents[1]
 
 SELECTORS = [
     ("mcp", "anvil"),
     ("mcp", "anvil-tools"),
     ("skill", "anvil"),
 ]
+
+HOSTLESS_FLEET_TARGETS = {
+    "claude-personal",
+    "claude-positron",
+    "codex-local",
+    "droid",
+    "gptel-emacs",
+}
+FLEET_HOST_TARGETS = {
+    "hera": {"codex-hera", "opencode-hera"},
+    "clio": {"codex-clio", "opencode-clio"},
+    "vulcan": {"claude-vulcan", "opencode-vulcan"},
+    "vps": {"claude-vps"},
+    "andoria-08": {
+        "claude-andoria",
+        "codex-andoria",
+        "opencode-andoria-08",
+    },
+    "andoria-t2": {"claude-andoria-t2", "opencode-andoria-t2"},
+    "delphi-3bd4": {"claude-delphi-3bd4", "opencode-delphi-3bd4"},
+    "gpu-server": {"claude-gpu-server", "opencode-gpu-server"},
+}
+SHARED_WORK_TARGETS = {
+    "andoria-08": ("claude-andoria", "opencode-andoria-08"),
+    "andoria-t2": ("claude-andoria-t2", "opencode-andoria-t2"),
+    "delphi-3bd4": ("claude-delphi-3bd4", "opencode-delphi-3bd4"),
+    "gpu-server": ("claude-gpu-server", "opencode-gpu-server"),
+}
 
 
 def _source(tmp_path: Path) -> Path:
@@ -294,6 +325,140 @@ def test_local_only_selection_filters_before_any_target_construction(
         config,
         argparse.Namespace(target=["remote"], local_only=False),
     ) == (["remote"], None)
+
+
+@pytest.mark.parametrize("host", FLEET_HOST_TARGETS)
+def test_real_fleet_local_only_exact_deploy_and_verify_never_use_remote_io(
+    host: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PROMPTDEPLOY_HOST", host)
+    real_config = load_config(ROOT / "deploy.yaml")
+    config = Config(
+        source_root=real_config.source_root,
+        targets={
+            target_id: replace(
+                target,
+                path=tmp_path / "targets" / target_id,
+                preview=True,
+            )
+            for target_id, target in real_config.targets.items()
+        },
+        groups=real_config.groups,
+    )
+    target_ids, local_host = cli._select_operation_targets(
+        config,
+        argparse.Namespace(target=None, local_only=True),
+        runtime_host=host,
+    )
+
+    assert set(target_ids) == HOSTLESS_FLEET_TARGETS | FLEET_HOST_TARGETS[host]
+    assert local_host == host
+    assert all(
+        config.targets[target_id].host in {None, host} for target_id in target_ids
+    )
+
+    def forbidden_remote_io(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError(
+            "local-only activation must not construct or use remote IO"
+        )
+
+    monkeypatch.setattr("promptdeploy.targets.RemoteTarget", forbidden_remote_io)
+    for name in (
+        "ssh_exists",
+        "ssh_pull",
+        "ssh_push",
+        "ssh_remote_mcp_fingerprint",
+        "ssh_stdin",
+    ):
+        monkeypatch.setattr(
+            f"promptdeploy.targets.remote.{name}",
+            forbidden_remote_io,
+        )
+
+    assert deploy(
+        config,
+        target_ids=target_ids,
+        item_selectors=SELECTORS,
+        force=True,
+        local_host=local_host,
+    )
+    assert (
+        verify_items(
+            config,
+            target_ids=target_ids,
+            item_selectors=SELECTORS,
+            local_host=local_host,
+        )
+        == []
+    )
+
+
+def test_shared_nfs_work_targets_converge_without_host_specific_churn(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PROMPTDEPLOY_HOST", "outside-fleet")
+    real_config = load_config(ROOT / "deploy.yaml")
+    shared_claude = tmp_path / "shared" / "claude"
+    shared_opencode = tmp_path / "shared" / "opencode"
+    shared_target_ids = {
+        target_id
+        for target_ids in SHARED_WORK_TARGETS.values()
+        for target_id in target_ids
+    }
+
+    def target_path(target_id: str, target: TargetConfig) -> Path:
+        if target_id not in shared_target_ids:
+            return tmp_path / "unused" / target_id
+        return shared_claude if target.type == "claude" else shared_opencode
+
+    config = Config(
+        source_root=real_config.source_root,
+        targets={
+            target_id: replace(
+                target,
+                path=target_path(target_id, target),
+                preview=True,
+            )
+            for target_id, target in real_config.targets.items()
+        },
+        groups=real_config.groups,
+    )
+
+    def managed_bytes(root: Path) -> dict[str, bytes]:
+        return {
+            str(path.relative_to(root)): path.read_bytes()
+            for path in root.rglob("*")
+            if path.is_file() and path.name != MANIFEST_FILENAME
+        }
+
+    baseline: tuple[dict[str, bytes], dict[str, bytes]] | None = None
+    for host, target_ids in SHARED_WORK_TARGETS.items():
+        assert deploy(
+            config,
+            target_ids=list(target_ids),
+            item_selectors=SELECTORS,
+            force=True,
+            local_host=host,
+        )
+        assert (
+            verify_items(
+                config,
+                target_ids=list(target_ids),
+                item_selectors=SELECTORS,
+                local_host=host,
+            )
+            == []
+        )
+        current = (managed_bytes(shared_claude), managed_bytes(shared_opencode))
+        assert current[0]
+        assert current[1]
+        if baseline is None:
+            baseline = current
+        else:
+            assert current == baseline
 
 
 def test_create_target_local_host_is_a_second_no_ssh_guard(tmp_path: Path) -> None:

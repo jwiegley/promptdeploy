@@ -21,6 +21,13 @@ only:
   - claude-vps
   - claude-andoria
   - codex-andoria
+  - opencode-andoria-08
+  - claude-andoria-t2
+  - opencode-andoria-t2
+  - claude-delphi-3bd4
+  - opencode-delphi-3bd4
+  - claude-gpu-server
+  - opencode-gpu-server
 # Keep this source item until every managed client manifest has migrated.
 # Semantic named-entry drift checks also remove the registration again if an
 # external writer restores it after migration.

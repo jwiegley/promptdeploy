@@ -34,7 +34,41 @@ MAIN_TARGETS = {
     "claude-vps",
     "claude-andoria",
     "codex-andoria",
+    "opencode-andoria-08",
+    "claude-andoria-t2",
+    "opencode-andoria-t2",
+    "claude-delphi-3bd4",
+    "opencode-delphi-3bd4",
+    "claude-gpu-server",
+    "opencode-gpu-server",
 }
+
+FLEET_HOST_TARGETS = {
+    "hera": {"codex-hera", "opencode-hera"},
+    "clio": {"codex-clio", "opencode-clio"},
+    "vulcan": {"claude-vulcan", "opencode-vulcan"},
+    "vps": {"claude-vps"},
+    "andoria-08": {
+        "claude-andoria",
+        "codex-andoria",
+        "opencode-andoria-08",
+    },
+    "andoria-t2": {"claude-andoria-t2", "opencode-andoria-t2"},
+    "delphi-3bd4": {"claude-delphi-3bd4", "opencode-delphi-3bd4"},
+    "gpu-server": {"claude-gpu-server", "opencode-gpu-server"},
+}
+SHARED_CLAUDE_TARGETS = (
+    "claude-andoria",
+    "claude-andoria-t2",
+    "claude-delphi-3bd4",
+    "claude-gpu-server",
+)
+SHARED_OPENCODE_TARGETS = (
+    "opencode-andoria-08",
+    "opencode-andoria-t2",
+    "opencode-delphi-3bd4",
+    "opencode-gpu-server",
+)
 
 
 def _anvil_items() -> dict[str, SourceItem]:
@@ -76,6 +110,26 @@ def test_anvil_target_matrix_and_retired_tombstone(
     }
     assert active == {"anvil"}
 
+    monkeypatch.setenv("PROMPTDEPLOY_HOST", "outside-fleet")
+    config = load_config(ROOT / "deploy.yaml")
+    assert {
+        host: set(config.groups[host]) for host in FLEET_HOST_TARGETS
+    } == FLEET_HOST_TARGETS
+
+    shared_claude = [config.targets[target_id] for target_id in SHARED_CLAUDE_TARGETS]
+    assert len({target.path for target in shared_claude}) == 1
+    assert {tuple(target.labels) for target in shared_claude} == {
+        ("claude", "positron", "remote")
+    }
+
+    shared_opencode = [
+        config.targets[target_id] for target_id in SHARED_OPENCODE_TARGETS
+    ]
+    assert len({target.path for target in shared_opencode}) == 1
+    assert {tuple(target.labels) for target in shared_opencode} == {
+        ("positron", "remote")
+    }
+
     for host in (
         "hera",
         "clio",
@@ -95,6 +149,8 @@ def test_anvil_target_matrix_and_retired_tombstone(
     retired = items["anvil-tools"].metadata
     assert primary is not None
     assert retired is not None
+    assert set(primary["only"]) == MAIN_TARGETS
+    assert set(retired["only"]) == MAIN_TARGETS
     assert primary["command"] == "anvil-mcp"
     assert primary["args"] == ["--server-id=anvil"]
     assert primary["claude"] == {"timeout": 210000}

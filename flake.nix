@@ -1,20 +1,30 @@
 {
-  description =
-    "Deploy prompts, agents, skills, and MCP servers to multiple AI coding tools";
+  description = "Deploy prompts, agents, skills, and MCP servers to multiple AI coding tools";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    home-manager = {
+      url = "github:nix-community/home-manager/9a40ec3b78fc688d0908485887d355caa5666d18";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      home-manager,
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         python = pkgs.python312;
 
-        pythonWithDeps = python.withPackages (ps:
-          with ps; [
+        pythonWithDeps = python.withPackages (
+          ps: with ps; [
             pyyaml
             jinja2
             ruamel-yaml
@@ -22,9 +32,11 @@
             pytest-cov
             mypy
             types-pyyaml
-          ]);
+          ]
+        );
 
-        src = ./.;
+        src = self.outPath;
+        revision = self.rev or null;
 
         promptdeploy = python.pkgs.buildPythonApplication {
           pname = "promptdeploy";
@@ -46,6 +58,11 @@
 
           doCheck = false;
 
+          passthru = {
+            promptdeploySource = src;
+            promptdeployRevision = revision;
+          };
+
           # Remote deployment shells out to rsync/ssh (src/promptdeploy/ssh.py),
           # which would otherwise resolve from the ambient PATH. On macOS that
           # is openrsync, whose filter/--delete semantics differ from GNU rsync
@@ -56,12 +73,14 @@
             "--prefix"
             "PATH"
             ":"
-            "${pkgs.lib.makeBinPath [ pkgs.rsync pkgs.openssh ]}"
+            "${pkgs.lib.makeBinPath [
+              pkgs.rsync
+              pkgs.openssh
+            ]}"
           ];
 
           meta = {
-            description =
-              "Deploy prompts, agents, skills, and MCP servers to multiple AI coding tools";
+            description = "Deploy prompts, agents, skills, and MCP servers to multiple AI coding tools";
             mainProgram = "promptdeploy";
           };
         };
@@ -69,21 +88,20 @@
         promptdeployDeploy = pkgs.writeShellScriptBin "promptdeploy-deploy" ''
           exec ${pkgs.lib.getExe promptdeploy} deploy "$@"
         '';
-      in {
+      in
+      {
         packages.default = promptdeploy;
 
         apps = {
           default = {
             type = "app";
             program = "${promptdeployDeploy}/bin/promptdeploy-deploy";
-            meta.description =
-              "Run promptdeploy deploy in the packaged Nix environment";
+            meta.description = "Run promptdeploy deploy in the packaged Nix environment";
           };
           promptdeploy = {
             type = "app";
             program = pkgs.lib.getExe promptdeploy;
-            meta.description =
-              "Run the promptdeploy CLI in the packaged Nix environment";
+            meta.description = "Run the promptdeploy CLI in the packaged Nix environment";
           };
         };
 
@@ -105,14 +123,27 @@
             touch $out
           '';
 
-          pytest = pkgs.runCommand "pytest" {
-            nativeBuildInputs = [ pythonWithDeps pkgs.rsync pkgs.openssh ];
-          } ''
-            cp -r ${src} $TMPDIR/src && chmod -R u+w $TMPDIR/src
-            cd $TMPDIR/src
-            PYTHONPATH=src python -m pytest tests/ -x -q --cov --cov-report=term-missing
-            touch $out
-          '';
+          pytest =
+            pkgs.runCommand "pytest"
+              {
+                nativeBuildInputs = [
+                  pythonWithDeps
+                  pkgs.rsync
+                  pkgs.openssh
+                ];
+              }
+              ''
+                cp -r ${src} $TMPDIR/src && chmod -R u+w $TMPDIR/src
+                cd $TMPDIR/src
+                PYTHONPATH=src python -m pytest tests/ -x -q --cov --cov-report=term-missing
+                touch $out
+              '';
+
+          hm-module = pkgs.callPackage ./nix/hm-module-test.nix {
+            homeManager = home-manager;
+          };
+
+          hm-activation = pkgs.callPackage ./nix/hm-activation-test.nix { };
 
           build = promptdeploy;
         };
@@ -127,8 +158,9 @@
             pkgs.rsync
           ];
         };
-      })
+      }
+    )
     // {
-      homeManagerModules.default = import ./nix/hm-module.nix;
+      homeManagerModules.default = import ./nix/hm-module.nix { inherit self; };
     };
 }

@@ -1,82 +1,165 @@
-# Home-manager module for promptdeploy.
-#
-# Runs "promptdeploy deploy" during home-manager activation so that
-# agents, commands, skills, MCP servers, hooks, and models are kept
-# in sync with the source repository on every system rebuild.
-#
-# Failures never abort activation, but they are not silent either:
-# all promptdeploy output is captured to
-# $XDG_STATE_HOME/promptdeploy/deploy.log (default
-# ~/.local/state/promptdeploy/deploy.log) and a warning naming that
-# log is printed when the deploy fails.
-{ config, lib, ... }:
+# Home Manager module for exact, fail-closed promptdeploy activation.
+{ self }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 let
   cfg = config.programs.promptdeploy;
-
-  # An empty targets list means "deploy to the local machine only":
-  # deploy.yaml labels every target that lives on the invoking host
-  # with `local`, so `--target local` expands to exactly those.
-  # Deploying to *all* targets here would make activation reach out
-  # to remote hosts over SSH, which must be an explicit opt-in.
-  targetArgs =
-    if cfg.targets == [ ] then
-      "--target local"
-    else
-      lib.concatMapStringsSep " " (t: "--target ${lib.escapeShellArg t}") cfg.targets;
+  system = pkgs.stdenv.hostPlatform.system;
+  defaultRevision = self.rev or "";
+  packagePassthru = cfg.package.passthru or { };
+  packageSource = packagePassthru.promptdeploySource or null;
+  packageRevision = packagePassthru.promptdeployRevision or null;
+  sourceString = toString cfg.source;
+  validTarget = target: builtins.match "[A-Za-z0-9][A-Za-z0-9._-]*" target != null;
+  validItem =
+    item: builtins.match "[A-Za-z0-9][A-Za-z0-9._-]*:[A-Za-z0-9][A-Za-z0-9._-]*" item != null;
+  driver = pkgs.callPackage ./mk-activation-driver.nix {
+    package = cfg.package;
+    source = cfg.source;
+    stateDir = cfg.stateDir;
+    inherit (cfg)
+      targets
+      exactItems
+      lockWaitSeconds
+      transactionTimeoutSeconds
+      logMaxBytes
+      ;
+  };
 in
 {
   options.programs.promptdeploy = {
-    enable = lib.mkEnableOption "promptdeploy deployment during home-manager activation" // {
-      description = ''
-        Whether to run promptdeploy during home-manager activation.
-
-        Deployment failures do not abort activation: all promptdeploy
-        output is captured to
-        `$XDG_STATE_HOME/promptdeploy/deploy.log` (default
-        `~/.local/state/promptdeploy/deploy.log`) and a warning naming
-        the log file is printed when the deploy fails.
-      '';
-    };
+    enable = lib.mkEnableOption "exact promptdeploy activation";
 
     package = lib.mkOption {
       type = lib.types.package;
-      description = "The promptdeploy package to use.";
+      default = self.packages.${system}.default;
+      defaultText = lib.literalExpression "self.packages.\${pkgs.system}.default";
+      description = "The promptdeploy package from the same pinned flake revision.";
     };
 
-    sourceDir = lib.mkOption {
+    source = lib.mkOption {
+      type = lib.types.path;
+      default = self.outPath;
+      defaultText = lib.literalExpression "self.outPath";
+      description = "Immutable promptdeploy source from the same pinned flake revision.";
+    };
+
+    expectedRevision = lib.mkOption {
       type = lib.types.str;
-      description = "Path to the promptdeploy source directory containing deploy.yaml.";
+      default = defaultRevision;
+      defaultText = lib.literalExpression "self.rev";
+      description = "The full Git revision expected in both package and source.";
     };
 
     targets = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
       description = ''
-        Target labels or IDs to deploy to (passed as `--target`
-        arguments).  When empty, only the targets carrying the
-        `local` label in deploy.yaml are deployed; remote targets are
-        never touched implicitly, so activation cannot hang or fail
-        on SSH.  Name labels or target IDs explicitly (including
-        remote ones) to widen the set.
+        Optional local target IDs or labels used to narrow activation.
+        Empty means all targets owned by the current host. Remote targets
+        are always excluded by --local-only.
       '';
+    };
+
+    exactItems = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [
+        "mcp:anvil"
+        "mcp:anvil-tools"
+        "skill:anvil"
+      ];
+      description = "Exact deployed items that must pass strict verification.";
+    };
+
+    stateDir = lib.mkOption {
+      type = lib.types.str;
+      default = "${config.xdg.stateHome}/promptdeploy";
+      defaultText = lib.literalExpression ''config.xdg.stateHome + "/promptdeploy"'';
+      description = "Private state directory containing the activation lock and bounded log; when shared over NFS, the lock serializes activations across hosts.";
+    };
+
+    lockWaitSeconds = lib.mkOption {
+      type = lib.types.int;
+      default = 60;
+      description = "Maximum seconds to wait for the shared activation lock.";
+    };
+
+    transactionTimeoutSeconds = lib.mkOption {
+      type = lib.types.int;
+      default = 300;
+      description = "Maximum seconds for the combined deploy and verify transaction.";
+    };
+
+    logMaxBytes = lib.mkOption {
+      type = lib.types.int;
+      default = 1048576;
+      description = "Maximum bytes retained in the private activation log.";
     };
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = builtins.match "[0-9a-f]{40}" cfg.expectedRevision != null;
+        message = "programs.promptdeploy.expectedRevision must be a full lowercase Git SHA";
+      }
+      {
+        assertion = lib.hasPrefix "/nix/store/" sourceString;
+        message = "programs.promptdeploy.source must be an immutable Nix store path";
+      }
+      {
+        assertion = builtins.pathExists "${sourceString}/deploy.yaml";
+        message = "programs.promptdeploy.source must contain deploy.yaml";
+      }
+      {
+        assertion = packageSource != null;
+        message = "programs.promptdeploy.package must expose passthru.promptdeploySource";
+      }
+      {
+        assertion = packageSource != null && toString packageSource == sourceString;
+        message = "programs.promptdeploy.package and source must come from the same flake source";
+      }
+      {
+        assertion = packageRevision != null;
+        message = "programs.promptdeploy.package must expose passthru.promptdeployRevision";
+      }
+      {
+        assertion = packageRevision != null && packageRevision == cfg.expectedRevision;
+        message = "programs.promptdeploy package revision does not match expectedRevision";
+      }
+      {
+        assertion = cfg.exactItems != [ ] && lib.all validItem cfg.exactItems;
+        message = "programs.promptdeploy.exactItems must contain canonical TYPE:NAME selectors";
+      }
+      {
+        assertion = lib.all validTarget cfg.targets;
+        message = "programs.promptdeploy.targets must contain canonical target IDs or labels";
+      }
+      {
+        assertion = lib.hasPrefix "/" cfg.stateDir && builtins.match ".*[\n\r].*" cfg.stateDir == null;
+        message = "programs.promptdeploy.stateDir must be an absolute single-line path";
+      }
+      {
+        assertion = cfg.lockWaitSeconds > 0;
+        message = "programs.promptdeploy.lockWaitSeconds must be positive";
+      }
+      {
+        assertion = cfg.transactionTimeoutSeconds > 0;
+        message = "programs.promptdeploy.transactionTimeoutSeconds must be positive";
+      }
+      {
+        assertion = cfg.logMaxBytes > 0;
+        message = "programs.promptdeploy.logMaxBytes must be positive";
+      }
+    ];
+
     home.activation.promptdeploy = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      if [[ -d "${cfg.sourceDir}" ]]; then
-        promptdeployStateDir="''${XDG_STATE_HOME:-$HOME/.local/state}/promptdeploy"
-        promptdeployLog="$promptdeployStateDir/deploy.log"
-        mkdir -p "$promptdeployStateDir"
-        if ! ( cd "${cfg.sourceDir}" && \
-               ${lib.getExe cfg.package} deploy ${targetArgs} --quiet
-             ) > "$promptdeployLog" 2>&1; then
-          echo "" >&2
-          echo "warning: promptdeploy deploy failed; activation continues anyway." >&2
-          echo "warning: see $promptdeployLog for details." >&2
-        fi
-      fi
+      ${driver}/bin/promptdeploy-home-activation
     '';
   };
 }

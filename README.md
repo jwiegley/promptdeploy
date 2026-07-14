@@ -147,11 +147,12 @@ ruff check src/ tests/
 PYTHONPATH=src mypy src/ tests/
 ```
 
-CI runs `nix flake check` on every push and PR, which exercises all five checks: ruff format, ruff lint, mypy, pytest with coverage, and the Nix package build.
+CI runs `nix flake check` on every push and PR. It exercises seven checks: ruff format, ruff lint, mypy, pytest with coverage, Home Manager module evaluation, activation-driver behavior, and the Nix package build.
 
 ## Nix integration
 
-There's a home-manager module if you want deployments to happen automatically on every `home-manager switch`:
+The flake exports a fail-closed Home Manager module that deploys and verifies
+the pinned promptdeploy configuration on every `home-manager switch`:
 
 ```nix
 {
@@ -159,22 +160,41 @@ There's a home-manager module if you want deployments to happen automatically on
 
   programs.promptdeploy = {
     enable = true;
-    package = inputs.promptdeploy.packages.${system}.default;
-    sourceDir = "~/src/promptdeploy";
-    # Optional: defaults to the targets labelled `local` in deploy.yaml.
-    # List labels or target IDs (including remote ones) to widen the set.
-    targets = [ "local" ];
+
+    # Optional: narrow deployment to local target IDs or labels.
+    # Empty means all targets owned by the current host.
+    targets = [ ];
   };
 }
 ```
 
-When `targets` is empty (the default), only the targets carrying the
-`local` label in `deploy.yaml` are deployed -- activation never reaches
-out to remote hosts over SSH unless you opt in explicitly. A failed
-deploy does not abort activation: promptdeploy's output is captured to
-`$XDG_STATE_HOME/promptdeploy/deploy.log` (default
-`~/.local/state/promptdeploy/deploy.log`) and a warning naming that log
-is printed.
+The package, immutable source, and expected Git revision default to the same
+pinned `inputs.promptdeploy` revision. The module rejects mutable source
+paths, missing revision metadata, or a package and source from different
+revisions.
+
+Activation unsets `PROMPTDEPLOY_HOST`, runs a forced
+`deploy --local-only`, then strictly verifies `mcp:anvil`,
+`mcp:anvil-tools`, and `skill:anvil`. Remote targets are excluded even if
+named in `targets`. A deploy failure, verification failure, lock timeout, or
+transaction timeout aborts Home Manager activation.
+
+The combined deploy-and-verify transaction is serialized through
+`$XDG_STATE_HOME/promptdeploy/activation.lock`. This also serializes
+different hosts when that state directory is on their shared NFS home. The
+default lock wait is 60 seconds and the transaction timeout is 300 seconds.
+
+Command output is retained privately in
+`$XDG_STATE_HOME/promptdeploy/deploy.log`: the directory is mode `0700`,
+the log is mode `0600`, and only its final 1 MiB is kept. Failure output is
+not copied to the console; the console reports only the log path. Treat the
+log as potentially sensitive.
+
+The driver never steals an existing lock. After a crashed activation, inspect
+`activation.lock/owner` for its host, PID, and start time, and confirm that no
+activation or promptdeploy process is still running on any machine sharing the
+state directory. Only then remove `owner` and use `rmdir` on
+`activation.lock`; do not remove the lock recursively.
 
 ## Acknowledgements
 

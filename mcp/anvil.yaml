@@ -28,12 +28,20 @@ only:
   - claude-vps
   - claude-andoria
   - codex-andoria
+  - opencode-andoria-08
+  - claude-andoria-t2
+  - opencode-andoria-t2
+  - claude-delphi-3bd4
+  - opencode-delphi-3bd4
+  - claude-gpu-server
+  - opencode-gpu-server
 # Nix supplies the PATH-stable launcher on every selected host. Its local
 # boolean chooses NeLisp or dedicated Emacs on Linux, and interactive or
 # dedicated Emacs on Darwin; promptdeploy does not encode either choice.
 #
-# The Andoria targets write the shared NFS-hosted agent configuration once.
-# At runtime the launcher derives the actual short hostname, so andoria-08,
+# The four work hosts share an NFS home, so Home Manager serializes their
+# local-only deployments through one shared lock. At runtime the launcher
+# derives the actual short hostname and agent identity, so andoria-08,
 # andoria-t2, delphi-3bd4, and gpu-server use distinct host-local sockets.
 #
 # Dedicated mode mirrors all typed tools into this one primary registration.
