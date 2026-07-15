@@ -153,12 +153,12 @@ def test_anvil_target_matrix_and_retired_tombstone(
     assert set(retired["only"]) == MAIN_TARGETS
     assert primary["command"] == "anvil-mcp"
     assert primary["args"] == ["--server-id=anvil"]
-    assert primary["claude"] == {"timeout": 210000}
+    assert primary["claude"] == {"timeout": 330000}
     assert primary["codex"] == {
         "startup_timeout_sec": 210,
-        "tool_timeout_sec": 210,
+        "tool_timeout_sec": 330,
     }
-    assert primary["opencode"] == {"timeout": 210000}
+    assert primary["opencode"] == {"timeout": 330000}
     assert primary["enabled"] is True
     assert retired["command"] == "anvil-mcp"
     assert retired["args"] == ["--server-id=emacs-eval"]
@@ -190,7 +190,7 @@ def test_primary_anvil_renders_for_all_client_formats(tmp_path: Path) -> None:
     assert claude["mcpServers"]["anvil"] == {
         "command": "anvil-mcp",
         "args": ["--server-id=anvil"],
-        "timeout": 210000,
+        "timeout": 330000,
     }
 
     codex = tomllib.loads((codex_home / ".codex" / "config.toml").read_text())
@@ -198,7 +198,7 @@ def test_primary_anvil_renders_for_all_client_formats(tmp_path: Path) -> None:
         "command": "anvil-mcp",
         "args": ["--server-id=anvil"],
         "startup_timeout_sec": 210,
-        "tool_timeout_sec": 210,
+        "tool_timeout_sec": 330,
     }
 
     droid = json.loads((droid_dir / "mcp.json").read_text())
@@ -213,7 +213,7 @@ def test_primary_anvil_renders_for_all_client_formats(tmp_path: Path) -> None:
     assert opencode["mcp"]["anvil"] == {
         "type": "local",
         "command": ["anvil-mcp", "--server-id=anvil"],
-        "timeout": 210000,
+        "timeout": 330000,
     }
 
 
@@ -301,12 +301,12 @@ def _write_mcp_source(
         lines.extend(
             [
                 "claude:",
-                "  timeout: 210000",
+                "  timeout: 330000",
                 "codex:",
                 "  startup_timeout_sec: 210",
-                "  tool_timeout_sec: 210",
+                "  tool_timeout_sec: 330",
                 "opencode:",
-                "  timeout: 210000",
+                "  timeout: 330000",
             ]
         )
     lines.extend([f"enabled: {str(enabled).lower()}", ""])
@@ -408,16 +408,16 @@ def _expected_mcp_entry(
             "command": ["anvil-mcp", f"--server-id={server_id}"],
         }
         if deadlines:
-            opencode_entry["timeout"] = 210000
+            opencode_entry["timeout"] = 330000
         return opencode_entry
     entry: dict[str, object] = {
         "command": "anvil-mcp",
         "args": [f"--server-id={server_id}"],
     }
     if deadlines and target_type == "claude":
-        entry["timeout"] = 210000
+        entry["timeout"] = 330000
     if deadlines and target_type == "codex":
-        entry.update(startup_timeout_sec=210, tool_timeout_sec=210)
+        entry.update(startup_timeout_sec=210, tool_timeout_sec=330)
     return entry
 
 
@@ -449,7 +449,7 @@ def _make_deadlines_stale(target_config: TargetConfig) -> None:
         path = target_config.path / ".codex" / "config.toml"
         text = path.read_text()
         text = text.replace("startup_timeout_sec = 210", "startup_timeout_sec = 60")
-        text = text.replace("tool_timeout_sec = 210", "tool_timeout_sec = 60")
+        text = text.replace("tool_timeout_sec = 330", "tool_timeout_sec = 60")
         path.write_text(text)
         return
 
@@ -615,11 +615,11 @@ def test_remote_claude_compares_only_anvil_fingerprints(
     assert expected == {
         "command": "anvil-mcp",
         "args": ["--server-id=anvil"],
-        "timeout": 210000,
+        "timeout": 330000,
     }
     expected_digest = mcp_entry_fingerprint(expected)
     assert expected_digest == (
-        "sha256:dfb0e037b46ff8c0d78eb8899c56aa58daa7ddfc60e25b34f5c656e5b551665e"
+        "sha256:467612b2b1e415dd4d528933f94a6b3e4e7b3b2927bb28ac7d201732ef1abc31"
     )
     assert expected_digest != mcp_entry_fingerprint(
         {"command": "anvil-mcp", "args": ["--server-id=anvil"]}
