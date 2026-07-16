@@ -97,8 +97,8 @@ class SourceProvenance:
 class SourceItem:
     """A discovered source item ready for deployment."""
 
-    # 'agent', 'command', 'skill', 'mcp', 'models', 'hook', 'marketplace',
-    # 'prompt', or 'settings'
+    # 'agent', 'bundle', 'command', 'skill', 'mcp', 'models', 'hook',
+    # 'marketplace', 'prompt', or 'settings'
     item_type: str
     name: str
     path: Path

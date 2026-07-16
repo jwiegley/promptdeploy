@@ -19,6 +19,7 @@ from ..frontmatter import (
 from ..manifest import MANIFEST_FILENAME
 from .base import (
     ANVIL_MCP_NAMES,
+    MANAGED_BUNDLE_RSYNC_INCLUDES,
     Target,
     install_skill_tree_atomically,
     transformed_skill_tree_matches,
@@ -66,6 +67,7 @@ class DroidTarget(Target):
             "droids/**",
             "skills/",
             "skills/**",
+            *MANAGED_BUNDLE_RSYNC_INCLUDES,
             "settings.json",
             "mcp.json",
             MANIFEST_FILENAME,

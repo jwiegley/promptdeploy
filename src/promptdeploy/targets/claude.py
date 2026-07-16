@@ -14,6 +14,7 @@ from ..frontmatter import transform_for_target
 from ..manifest import MANIFEST_FILENAME
 from .base import (
     ANVIL_MCP_NAMES,
+    MANAGED_BUNDLE_RSYNC_INCLUDES,
     Target,
     install_skill_tree_atomically,
     transformed_skill_tree_matches,
@@ -88,6 +89,7 @@ class ClaudeTarget(Target):
             "commands/**",
             "skills/",
             "skills/**",
+            *MANAGED_BUNDLE_RSYNC_INCLUDES,
             "settings.json",
             MANIFEST_FILENAME,
         ]

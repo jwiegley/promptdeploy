@@ -216,8 +216,9 @@ recursive fess audit. Its final gates pass: 2,212 tests at 100% branch coverage,
 strict mypy over 78 source files, Ruff format/lint, package build, Home Manager
 module and activation checks, and the complete seven-check `nix flake check`.
 
-The first snapshot-only deployment sub-slice is implemented in the current
-work unit, while the legacy imported-item deploy guards remain fail-closed:
+The first snapshot-only deployment sub-slice was committed as `b001f3c` (`Add
+immutable skill snapshot materialization`), while the legacy imported-item
+deploy guards remain fail-closed:
 
 - public imported snapshots are revalidated for per-file, tree-byte, entry,
   link-expansion, normalized-mode, topology, digest, and link-payload
@@ -246,11 +247,38 @@ the API reviewer also returned a clean remediation verdict. Final gates pass:
 format/lint, package build, Home Manager module and activation checks, and the
 complete seven-check `nix flake check`.
 
+Its required independent fess audit is
+`/var/tmp/wg-ponytail-20260715/fess-b001f3c/report.md`. Production received a
+clean verdict; the sole low finding was that the wrong-byte drift test also
+changed file size. Fess-fix-only commit `1cac04b` (`Strengthen imported byte
+drift coverage`) now uses an unequal same-length payload, so byte equality is
+proved independently of the size guard. Per protocol, that narrow remediation
+does not receive a recursive fess audit.
+
+The target-owned static support slice is implemented in the current work unit:
+
+- every target owns an exact mode-stable support-v1 `LICENSE` tree beneath
+  `.promptdeploy/bundles/ponytail`, with Codex correctly using the home-level
+  root outside `.codex` and remote targets delegating to their staging root;
+- all five remote allowlists include the complete hidden support subtree, and
+  GPTel accepts the support bundle while continuing to reject non-prompt
+  deployables;
+- bundle names, selector/category/list plumbing, atomic replacement, exact
+  matching, symlink/special-node handling, and leaf-only removal are covered;
+- stale removal processes dependents before support and preserves a bundle
+  whenever a type/exact-filtered `ManifestItem.source.bundle` dependent remains.
+
+The independent support review is
+`/var/tmp/wg-ponytail-20260715/support-target-review/report.md`. It reproduced
+and then verified the fix for a filtered-dependent removal defect; its final
+verdict is clean. Final gates pass: 2,294 tests at 100% branch coverage, strict
+mypy over 80 source files, Ruff format/lint, package build, Home Manager module
+and activation checks, and the complete seven-check `nix flake check`.
+
 Next:
 
-1. add target-owned support-bundle trees, target/remote imported-skill
-   interfaces, bundle type/category plumbing, and the pure operation-catalog
-   selection layer;
+1. add target/remote imported-skill interfaces and the pure operation-catalog
+   selection layer while retaining the imported-item deploy guards;
 2. atomically activate the composed catalog in deploy/status/validate/verify
    with target-specific dependency closure, manifest provenance, global bundle
    bindings, and `verify --target-root`;
@@ -279,6 +307,9 @@ Next:
   first exposed only new coverage branches, then passed on the next changed
   test signature. The final 2,210-test, mypy, and full seven-check flake gates
   are green.
+- Snapshot materializer and support-target slices: coverage-only and review
+  findings changed on each attempt; both final 100%-branch pytest gates, strict
+  mypy gates, and seven-check flake gates are green.
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature

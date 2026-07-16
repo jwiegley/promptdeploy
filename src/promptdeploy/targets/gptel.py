@@ -7,8 +7,8 @@ rendered to ``{name}.json`` so no external templating step is required in
 Emacs. Plain prompts (``.txt``/``.md``/``.org``/``.json``) are copied
 verbatim.
 
-This target only consumes prompts -- agents, commands, skills, MCP
-servers, hooks, and models are silently skipped.
+This target consumes prompts plus the target-neutral owned support bundle;
+agents, commands, skills, MCP servers, hooks, and models are silently skipped.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from typing import Any
 from ..manifest import MANIFEST_FILENAME
 from ..names import require_canonical_item_name
 from ..poet import POET_EXTENSIONS, parse_poet, render_for_gptel
-from .base import Target
+from .base import MANAGED_BUNDLE_RSYNC_INCLUDES, Target
 
 _GPTEL_EXTENSIONS = (".poet", ".json", ".txt", ".md", ".org")
 _RENDERED_POET_EXTENSIONS = POET_EXTENSIONS - {".poet"}
@@ -48,6 +48,7 @@ class GptelTarget(Target):
             "*.txt",
             "*.md",
             "*.org",
+            *MANAGED_BUNDLE_RSYNC_INCLUDES,
             MANIFEST_FILENAME,
         ]
 
@@ -58,7 +59,7 @@ class GptelTarget(Target):
         content: bytes | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> bool:
-        return item_type != "prompt"
+        return item_type not in {"prompt", "bundle"}
 
     # ------------------------------------------------------------------
     # Deploy

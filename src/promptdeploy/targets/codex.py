@@ -22,6 +22,7 @@ from ..frontmatter import (
 from ..manifest import MANIFEST_FILENAME
 from .base import (
     ANVIL_MCP_NAMES,
+    MANAGED_BUNDLE_RSYNC_INCLUDES,
     Target,
     install_skill_tree_atomically,
     transformed_skill_tree_matches,
@@ -100,11 +101,15 @@ class CodexTarget(Target):
     def manifest_path(self) -> Path:
         return self._codex_path / MANIFEST_FILENAME
 
+    def managed_root(self) -> Path:
+        return self._home_path
+
     def rsync_includes(self) -> list[str] | None:
         return [
             ".agents/",
             ".agents/skills/",
             ".agents/skills/**",
+            *MANAGED_BUNDLE_RSYNC_INCLUDES,
             ".codex/",
             ".codex/agents/",
             ".codex/agents/**",
@@ -118,6 +123,7 @@ class CodexTarget(Target):
             ".agents/",
             ".agents/skills/",
             ".agents/skills/**",
+            *MANAGED_BUNDLE_RSYNC_INCLUDES,
             ".codex/",
             ".codex/agents/",
             ".codex/agents/**",

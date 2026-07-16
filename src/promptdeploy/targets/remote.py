@@ -150,6 +150,9 @@ class RemoteTarget(Target):
     def content_fingerprint(self, item_type: str) -> str | None:
         return self._inner.content_fingerprint(item_type)
 
+    def managed_root(self) -> Path:
+        return self._inner.managed_root()
+
     def prepare_force_deploy(
         self, item_type: str, name: str, metadata: dict[str, Any]
     ) -> None:

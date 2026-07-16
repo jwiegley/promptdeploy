@@ -88,6 +88,7 @@ def main() -> None:
         action="append",
         choices=[
             "agents",
+            "bundles",
             "commands",
             "skills",
             "mcp",
@@ -455,6 +456,7 @@ def _run_list(args: argparse.Namespace) -> None:
             print(f"{target_id}:")
             category_labels = {
                 "agents": "Agents",
+                "bundles": "Bundles",
                 "commands": "Commands",
                 "skills": "Skills",
                 "mcp_servers": "MCP Servers",
@@ -466,6 +468,7 @@ def _run_list(args: argparse.Namespace) -> None:
             }
             for category in (
                 "agents",
+                "bundles",
                 "commands",
                 "skills",
                 "mcp_servers",

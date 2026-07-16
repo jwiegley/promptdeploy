@@ -33,6 +33,7 @@ from .targets.base import Target
 # Maps SourceItem.item_type -> manifest category key
 _TYPE_TO_CATEGORY = {
     "agent": "agents",
+    "bundle": "bundles",
     "command": "commands",
     "skill": "skills",
     "mcp": "mcp_servers",
@@ -46,6 +47,7 @@ _TYPE_TO_CATEGORY = {
 # Maps CLI --only-type values (plural) -> SourceItem.item_type (singular)
 _CLI_TYPE_TO_ITEM_TYPE = {
     "agents": "agent",
+    "bundles": "bundle",
     "commands": "command",
     "skills": "skill",
     "mcp": "mcp",
@@ -419,6 +421,8 @@ def _remove_item(
     """
     if category == "agents":
         target.remove_agent(name)
+    elif category == "bundles":
+        target.remove_bundle(name)
     elif category == "commands":
         target.remove_command(name)
     elif category == "skills":
@@ -710,7 +714,11 @@ def deploy(
                 )
 
             # Detect stale items: in old manifest but not in new source
-            for category, items_dict in manifest.items.items():
+            stale_categories = sorted(
+                manifest.items.items(),
+                key=lambda category_items: category_items[0] == "bundles",
+            )
+            for category, items_dict in stale_categories:
                 for name in items_dict:
                     if (category, name) in deployed_names:
                         continue
@@ -739,6 +747,20 @@ def deploy(
                                 items_dict[name]
                             )
                             continue
+
+                    if category == "bundles" and any(
+                        retained_category != "bundles"
+                        and retained_item.source is not None
+                        and retained_item.source.bundle == name
+                        for retained_category, retained_items in (
+                            new_manifest.items.items()
+                        )
+                        for retained_item in retained_items.values()
+                    ):
+                        new_manifest.items.setdefault(category, {})[name] = items_dict[
+                            name
+                        ]
+                        continue
 
                     # Look up the deployed artifact path (if any) so the
                     # removal can target the exact file the previous deploy

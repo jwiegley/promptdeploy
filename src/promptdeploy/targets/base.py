@@ -15,9 +15,15 @@ from ..imported_tree import (
     ImportedTreeSnapshot,
     validate_imported_tree_snapshot,
 )
+from ..names import require_canonical_item_name
 from ..skilltree import scan_skill_source
 
 ANVIL_MCP_NAMES = frozenset({"anvil", "anvil-tools"})
+MANAGED_BUNDLE_RSYNC_INCLUDES = (
+    ".promptdeploy/",
+    ".promptdeploy/bundles/",
+    ".promptdeploy/bundles/**",
+)
 SkillTreeSource: TypeAlias = Path | ImportedTreeSnapshot
 InstalledTreeEntry: TypeAlias = tuple[
     Literal["directory", "file"], str, int, bytes | None
@@ -54,6 +60,10 @@ _INSTALLED_READ_CHUNK = 128 * 1024
 
 class _InstalledTreeMismatch(Exception):
     """A target tree differs from its immutable expected view."""
+
+
+class UnsafeManagedBundlePath(ValueError):
+    """A target's owned bundle path contains an unsafe parent node."""
 
 
 def _make_tree_owner_writable(root: Path) -> None:
@@ -147,12 +157,10 @@ def _write_all(descriptor: int, contents: bytes) -> None:
         remaining = remaining[written:]
 
 
-def _materialize_imported_skill_tree(
-    source: ImportedTreeSnapshot,
+def _materialize_expected_tree(
+    expected: InstalledTreeSnapshot,
     destination: Path,
-    transform_skill_md: Callable[[bytes], bytes],
 ) -> None:
-    expected = _expected_imported_skill_tree(source, transform_skill_md)
     directories = [entry for entry in expected if entry[0] == "directory"]
     files = [entry for entry in expected if entry[0] == "file"]
     directory_order = sorted(
@@ -195,6 +203,15 @@ def _materialize_imported_skill_tree(
         raise
 
 
+def _materialize_imported_skill_tree(
+    source: ImportedTreeSnapshot,
+    destination: Path,
+    transform_skill_md: Callable[[bytes], bytes],
+) -> None:
+    expected = _expected_imported_skill_tree(source, transform_skill_md)
+    _materialize_expected_tree(expected, destination)
+
+
 def materialize_skill_tree(
     source: SkillTreeSource,
     destination: Path,
@@ -207,20 +224,21 @@ def materialize_skill_tree(
     _materialize_primary_skill_tree(source, destination, transform_skill_md)
 
 
-def install_skill_tree_atomically(
-    source: SkillTreeSource,
+def _install_tree_atomically(
     destination: Path,
-    transform_skill_md: Callable[[bytes], bytes],
+    materialize: Callable[[Path], None],
+    *,
+    staged_name: str,
+    artifact_label: str,
 ) -> None:
-    """Stage a skill, swap it into place, and restore the old tree on failure."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(dir=destination.parent, prefix=".promptdeploy-"))
-    staged = temporary / "skill"
+    staged = temporary / staged_name
     backup = temporary / "previous"
     had_destination = destination.is_symlink() or destination.exists()
     cleanup_temporary = True
     try:
-        materialize_skill_tree(source, staged, transform_skill_md)
+        materialize(staged)
         if had_destination:
             os.replace(destination, backup)
         try:
@@ -232,7 +250,8 @@ def install_skill_tree_atomically(
                 except BaseException as restore_error:
                     cleanup_temporary = False
                     raise RuntimeError(
-                        "Skill installation failed and the prior tree could not be "
+                        f"{artifact_label} installation failed and the prior tree "
+                        "could not be "
                         f"restored; backup retained at {backup}"
                     ) from restore_error
             raise
@@ -241,6 +260,24 @@ def install_skill_tree_atomically(
             with contextlib.suppress(OSError):
                 _make_tree_owner_writable(temporary)
             shutil.rmtree(temporary, ignore_errors=True)
+
+
+def install_skill_tree_atomically(
+    source: SkillTreeSource,
+    destination: Path,
+    transform_skill_md: Callable[[bytes], bytes],
+) -> None:
+    """Stage a skill, swap it into place, and restore the old tree on failure."""
+    _install_tree_atomically(
+        destination,
+        lambda staged: materialize_skill_tree(
+            source,
+            staged,
+            transform_skill_md,
+        ),
+        staged_name="skill",
+        artifact_label="Skill",
+    )
 
 
 def _raise_walk_error(error: OSError) -> None:
@@ -482,6 +519,17 @@ def transformed_skill_tree_matches(
         return expected_snapshot is not None and expected_snapshot == deployed_snapshot
 
 
+def _support_bundle_tree(content: bytes) -> InstalledTreeSnapshot:
+    return (
+        ("directory", ".", 0o755, None),
+        ("file", "LICENSE", 0o644, content),
+    )
+
+
+def _materialize_support_bundle(content: bytes, destination: Path) -> None:
+    _materialize_expected_tree(_support_bundle_tree(content), destination)
+
+
 class Target(ABC):
     @property
     @abstractmethod
@@ -498,6 +546,134 @@ class Target(ABC):
 
     def cleanup(self) -> None:
         """Called to release resources (e.g. temp dirs) without pushing changes."""
+
+    def managed_root(self) -> Path:
+        """Return the target root that owns cross-surface support artifacts."""
+        return self.manifest_path().parent
+
+    def bundle_root(self) -> Path:
+        """Return the hidden root for target-owned support bundles."""
+        return self.managed_root() / ".promptdeploy" / "bundles"
+
+    def bundle_path(self, name: str) -> Path:
+        """Return one canonical target-owned support-bundle leaf."""
+        require_canonical_item_name("bundle", name)
+        return self.bundle_root() / name
+
+    def _checked_bundle_root(self, *, create: bool) -> Path | None:
+        managed = self.managed_root()
+        if create:
+            try:
+                managed.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                raise UnsafeManagedBundlePath(
+                    "managed target root is not safely writable"
+                ) from exc
+        try:
+            managed_stat = managed.lstat()
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise UnsafeManagedBundlePath(
+                "managed target root is not safely readable"
+            ) from exc
+        if not stat.S_ISDIR(managed_stat.st_mode):
+            raise UnsafeManagedBundlePath(
+                "managed target root must be a real directory"
+            )
+
+        current = managed
+        for component in (".promptdeploy", "bundles"):
+            child = current / component
+            try:
+                child_stat = child.lstat()
+            except FileNotFoundError:
+                if not create:
+                    return None
+                try:
+                    child.mkdir(mode=0o755)
+                except FileExistsError:
+                    pass
+                except OSError as exc:
+                    raise UnsafeManagedBundlePath(
+                        "managed bundle parent is not safely writable"
+                    ) from exc
+                try:
+                    child_stat = child.lstat()
+                except OSError as exc:
+                    raise UnsafeManagedBundlePath(
+                        "managed bundle parent is not safely readable"
+                    ) from exc
+            except OSError as exc:
+                raise UnsafeManagedBundlePath(
+                    "managed bundle parent is not safely readable"
+                ) from exc
+            if not stat.S_ISDIR(child_stat.st_mode):
+                raise UnsafeManagedBundlePath(
+                    "managed bundle parent must be a real directory"
+                )
+            current = child
+        return current
+
+    def deploy_bundle(self, name: str, content: bytes) -> None:
+        """Atomically install the exact support-v1 bundle tree."""
+        require_canonical_item_name("bundle", name)
+        root = self._checked_bundle_root(create=True)
+        assert root is not None
+        _install_tree_atomically(
+            root / name,
+            lambda staged: _materialize_support_bundle(content, staged),
+            staged_name="bundle",
+            artifact_label="Bundle",
+        )
+
+    def bundle_exists(self, name: str) -> bool:
+        """Return whether any node occupies the exact owned bundle leaf."""
+        require_canonical_item_name("bundle", name)
+        root = self._checked_bundle_root(create=False)
+        if root is None:
+            return False
+        try:
+            (root / name).lstat()
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise UnsafeManagedBundlePath(
+                "managed bundle leaf is not safely readable"
+            ) from exc
+        return True
+
+    def bundle_matches(self, name: str, content: bytes) -> bool:
+        """Compare an owned support bundle without following target links."""
+        require_canonical_item_name("bundle", name)
+        root = self._checked_bundle_root(create=False)
+        if root is None:
+            return False
+        return _installed_tree_matches_expected(
+            root / name,
+            _support_bundle_tree(content),
+        )
+
+    def remove_bundle(self, name: str) -> None:
+        """Remove exactly one owned support-bundle leaf and no parent."""
+        require_canonical_item_name("bundle", name)
+        root = self._checked_bundle_root(create=False)
+        if root is None:
+            return
+        destination = root / name
+        try:
+            destination_stat = destination.lstat()
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            raise UnsafeManagedBundlePath(
+                "managed bundle leaf is not safely readable"
+            ) from exc
+        if stat.S_ISDIR(destination_stat.st_mode):
+            _make_tree_owner_writable(destination)
+            shutil.rmtree(destination)
+        else:
+            destination.unlink()
 
     def deploy_settings(
         self, rendered: dict[str, Any], previous_keys: list[str]
