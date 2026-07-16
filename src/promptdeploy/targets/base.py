@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import contextlib
+import errno
 import os
 import shutil
 import stat
 import tempfile
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, Literal, TypeAlias
 
+from ..bundle_projection import (
+    InstalledTreeSnapshot as ProjectedInstalledTreeSnapshot,
+)
+from ..bundle_projection import (
+    validate_closed_installed_tree,
+)
 from ..imported_tree import (
     ImportedSourceError,
     ImportedTreeSnapshot,
@@ -157,6 +164,70 @@ def _write_all(descriptor: int, contents: bytes) -> None:
         remaining = remaining[written:]
 
 
+@contextlib.contextmanager
+def _closing_descriptor_preserving_error(
+    descriptor: int,
+    failure_note: str,
+) -> Iterator[int]:
+    primary: BaseException | None = None
+    try:
+        yield descriptor
+    except BaseException as exc:
+        primary = exc
+    try:
+        os.close(descriptor)
+    except OSError as close_error:
+        if primary is not None:
+            primary.add_note(failure_note)
+            raise primary.with_traceback(primary.__traceback__) from close_error
+        raise
+    if primary is not None:
+        raise primary.with_traceback(primary.__traceback__)
+
+
+def _restore_new_private_directory_mode(path: Path) -> None:
+    """Restore mode after umask for an exclusively created staging directory."""
+    before = path.stat(follow_symlinks=False)
+    if not stat.S_ISDIR(before.st_mode):
+        raise OSError("new staging path is not a directory")
+    if os.chmod in os.supports_follow_symlinks:
+        os.chmod(path, 0o700, follow_symlinks=False)
+    else:
+        os.chmod(path, 0o700)
+    descriptor = os.open(path, _IMPORTED_DIRECTORY_FLAGS)
+    with _closing_descriptor_preserving_error(
+        descriptor,
+        "new staging directory descriptor close also failed",
+    ):
+        opened = os.fstat(descriptor)
+        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+            raise OSError("new staging directory changed while opening")
+        os.fchmod(descriptor, 0o700)
+
+
+def _remove_tree_leaf_without_chmod_files(root: Path) -> bool:
+    """Remove one leaf through its parent fd without chmodding file inodes."""
+    parent = os.open(root.parent, _IMPORTED_DIRECTORY_FLAGS)
+    with _closing_descriptor_preserving_error(
+        parent,
+        "tree removal parent descriptor close also failed",
+    ):
+        try:
+            leaf = os.stat(root.name, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            return False
+        if stat.S_ISDIR(leaf.st_mode):
+            if not shutil.rmtree.avoids_symlink_attacks:
+                raise OSError(
+                    errno.ENOTSUP,
+                    "safe descriptor-relative tree removal is unavailable",
+                )
+            shutil.rmtree(root.name, dir_fd=parent)
+        else:
+            os.unlink(root.name, dir_fd=parent)
+        return True
+
+
 def _materialize_expected_tree(
     expected: InstalledTreeSnapshot,
     destination: Path,
@@ -171,9 +242,12 @@ def _materialize_expected_tree(
     try:
         os.mkdir(destination, 0o700)
         created_destination = True
+        _restore_new_private_directory_mode(destination)
         for _kind, relative_path, _mode, _contents in directory_order:
             if relative_path != ".":
-                os.mkdir(destination / relative_path, 0o700)
+                directory = destination / relative_path
+                os.mkdir(directory, 0o700)
+                _restore_new_private_directory_mode(directory)
         for _kind, relative_path, mode, contents in files:
             assert contents is not None
             descriptor = os.open(
@@ -181,26 +255,48 @@ def _materialize_expected_tree(
                 _IMPORTED_FILE_FLAGS,
                 mode,
             )
-            try:
+            with _closing_descriptor_preserving_error(
+                descriptor,
+                "materialized file descriptor close also failed",
+            ):
                 _write_all(descriptor, contents)
                 os.fchmod(descriptor, mode)
-            finally:
-                os.close(descriptor)
         for _kind, relative_path, mode, _contents in reversed(directory_order):
             directory = (
                 destination if relative_path == "." else destination / relative_path
             )
             descriptor = os.open(directory, _IMPORTED_DIRECTORY_FLAGS)
-            try:
+            with _closing_descriptor_preserving_error(
+                descriptor,
+                "materialized directory descriptor close also failed",
+            ):
                 os.fchmod(descriptor, mode)
-            finally:
-                os.close(descriptor)
-    except BaseException:
+    except BaseException as primary:
         if created_destination:
-            with contextlib.suppress(OSError):
-                _make_tree_owner_writable(destination)
-            shutil.rmtree(destination, ignore_errors=True)
+            try:
+                _remove_tree_leaf_without_chmod_files(destination)
+            except BaseException as cleanup_error:
+                primary.add_note("materialized tree cleanup also failed")
+                raise primary.with_traceback(primary.__traceback__) from cleanup_error
         raise
+
+
+def _projected_tree_as_expected(
+    tree: ProjectedInstalledTreeSnapshot,
+) -> InstalledTreeSnapshot:
+    checked = validate_closed_installed_tree(tree)
+    return tuple(
+        (entry.kind, entry.relative_path, entry.normalized_mode, entry.content)
+        for entry in checked
+    )
+
+
+def materialize_projected_bundle_tree(
+    tree: ProjectedInstalledTreeSnapshot,
+    destination: Path,
+) -> None:
+    """Materialize exactly inside an absent leaf of a private staging parent."""
+    _materialize_expected_tree(_projected_tree_as_expected(tree), destination)
 
 
 def _materialize_imported_skill_tree(
@@ -353,11 +449,15 @@ def _read_expected_installed_file(
     before = os.stat(name, dir_fd=parent, follow_symlinks=False)
     _require_installed_match(
         stat.S_ISREG(before.st_mode)
+        and before.st_nlink == 1
         and stat.S_IMODE(before.st_mode) == mode
         and before.st_size == len(expected)
     )
     descriptor = os.open(name, _INSTALLED_FILE_FLAGS, dir_fd=parent)
-    try:
+    with _closing_descriptor_preserving_error(
+        descriptor,
+        "installed file descriptor close also failed",
+    ):
         opened = os.fstat(descriptor)
         _require_installed_match(
             stat.S_ISREG(opened.st_mode)
@@ -382,8 +482,6 @@ def _read_expected_installed_file(
             _installed_stat_key(opened) == _installed_stat_key(after)
             and _installed_stat_key(before) == _installed_stat_key(after_path)
         )
-    finally:
-        os.close(descriptor)
 
 
 def _compare_installed_directory(
@@ -424,7 +522,10 @@ def _compare_installed_directory(
             and stat.S_IMODE(child_before.st_mode) == mode
         )
         child = os.open(name, _INSTALLED_DIRECTORY_FLAGS, dir_fd=directory)
-        try:
+        with _closing_descriptor_preserving_error(
+            child,
+            "installed directory descriptor close also failed",
+        ):
             child_opened = os.fstat(child)
             _require_installed_match(
                 stat.S_ISDIR(child_opened.st_mode)
@@ -451,18 +552,16 @@ def _compare_installed_directory(
                 and _installed_stat_key(child_before)
                 == _installed_stat_key(child_after_path)
             )
-        finally:
-            os.close(child)
 
     after = os.fstat(directory)
     _require_installed_match(_installed_stat_key(before) == _installed_stat_key(after))
 
 
-def _installed_tree_matches_expected(
+def _require_installed_tree_matches_expected(
     root: Path,
     expected_tree: InstalledTreeSnapshot,
-) -> bool:
-    """Compare through held descriptors, bounded by the immutable expectation."""
+) -> None:
+    """Require an exact descriptor-held tree or raise mismatch or I/O failure."""
     expected = {entry[1]: entry for entry in expected_tree}
     children_lists: dict[str, list[InstalledTreeEntry]] = {}
     for entry in expected_tree:
@@ -475,10 +574,12 @@ def _installed_tree_matches_expected(
         for parent, entries in children_lists.items()
     }
 
-    descriptor: int | None = None
-    try:
-        before = root.stat(follow_symlinks=False)
-        descriptor = os.open(root, _INSTALLED_DIRECTORY_FLAGS)
+    before = root.stat(follow_symlinks=False)
+    descriptor = os.open(root, _INSTALLED_DIRECTORY_FLAGS)
+    with _closing_descriptor_preserving_error(
+        descriptor,
+        "installed tree root descriptor close also failed",
+    ):
         opened = os.fstat(descriptor)
         _require_installed_match(
             stat.S_ISDIR(before.st_mode)
@@ -493,13 +594,41 @@ def _installed_tree_matches_expected(
             _installed_stat_key(opened) == _installed_stat_key(after)
             and _installed_stat_key(before) == _installed_stat_key(after_path)
         )
-        return True
+
+
+def _installed_tree_matches_expected(
+    root: Path,
+    expected_tree: InstalledTreeSnapshot,
+) -> bool:
+    """Compare through held descriptors, bounded by the immutable expectation."""
+    try:
+        _require_installed_tree_matches_expected(root, expected_tree)
     except (OSError, _InstalledTreeMismatch):
         return False
-    finally:
-        if descriptor is not None:
-            with contextlib.suppress(OSError):
-                os.close(descriptor)
+    return True
+
+
+def projected_bundle_tree_matches(
+    tree: ProjectedInstalledTreeSnapshot,
+    destination: Path,
+) -> bool:
+    """Return exact equality; propagate operational descriptor or I/O failures."""
+    expected = _projected_tree_as_expected(tree)
+    try:
+        before = destination.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISDIR(before.st_mode):
+        return False
+    try:
+        _require_installed_tree_matches_expected(destination, expected)
+    except _InstalledTreeMismatch as exc:
+        if isinstance(exc.__cause__, OSError):
+            operational = exc.__cause__
+            exc.__cause__ = None
+            raise operational.with_traceback(operational.__traceback__) from exc
+        return False
+    return True
 
 
 def transformed_skill_tree_matches(

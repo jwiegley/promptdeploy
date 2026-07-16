@@ -685,10 +685,9 @@ def test_closed_bundle_rejects_every_nested_subclass_route() -> None:
         pass
 
     with pytest.raises(projection.BundleProjectionError, match="installed-tree tuple"):
-        projection._validate_closed_installed_tree(
+        projection.validate_closed_installed_tree(
             cast(Any, TupleSubclass(rendered.support_tree))
         )
-
     tuple_variant = replace(
         rendered,
         support_tree=cast(Any, TupleSubclass(rendered.support_tree)),
@@ -733,6 +732,15 @@ def test_closed_bundle_rejects_every_nested_subclass_route() -> None:
                 changed,
                 registration=registration,
             )
+
+
+def test_closed_installed_tree_validator_returns_the_exact_checked_tuple() -> None:
+    rendered = projection.render_bundle(_bundle(), "droid")
+
+    assert (
+        projection.validate_closed_installed_tree(rendered.support_tree)
+        is rendered.support_tree
+    )
 
 
 def test_bundle_identity_and_provenance_are_revalidated() -> None:

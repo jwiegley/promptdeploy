@@ -18,6 +18,7 @@ from typing import Literal, Protocol, cast
 from promptdeploy.bundles import BundleSchemaError
 from promptdeploy.imported_tree import (
     MAX_PATH_BYTES,
+    ImportedSourceError,
     ImportedTreeEntry,
     ImportedTreeSnapshot,
     framed_tree_sha256,
@@ -807,7 +808,10 @@ def _validate_closed_selected_payload(selected: SelectedBundlePayload) -> None:
     SelectedBundlePayload.__post_init__(selected)
 
 
-def _validate_closed_installed_tree(entries: InstalledTreeSnapshot) -> None:
+def validate_closed_installed_tree(
+    entries: InstalledTreeSnapshot,
+) -> InstalledTreeSnapshot:
+    """Return one exact, link-free installed tree after closed validation."""
     if type(entries) is not tuple:
         raise BundleProjectionError(
             "closed rendered bundle requires an exact installed-tree tuple"
@@ -823,7 +827,11 @@ def _validate_closed_installed_tree(entries: InstalledTreeSnapshot) -> None:
         )
         _require_exact_optional_fields(entry, (("content", bytes),))
         InstalledTreeEntry.__post_init__(entry)
-    _validate_installed_tree(entries)
+    try:
+        _validate_installed_tree(entries)
+    except ImportedSourceError as exc:
+        raise BundleProjectionError("closed installed tree is invalid") from exc
+    return entries
 
 
 def _validate_closed_registration(
@@ -922,9 +930,9 @@ def validate_closed_rendered_bundle(bundle: RenderedBundle) -> RenderedBundle:
         ),
     )
     _validate_closed_selected_payload(bundle.selected)
-    _validate_closed_installed_tree(bundle.support_tree)
+    validate_closed_installed_tree(bundle.support_tree)
     if bundle.runtime_tree is not None:
-        _validate_closed_installed_tree(bundle.runtime_tree)
+        validate_closed_installed_tree(bundle.runtime_tree)
     if bundle.registration is not None:
         _validate_closed_registration(bundle.registration)
     _validate_closed_hash_descriptor(bundle.hash_descriptor)

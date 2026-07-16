@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import stat
@@ -9,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from promptdeploy.bundle_projection import BundleProjectionError, InstalledTreeEntry
 from promptdeploy.config import Config, TargetConfig
 from promptdeploy.deploy import (
     _CLI_TYPE_TO_ITEM_TYPE,
@@ -26,10 +28,13 @@ from promptdeploy.manifest import (
     save_manifest,
 )
 from promptdeploy.names import require_canonical_item_name
+from promptdeploy.targets import base as target_base
 from promptdeploy.targets.base import (
     MANAGED_BUNDLE_RSYNC_INCLUDES,
     Target,
     UnsafeManagedBundlePath,
+    materialize_projected_bundle_tree,
+    projected_bundle_tree_matches,
 )
 from promptdeploy.targets.claude import ClaudeTarget
 from promptdeploy.targets.codex import CodexTarget
@@ -54,6 +59,13 @@ def _target(kind: str, tmp_path: Path) -> Target:
 
 def _mode(path: Path) -> int:
     return stat.S_IMODE(path.lstat().st_mode)
+
+
+class _FailingRmtree:
+    avoids_symlink_attacks = True
+
+    def __call__(self, *_args: object, **_kwargs: object) -> None:
+        raise OSError("remove failed")
 
 
 @pytest.mark.parametrize("kind", ["claude", "codex", "droid", "opencode", "gptel"])
@@ -116,6 +128,507 @@ def test_support_bundle_deploy_is_exact_and_umask_independent(
     assert _mode(destination / "LICENSE") == 0o644
 
 
+def test_projected_bundle_tree_materialize_and_match(tmp_path: Path) -> None:
+    tree = (
+        InstalledTreeEntry("directory", ".", 0o755),
+        InstalledTreeEntry("directory", "hooks", 0o755),
+        InstalledTreeEntry("file", "hooks/run.js", 0o644, b"run\n"),
+    )
+    destination = tmp_path / "runtime"
+
+    materialize_projected_bundle_tree(tree, destination)
+
+    assert projected_bundle_tree_matches(tree, destination)
+    assert _mode(destination) == 0o755
+    assert _mode(destination / "hooks") == 0o755
+    assert (destination / "hooks" / "run.js").read_bytes() == b"run\n"
+    assert _mode(destination / "hooks" / "run.js") == 0o644
+
+
+def test_projected_bundle_tree_materializes_under_extreme_umask(tmp_path: Path) -> None:
+    tree = (
+        InstalledTreeEntry("directory", ".", 0o755),
+        InstalledTreeEntry("directory", "hooks", 0o755),
+        InstalledTreeEntry("file", "hooks/run.js", 0o755, b"run\n"),
+    )
+    destination = tmp_path / "runtime"
+    previous_umask = os.umask(0o777)
+    try:
+        materialize_projected_bundle_tree(tree, destination)
+    finally:
+        os.umask(previous_umask)
+
+    assert projected_bundle_tree_matches(tree, destination)
+    assert _mode(destination) == 0o755
+    assert _mode(destination / "hooks") == 0o755
+    assert _mode(destination / "hooks" / "run.js") == 0o755
+
+
+@pytest.mark.parametrize("supports_nofollow", [False, True])
+def test_projected_bundle_tree_chmod_bootstrap_capability_matrix(
+    supports_nofollow: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = (InstalledTreeEntry("directory", ".", 0o755),)
+    destination = tmp_path / "runtime"
+    original_chmod = os.chmod
+    calls = 0
+
+    def portable_chmod(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        mode: int,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        nonlocal calls
+        assert not args
+        if supports_nofollow:
+            assert kwargs == {"follow_symlinks": False}
+        else:
+            assert not kwargs
+        calls += 1
+        original_chmod(path, mode)
+
+    monkeypatch.setattr(os, "chmod", portable_chmod)
+    supported = os.supports_follow_symlinks - {original_chmod}
+    if supports_nofollow:
+        supported.add(portable_chmod)
+    monkeypatch.setattr(os, "supports_follow_symlinks", supported)
+    materialize_projected_bundle_tree(tree, destination)
+
+    assert calls == 1
+    assert projected_bundle_tree_matches(tree, destination)
+
+
+def test_private_directory_mode_restore_rejects_non_directory_and_swap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    file_path = tmp_path / "file"
+    file_path.write_bytes(b"not a directory")
+    with pytest.raises(OSError, match="not a directory"):
+        target_base._restore_new_private_directory_mode(file_path)
+
+    directory = tmp_path / "directory"
+    other = tmp_path / "other"
+    directory.mkdir()
+    other.mkdir()
+    original_open = os.open
+
+    def open_other(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if path == directory:
+            return original_open(other, flags, mode, dir_fd=dir_fd)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", open_other)
+    with pytest.raises(OSError, match="changed while opening"):
+        target_base._restore_new_private_directory_mode(directory)
+
+
+def test_projected_bundle_tree_missing_and_non_directory_roots_do_not_match(
+    tmp_path: Path,
+) -> None:
+    tree = (InstalledTreeEntry("directory", ".", 0o755),)
+    destination = tmp_path / "runtime"
+    assert not projected_bundle_tree_matches(tree, destination)
+
+    destination.write_bytes(b"not a tree")
+    assert not projected_bundle_tree_matches(tree, destination)
+    destination.unlink()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    destination.symlink_to(outside, target_is_directory=True)
+    assert not projected_bundle_tree_matches(tree, destination)
+    assert outside.is_dir()
+
+
+def test_projected_bundle_tree_rejects_hard_link_and_invalid_input(
+    tmp_path: Path,
+) -> None:
+    tree = (
+        InstalledTreeEntry("directory", ".", 0o755),
+        InstalledTreeEntry("file", "run.js", 0o644, b"run\n"),
+    )
+    destination = tmp_path / "runtime"
+    materialize_projected_bundle_tree(tree, destination)
+    os.link(destination / "run.js", tmp_path / "outside-link")
+    assert not projected_bundle_tree_matches(tree, destination)
+
+    invalid = (
+        InstalledTreeEntry("directory", ".", 0o755),
+        InstalledTreeEntry("file", "missing/parent", 0o644, b"bad"),
+    )
+    invalid_destination = tmp_path / "invalid"
+    with pytest.raises(BundleProjectionError, match="closed installed tree is invalid"):
+        materialize_projected_bundle_tree(invalid, invalid_destination)
+    assert not invalid_destination.exists()
+
+
+def test_projected_bundle_tree_close_failure_is_operational(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = (InstalledTreeEntry("directory", ".", 0o755),)
+    destination = tmp_path / "runtime"
+    materialize_projected_bundle_tree(tree, destination)
+    original_close = os.close
+    closed: list[int] = []
+
+    def fail_after_close(descriptor: int) -> None:
+        closed.append(descriptor)
+        original_close(descriptor)
+        raise OSError("close failed")
+
+    monkeypatch.setattr("promptdeploy.targets.base.os.close", fail_after_close)
+    with pytest.raises(OSError, match="close failed"):
+        projected_bundle_tree_matches(tree, destination)
+    assert len(closed) == 1
+
+
+def test_installed_tree_mismatch_preserves_root_close_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = (InstalledTreeEntry("directory", ".", 0o755),)
+    destination = tmp_path / "runtime"
+    materialize_projected_bundle_tree(tree, destination)
+    destination.chmod(0o700)
+    expected = target_base._projected_tree_as_expected(tree)
+    original_close = os.close
+
+    def fail_after_close(descriptor: int) -> None:
+        original_close(descriptor)
+        raise OSError("close failed")
+
+    monkeypatch.setattr(os, "close", fail_after_close)
+    with pytest.raises(target_base._InstalledTreeMismatch) as raised:
+        target_base._require_installed_tree_matches_expected(destination, expected)
+    assert raised.value.__cause__ is not None
+    assert "close failed" in str(raised.value.__cause__)
+    assert raised.value.__notes__ == [
+        "installed tree root descriptor close also failed"
+    ]
+
+
+def test_projected_bundle_tree_failure_cleanup_does_not_chmod_hard_link(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = (
+        InstalledTreeEntry("directory", ".", 0o755),
+        InstalledTreeEntry("file", "run.js", 0o644, b"run\n"),
+    )
+    destination = tmp_path / "runtime"
+    outside = tmp_path / "outside-link"
+    original_fchmod = os.fchmod
+
+    def fail_after_link(descriptor: int, mode: int) -> None:
+        if mode == 0o644 and not outside.exists():
+            os.link(destination / "run.js", outside)
+            outside.chmod(0o444)
+            raise OSError("injected mode failure")
+        original_fchmod(descriptor, mode)
+
+    monkeypatch.setattr("promptdeploy.targets.base.os.fchmod", fail_after_link)
+    with pytest.raises(OSError, match="injected mode failure"):
+        materialize_projected_bundle_tree(tree, destination)
+
+    assert not destination.exists()
+    assert outside.read_bytes() == b"run\n"
+    assert _mode(outside) == 0o444
+
+
+def test_projected_bundle_tree_preserves_materialize_and_cleanup_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = (
+        InstalledTreeEntry("directory", ".", 0o755),
+        InstalledTreeEntry("file", "run.js", 0o644, b"run\n"),
+    )
+    destination = tmp_path / "runtime"
+    monkeypatch.setattr(
+        os,
+        "write",
+        lambda *_args: (_ for _ in ()).throw(OSError("write failed")),
+    )
+    monkeypatch.setattr(
+        target_base,
+        "_remove_tree_leaf_without_chmod_files",
+        lambda _path: (_ for _ in ()).throw(OSError("cleanup failed")),
+    )
+
+    with pytest.raises(OSError, match="write failed") as raised:
+        materialize_projected_bundle_tree(tree, destination)
+    assert raised.value.__cause__ is not None
+    assert "cleanup failed" in str(raised.value.__cause__)
+    assert raised.value.__notes__ == ["materialized tree cleanup also failed"]
+
+
+@pytest.mark.parametrize(
+    ("phase", "failure_note"),
+    [
+        ("file", "materialized file descriptor close also failed"),
+        ("directory", "materialized directory descriptor close also failed"),
+    ],
+)
+def test_projected_materialization_preserves_nested_close_failure(
+    phase: str,
+    failure_note: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entries = [InstalledTreeEntry("directory", ".", 0o755)]
+    if phase == "file":
+        entries.append(InstalledTreeEntry("file", "run.js", 0o644, b"run\n"))
+    tree = tuple(entries)
+    destination = tmp_path / "runtime"
+    original_close = os.close
+    original_fchmod = os.fchmod
+    primary_active = False
+    close_failed = False
+
+    def fail_write(*_args: object) -> int:
+        nonlocal primary_active
+        primary_active = True
+        raise OSError("primary failed")
+
+    def fail_final_directory_mode(descriptor: int, mode: int) -> None:
+        nonlocal primary_active
+        if phase == "directory" and mode == 0o755:
+            primary_active = True
+            raise OSError("primary failed")
+        original_fchmod(descriptor, mode)
+
+    def fail_close_after_primary(descriptor: int) -> None:
+        nonlocal close_failed
+        original_close(descriptor)
+        if primary_active and not close_failed:
+            close_failed = True
+            raise OSError("close failed")
+
+    if phase == "file":
+        monkeypatch.setattr(os, "write", fail_write)
+    monkeypatch.setattr(os, "fchmod", fail_final_directory_mode)
+    monkeypatch.setattr(os, "close", fail_close_after_primary)
+
+    with pytest.raises(OSError, match="primary failed") as raised:
+        materialize_projected_bundle_tree(tree, destination)
+    assert close_failed
+    assert raised.value.__cause__ is not None
+    assert "close failed" in str(raised.value.__cause__)
+    assert raised.value.__notes__ == [failure_note]
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    ("kind", "failure_note"),
+    [
+        ("file", "installed file descriptor close also failed"),
+        ("directory", "installed directory descriptor close also failed"),
+    ],
+)
+def test_projected_comparison_preserves_nested_close_failure(
+    kind: str,
+    failure_note: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entries = [InstalledTreeEntry("directory", ".", 0o755)]
+    if kind == "file":
+        entries.append(InstalledTreeEntry("file", "node", 0o644, b"run\n"))
+    else:
+        entries.append(InstalledTreeEntry("directory", "node", 0o755))
+    tree = tuple(entries)
+    destination = tmp_path / "runtime"
+    materialize_projected_bundle_tree(tree, destination)
+    if kind == "file":
+        (destination / "node").write_bytes(b"bad\n")
+    else:
+        (destination / "node" / "extra").write_bytes(b"drift")
+    expected = target_base._projected_tree_as_expected(tree)
+    original_close = os.close
+    close_failed = False
+
+    def fail_first_close(descriptor: int) -> None:
+        nonlocal close_failed
+        original_close(descriptor)
+        if not close_failed:
+            close_failed = True
+            raise OSError("close failed")
+
+    monkeypatch.setattr(os, "close", fail_first_close)
+    with pytest.raises(target_base._InstalledTreeMismatch) as raised:
+        target_base._require_installed_tree_matches_expected(destination, expected)
+    assert close_failed
+    assert raised.value.__cause__ is not None
+    assert "close failed" in str(raised.value.__cause__)
+    assert raised.value.__notes__ == [failure_note]
+
+
+def test_projected_match_propagates_close_failure_during_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tree = (
+        InstalledTreeEntry("directory", ".", 0o755),
+        InstalledTreeEntry("file", "run.js", 0o644, b"run\n"),
+    )
+    destination = tmp_path / "runtime"
+    materialize_projected_bundle_tree(tree, destination)
+    (destination / "run.js").write_bytes(b"bad\n")
+    original_close = os.close
+    close_failed = False
+
+    def fail_first_close(descriptor: int) -> None:
+        nonlocal close_failed
+        original_close(descriptor)
+        if not close_failed:
+            close_failed = True
+            raise OSError(errno.EIO, "close failed")
+
+    monkeypatch.setattr(os, "close", fail_first_close)
+    with pytest.raises(OSError, match="close failed") as raised:
+        projected_bundle_tree_matches(tree, destination)
+    assert raised.value.errno == errno.EIO
+    assert isinstance(raised.value.__cause__, target_base._InstalledTreeMismatch)
+
+
+def test_projected_bundle_tree_apis_validate_before_filesystem_access(
+    tmp_path: Path,
+) -> None:
+    class TupleSubclass(tuple[InstalledTreeEntry, ...]):
+        pass
+
+    tree = TupleSubclass((InstalledTreeEntry("directory", ".", 0o755),))
+    destination = tmp_path / "runtime"
+    with pytest.raises(BundleProjectionError, match="installed-tree tuple"):
+        projected_bundle_tree_matches(tree, destination)
+    assert not destination.exists()
+
+
+def test_owned_tree_remover_handles_absent_and_non_directory_leaves(
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "missing"
+    assert not target_base._remove_tree_leaf_without_chmod_files(missing)
+
+    leaf = tmp_path / "leaf"
+    outside = tmp_path / "outside"
+    leaf.write_bytes(b"retained\n")
+    leaf.chmod(0o444)
+    os.link(leaf, outside)
+    assert target_base._remove_tree_leaf_without_chmod_files(leaf)
+    assert not leaf.exists()
+    assert outside.read_bytes() == b"retained\n"
+    assert _mode(outside) == 0o444
+
+
+def test_owned_tree_remover_requires_symlink_safe_rmtree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "runtime"
+    root.mkdir()
+    monkeypatch.setattr(shutil.rmtree, "avoids_symlink_attacks", False)
+
+    with pytest.raises(OSError, match="safe descriptor-relative") as raised:
+        target_base._remove_tree_leaf_without_chmod_files(root)
+    assert raised.value.errno == errno.ENOTSUP
+    assert root.is_dir()
+
+
+def test_owned_tree_remover_preserves_removal_and_parent_close_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "runtime"
+    root.mkdir()
+    original_open = os.open
+    original_close = os.close
+    parent_descriptor: int | None = None
+
+    def capture_parent_open(*args, **kwargs) -> int:
+        nonlocal parent_descriptor
+        descriptor = original_open(*args, **kwargs)
+        if args[0] == root.parent:
+            parent_descriptor = descriptor
+        return descriptor
+
+    def fail_parent_close(descriptor: int) -> None:
+        original_close(descriptor)
+        if descriptor == parent_descriptor:
+            raise OSError("close failed")
+
+    monkeypatch.setattr(os, "open", capture_parent_open)
+    monkeypatch.setattr(os, "close", fail_parent_close)
+    monkeypatch.setattr(
+        shutil,
+        "rmtree",
+        _FailingRmtree(),
+    )
+
+    with pytest.raises(OSError, match="remove failed") as raised:
+        target_base._remove_tree_leaf_without_chmod_files(root)
+    assert raised.value.__cause__ is not None
+    assert "close failed" in str(raised.value.__cause__)
+    assert raised.value.__notes__ == [
+        "tree removal parent descriptor close also failed"
+    ]
+
+
+def test_owned_tree_remover_surfaces_unprepared_removal_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "runtime"
+    root.mkdir()
+    monkeypatch.setattr(
+        shutil,
+        "rmtree",
+        _FailingRmtree(),
+    )
+
+    with pytest.raises(OSError, match="remove failed"):
+        target_base._remove_tree_leaf_without_chmod_files(root)
+
+
+def test_owned_tree_remover_surfaces_close_error_after_complete_unlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "runtime"
+    root.mkdir()
+    original_open = os.open
+    original_close = os.close
+    parent_descriptor: int | None = None
+
+    def capture_parent_open(*args, **kwargs) -> int:
+        nonlocal parent_descriptor
+        descriptor = original_open(*args, **kwargs)
+        if args[0] == root.parent:
+            parent_descriptor = descriptor
+        return descriptor
+
+    def fail_parent_close(descriptor: int) -> None:
+        original_close(descriptor)
+        if descriptor == parent_descriptor:
+            raise OSError("close failed")
+
+    monkeypatch.setattr(os, "open", capture_parent_open)
+    monkeypatch.setattr(os, "close", fail_parent_close)
+    with pytest.raises(OSError, match="close failed"):
+        target_base._remove_tree_leaf_without_chmod_files(root)
+    assert not root.exists()
+
+
 def test_bundle_redeploy_is_exact_and_preserves_sibling(tmp_path: Path) -> None:
     target = ClaudeTarget("claude", tmp_path / "claude")
     target.deploy_bundle("ponytail", b"old")
@@ -160,6 +673,7 @@ def test_failed_bundle_swap_restores_previous_tree(
         "extra-file",
         "extra-directory",
         "file-link",
+        "file-hardlink",
         "root-link",
         "special",
     ],
@@ -190,6 +704,8 @@ def test_bundle_match_rejects_exact_tree_drift(
     elif mutation == "file-link":
         license_path.unlink()
         license_path.symlink_to(tmp_path / "outside")
+    elif mutation == "file-hardlink":
+        os.link(license_path, tmp_path / "outside-license")
     elif mutation == "root-link":
         shutil.rmtree(destination)
         outside = tmp_path / "outside"
