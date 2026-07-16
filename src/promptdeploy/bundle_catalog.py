@@ -19,7 +19,12 @@ import yaml
 from .bundles import BundleConfig, BundleSchemaError
 from .filetags import parse_filetags
 from .frontmatter import FrontmatterError, parse_frontmatter
-from .imported_tree import BundleSnapshotSession, ImportedTreeEntry
+from .imported_tree import (
+    BundleSnapshotSession,
+    ImportedTreeEntry,
+    ImportedTreeSnapshot,
+    validate_imported_tree_snapshot,
+)
 from .manifest import ManifestSource
 from .ponytail import (
     GPTEL_PRESET_TRANSFORM,
@@ -781,20 +786,55 @@ def _frame(digest: _Digest, value: bytes) -> None:
     digest.update(value)
 
 
+def imported_tree_snapshot(item: SourceItem) -> ImportedTreeSnapshot:
+    """Return one tree snapshot consistent with its logical provenance."""
+    source = item.provenance.source
+    if source is None:
+        raise BundleCatalogError("primary item does not have an imported tree")
+    snapshot = item.imported_tree
+    if snapshot is None:
+        raise BundleCatalogError("imported item lacks its accepted tree snapshot")
+    if snapshot.logical_root != source.path:
+        raise BundleCatalogError(
+            "imported item snapshot root does not match its provenance"
+        )
+    if item.provenance.tree_sha256 != snapshot.tree_sha256:
+        raise BundleCatalogError(
+            "imported item tree snapshot does not match its provenance"
+        )
+    validate_imported_tree_snapshot(snapshot)
+    return snapshot
+
+
+def imported_skill_snapshot(item: SourceItem) -> ImportedTreeSnapshot:
+    """Return one internally consistent imported skill snapshot."""
+    if item.provenance.source is None or item.item_type != "skill":
+        raise BundleCatalogError("item is not an imported skill")
+    snapshot = imported_tree_snapshot(item)
+    skill_content = _skill_md(snapshot.entries, snapshot.logical_root)
+    if skill_content != item.content:
+        raise BundleCatalogError(
+            "imported skill content does not match its accepted tree snapshot"
+        )
+    if item.provenance.input_sha256 != _content_sha256(item.content):
+        raise BundleCatalogError(
+            "imported skill content digest does not match its provenance"
+        )
+    return snapshot
+
+
 def compute_imported_source_hash(item: SourceItem) -> str:
     """Domain-frame payload identity and logical provenance for an imported item."""
     source = item.provenance.source
     if source is None:
         raise BundleCatalogError("primary items do not have imported source hashes")
     snapshot = item.imported_tree
-    if snapshot is not None:
-        if item.provenance.tree_sha256 != snapshot.tree_sha256:
-            raise BundleCatalogError(
-                "imported item tree snapshot does not match its provenance"
-            )
+    if item.item_type == "skill":
+        snapshot = imported_skill_snapshot(item)
         payload_hash = snapshot.tree_sha256
-    elif item.item_type == "skill":
-        raise BundleCatalogError("imported skill lacks its accepted tree snapshot")
+    elif snapshot is not None:
+        snapshot = imported_tree_snapshot(item)
+        payload_hash = snapshot.tree_sha256
     else:
         payload_hash = _content_sha256(item.content)
     digest = hashlib.sha256()

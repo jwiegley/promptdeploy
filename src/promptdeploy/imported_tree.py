@@ -626,6 +626,75 @@ def framed_tree_sha256(entries: tuple[ImportedTreeEntry, ...]) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
+def validate_imported_tree_snapshot(snapshot: ImportedTreeSnapshot) -> None:
+    """Reject a self-hashed snapshot whose topology cannot be materialized."""
+    if snapshot.tree_sha256 != framed_tree_sha256(snapshot.entries):
+        raise ImportedSourceError("snapshot digest does not match its entries")
+    if len(snapshot.entries) > MAX_TREE_ENTRIES:
+        raise ImportedSourceError("snapshot exceeds the entry limit")
+
+    entries = {entry.relative_path: entry for entry in snapshot.entries}
+    total_bytes = 0
+    for entry in snapshot.entries:
+        if entry.content is not None:
+            if len(entry.content) > MAX_FILE_BYTES:
+                raise ImportedSourceError("snapshot file exceeds the size limit")
+            total_bytes += len(entry.content)
+            if total_bytes > MAX_TREE_BYTES:
+                raise ImportedSourceError("snapshot exceeds the byte limit")
+        normalized = _normalize_mode(
+            entry.normalized_mode,
+            directory=entry.kind == "directory",
+        )
+        if normalized != entry.normalized_mode:
+            raise ImportedSourceError("snapshot entry mode is not normalized")
+        if entry.relative_path == ".":
+            continue
+        parent_path = (
+            entry.relative_path.rsplit("/", 1)[0] if "/" in entry.relative_path else "."
+        )
+        parent = entries.get(parent_path)
+        if parent is None:
+            raise ImportedSourceError("snapshot entry parent is missing")
+        if parent.kind != "directory":
+            raise ImportedSourceError(
+                "snapshot entry is nested beneath a non-directory"
+            )
+
+    for entry in snapshot.entries:
+        if entry.kind != "link":
+            continue
+        assert entry.link_target is not None
+        target = entries.get(entry.link_target)
+        if target is None:
+            raise ImportedSourceError("snapshot link target is missing")
+        visited = {entry.relative_path}
+        expansions = 0
+        while target.kind == "link":
+            expansions += 1
+            if expansions > MAX_LINK_EXPANSIONS:
+                raise ImportedSourceError("snapshot link expansion limit exceeded")
+            if target.relative_path in visited:
+                raise ImportedSourceError("snapshot contains a link cycle")
+            visited.add(target.relative_path)
+            assert target.link_target is not None
+            next_target = entries.get(target.link_target)
+            if next_target is None:
+                raise ImportedSourceError("snapshot link target is missing")
+            target = next_target
+        if target.kind != "file":
+            raise ImportedSourceError(
+                "snapshot link target must resolve to a regular file"
+            )
+        if (
+            entry.content != target.content
+            or entry.normalized_mode != target.normalized_mode
+        ):
+            raise ImportedSourceError(
+                "snapshot link payload does not match its regular-file target"
+            )
+
+
 class BundleSnapshotSession:
     """Capture all selected payloads from one held bundle-root descriptor."""
 

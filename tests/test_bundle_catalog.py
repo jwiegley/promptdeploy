@@ -785,12 +785,10 @@ def test_imported_hash_uses_payload_and_all_provenance_fields(
     assert (
         catalog.compute_imported_source_hash(replace(skill, name="other")) != original
     )
-    assert (
+    with pytest.raises(catalog.BundleCatalogError, match="content does not match"):
         catalog.compute_imported_source_hash(
-            replace(skill, content=skill.content + b"ignored for tree")
+            replace(skill, content=skill.content + b"not the snapshot")
         )
-        == original
-    )
     source = skill.provenance.source
     assert source is not None
     changed_source = replace(source, version="4.8.5")
@@ -809,6 +807,49 @@ def test_imported_hash_uses_payload_and_all_provenance_fields(
         catalog.compute_imported_source_hash(replace(skill, imported_tree=None))
 
 
+def test_imported_skill_snapshot_rejects_split_brain_state(
+    items: tuple[SourceItem, ...],
+) -> None:
+    skill = items[1]
+    snapshot = catalog.imported_skill_snapshot(skill)
+    wrong_root = ImportedTreeSnapshot(
+        "skills/other",
+        snapshot.entries,
+        snapshot.tree_sha256,
+    )
+    with pytest.raises(catalog.BundleCatalogError, match="root does not match"):
+        catalog.imported_skill_snapshot(replace(skill, imported_tree=wrong_root))
+
+    source = skill.provenance.source
+    assert source is not None
+    wrong_digest = replace(
+        skill,
+        provenance=SourceProvenance.imported(
+            source,
+            input_sha256="sha256:" + "0" * 64,
+            tree_sha256=skill.provenance.tree_sha256,
+        ),
+    )
+    with pytest.raises(catalog.BundleCatalogError, match="content digest"):
+        catalog.imported_skill_snapshot(wrong_digest)
+    wrong_tree = replace(
+        skill,
+        provenance=SourceProvenance.imported(
+            source,
+            input_sha256=skill.provenance.input_sha256,
+            tree_sha256="sha256:" + "0" * 64,
+        ),
+    )
+    with pytest.raises(catalog.BundleCatalogError, match="tree snapshot"):
+        catalog.imported_skill_snapshot(wrong_tree)
+    with pytest.raises(catalog.BundleCatalogError, match="not an imported skill"):
+        catalog.imported_skill_snapshot(_primary())
+    with pytest.raises(catalog.BundleCatalogError, match="primary item"):
+        catalog.imported_tree_snapshot(_primary())
+    with pytest.raises(catalog.BundleCatalogError, match="not an imported skill"):
+        catalog.imported_skill_snapshot(items[0])
+
+
 def test_imported_hash_uses_snapshot_for_every_tree_backed_item(
     items: tuple[SourceItem, ...],
 ) -> None:
@@ -822,16 +863,27 @@ def test_imported_hash_uses_snapshot_for_every_tree_backed_item(
     snapshot = ImportedTreeSnapshot(
         "runtime/ponytail", entries, framed_tree_sha256(entries)
     )
+    tree_source = replace(source, path=snapshot.logical_root)
     tree_backed = replace(
         support,
         imported_tree=snapshot,
         provenance=SourceProvenance.imported(
-            source,
+            tree_source,
             input_sha256=support.provenance.input_sha256,
             tree_sha256=snapshot.tree_sha256,
         ),
     )
     original = catalog.compute_imported_source_hash(tree_backed)
+
+    wrong_root = ImportedTreeSnapshot(
+        "runtime/other",
+        snapshot.entries,
+        snapshot.tree_sha256,
+    )
+    with pytest.raises(catalog.BundleCatalogError, match="root does not match"):
+        catalog.compute_imported_source_hash(
+            replace(tree_backed, imported_tree=wrong_root)
+        )
 
     changed_entries = (
         entries[0],
@@ -846,7 +898,7 @@ def test_imported_hash_uses_snapshot_for_every_tree_backed_item(
         tree_backed,
         imported_tree=changed_snapshot,
         provenance=SourceProvenance.imported(
-            source,
+            tree_source,
             input_sha256=support.provenance.input_sha256,
             tree_sha256=changed_snapshot.tree_sha256,
         ),

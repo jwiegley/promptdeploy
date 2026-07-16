@@ -8,11 +8,52 @@ import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, TypeAlias
 
+from ..imported_tree import (
+    ImportedSourceError,
+    ImportedTreeSnapshot,
+    validate_imported_tree_snapshot,
+)
 from ..skilltree import scan_skill_source
 
 ANVIL_MCP_NAMES = frozenset({"anvil", "anvil-tools"})
+SkillTreeSource: TypeAlias = Path | ImportedTreeSnapshot
+InstalledTreeEntry: TypeAlias = tuple[
+    Literal["directory", "file"], str, int, bytes | None
+]
+InstalledTreeSnapshot: TypeAlias = tuple[InstalledTreeEntry, ...]
+
+_IMPORTED_FILE_FLAGS = (
+    os.O_WRONLY
+    | os.O_CREAT
+    | os.O_EXCL
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+)
+_IMPORTED_DIRECTORY_FLAGS = (
+    os.O_RDONLY
+    | getattr(os, "O_DIRECTORY", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+)
+_INSTALLED_FILE_FLAGS = (
+    os.O_RDONLY
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_NONBLOCK", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+)
+_INSTALLED_DIRECTORY_FLAGS = (
+    os.O_RDONLY
+    | getattr(os, "O_DIRECTORY", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_CLOEXEC", 0)
+)
+_INSTALLED_READ_CHUNK = 128 * 1024
+
+
+class _InstalledTreeMismatch(Exception):
+    """A target tree differs from its immutable expected view."""
 
 
 def _make_tree_owner_writable(root: Path) -> None:
@@ -50,7 +91,7 @@ def _replace_read_only_file(path: Path, contents: bytes) -> None:
         raise
 
 
-def materialize_skill_tree(
+def _materialize_primary_skill_tree(
     source_dir: Path,
     destination: Path,
     transform_skill_md: Callable[[bytes], bytes],
@@ -70,8 +111,104 @@ def materialize_skill_tree(
         _replace_read_only_file(skill_md, transformed)
 
 
+def _expected_imported_skill_tree(
+    source: ImportedTreeSnapshot,
+    transform_skill_md: Callable[[bytes], bytes],
+) -> InstalledTreeSnapshot:
+    """Derive every target node and byte before filesystem mutation."""
+    validate_imported_tree_snapshot(source)
+    expected: list[InstalledTreeEntry] = []
+    found_skill_md = False
+    for entry in source.entries:
+        if entry.kind == "directory":
+            expected.append(
+                ("directory", entry.relative_path, entry.normalized_mode, None)
+            )
+            continue
+        assert entry.content is not None
+        contents = entry.content
+        if entry.relative_path == "SKILL.md":
+            found_skill_md = True
+            contents = transform_skill_md(contents)
+            if not isinstance(contents, bytes):
+                raise TypeError("skill transform must return bytes")
+        expected.append(("file", entry.relative_path, entry.normalized_mode, contents))
+    if not found_skill_md:
+        raise ImportedSourceError("imported skill snapshot lacks root SKILL.md")
+    return tuple(sorted(expected, key=lambda value: value[1]))
+
+
+def _write_all(descriptor: int, contents: bytes) -> None:
+    remaining = memoryview(contents)
+    while remaining:
+        written = os.write(descriptor, remaining)
+        if written <= 0:
+            raise OSError("snapshot file write made no progress")
+        remaining = remaining[written:]
+
+
+def _materialize_imported_skill_tree(
+    source: ImportedTreeSnapshot,
+    destination: Path,
+    transform_skill_md: Callable[[bytes], bytes],
+) -> None:
+    expected = _expected_imported_skill_tree(source, transform_skill_md)
+    directories = [entry for entry in expected if entry[0] == "directory"]
+    files = [entry for entry in expected if entry[0] == "file"]
+    directory_order = sorted(
+        directories,
+        key=lambda entry: (entry[1].count("/"), entry[1]),
+    )
+    created_destination = False
+    try:
+        os.mkdir(destination, 0o700)
+        created_destination = True
+        for _kind, relative_path, _mode, _contents in directory_order:
+            if relative_path != ".":
+                os.mkdir(destination / relative_path, 0o700)
+        for _kind, relative_path, mode, contents in files:
+            assert contents is not None
+            descriptor = os.open(
+                destination / relative_path,
+                _IMPORTED_FILE_FLAGS,
+                mode,
+            )
+            try:
+                _write_all(descriptor, contents)
+                os.fchmod(descriptor, mode)
+            finally:
+                os.close(descriptor)
+        for _kind, relative_path, mode, _contents in reversed(directory_order):
+            directory = (
+                destination if relative_path == "." else destination / relative_path
+            )
+            descriptor = os.open(directory, _IMPORTED_DIRECTORY_FLAGS)
+            try:
+                os.fchmod(descriptor, mode)
+            finally:
+                os.close(descriptor)
+    except BaseException:
+        if created_destination:
+            with contextlib.suppress(OSError):
+                _make_tree_owner_writable(destination)
+            shutil.rmtree(destination, ignore_errors=True)
+        raise
+
+
+def materialize_skill_tree(
+    source: SkillTreeSource,
+    destination: Path,
+    transform_skill_md: Callable[[bytes], bytes],
+) -> None:
+    """Materialize a primary path or an already accepted imported snapshot."""
+    if isinstance(source, ImportedTreeSnapshot):
+        _materialize_imported_skill_tree(source, destination, transform_skill_md)
+        return
+    _materialize_primary_skill_tree(source, destination, transform_skill_md)
+
+
 def install_skill_tree_atomically(
-    source_dir: Path,
+    source: SkillTreeSource,
     destination: Path,
     transform_skill_md: Callable[[bytes], bytes],
 ) -> None:
@@ -83,7 +220,7 @@ def install_skill_tree_atomically(
     had_destination = destination.is_symlink() or destination.exists()
     cleanup_temporary = True
     try:
-        materialize_skill_tree(source_dir, staged, transform_skill_md)
+        materialize_skill_tree(source, staged, transform_skill_md)
         if had_destination:
             os.replace(destination, backup)
         try:
@@ -112,11 +249,11 @@ def _raise_walk_error(error: OSError) -> None:
 
 def _skill_tree_snapshot(
     root: Path,
-) -> tuple[tuple[str, str, int, bytes | None], ...] | None:
+) -> InstalledTreeSnapshot | None:
     """Return a strict recursive snapshot, or None for unsafe node types."""
     if root.is_symlink() or not root.is_dir():
         return None
-    entries: list[tuple[str, str, int, bytes | None]] = []
+    entries: list[InstalledTreeEntry] = []
     try:
         for current, directories, files in os.walk(
             root, followlinks=False, onerror=_raise_walk_error
@@ -153,16 +290,194 @@ def _skill_tree_snapshot(
     return tuple(entries)
 
 
+def _require_installed_match(condition: bool) -> None:
+    if not condition:
+        raise _InstalledTreeMismatch
+
+
+def _installed_stat_key(value: os.stat_result) -> tuple[int, ...]:
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_mode,
+        value.st_nlink,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
+
+
+def _read_expected_installed_file(
+    parent: int,
+    name: str,
+    mode: int,
+    expected: bytes,
+) -> None:
+    before = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    _require_installed_match(
+        stat.S_ISREG(before.st_mode)
+        and stat.S_IMODE(before.st_mode) == mode
+        and before.st_size == len(expected)
+    )
+    descriptor = os.open(name, _INSTALLED_FILE_FLAGS, dir_fd=parent)
+    try:
+        opened = os.fstat(descriptor)
+        _require_installed_match(
+            stat.S_ISREG(opened.st_mode)
+            and (before.st_dev, before.st_ino) == (opened.st_dev, opened.st_ino)
+            and _installed_stat_key(before) == _installed_stat_key(opened)
+        )
+        chunks: list[bytes] = []
+        captured = 0
+        while captured < len(expected):
+            chunk = os.read(
+                descriptor,
+                min(_INSTALLED_READ_CHUNK, len(expected) - captured),
+            )
+            _require_installed_match(bool(chunk))
+            chunks.append(chunk)
+            captured += len(chunk)
+        extra = os.read(descriptor, 1)
+        _require_installed_match(not extra and b"".join(chunks) == expected)
+        after = os.fstat(descriptor)
+        after_path = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        _require_installed_match(
+            _installed_stat_key(opened) == _installed_stat_key(after)
+            and _installed_stat_key(before) == _installed_stat_key(after_path)
+        )
+    finally:
+        os.close(descriptor)
+
+
+def _compare_installed_directory(
+    directory: int,
+    relative_path: str,
+    expected: dict[str, InstalledTreeEntry],
+    children: dict[str, tuple[InstalledTreeEntry, ...]],
+    seen: list[int],
+) -> None:
+    before = os.fstat(directory)
+    expected_directory = expected[relative_path]
+    _require_installed_match(
+        stat.S_ISDIR(before.st_mode)
+        and stat.S_IMODE(before.st_mode) == expected_directory[2]
+    )
+
+    names: list[str] = []
+    with os.scandir(directory) as iterator:
+        for entry in iterator:
+            seen[0] += 1
+            _require_installed_match(seen[0] <= len(expected))
+            names.append(entry.name)
+    expected_children = children.get(relative_path, ())
+    expected_names = [entry[1].rsplit("/", 1)[-1] for entry in expected_children]
+    _require_installed_match(sorted(names) == expected_names)
+
+    for expected_child in expected_children:
+        kind, child_relative, mode, content = expected_child
+        name = child_relative.rsplit("/", 1)[-1]
+        if kind == "file":
+            assert content is not None
+            _read_expected_installed_file(directory, name, mode, content)
+            continue
+
+        child_before = os.stat(name, dir_fd=directory, follow_symlinks=False)
+        _require_installed_match(
+            stat.S_ISDIR(child_before.st_mode)
+            and stat.S_IMODE(child_before.st_mode) == mode
+        )
+        child = os.open(name, _INSTALLED_DIRECTORY_FLAGS, dir_fd=directory)
+        try:
+            child_opened = os.fstat(child)
+            _require_installed_match(
+                stat.S_ISDIR(child_opened.st_mode)
+                and (child_before.st_dev, child_before.st_ino)
+                == (child_opened.st_dev, child_opened.st_ino)
+                and _installed_stat_key(child_before)
+                == _installed_stat_key(child_opened)
+            )
+            _compare_installed_directory(
+                child,
+                child_relative,
+                expected,
+                children,
+                seen,
+            )
+            child_after = os.fstat(child)
+            child_after_path = os.stat(
+                name,
+                dir_fd=directory,
+                follow_symlinks=False,
+            )
+            _require_installed_match(
+                _installed_stat_key(child_opened) == _installed_stat_key(child_after)
+                and _installed_stat_key(child_before)
+                == _installed_stat_key(child_after_path)
+            )
+        finally:
+            os.close(child)
+
+    after = os.fstat(directory)
+    _require_installed_match(_installed_stat_key(before) == _installed_stat_key(after))
+
+
+def _installed_tree_matches_expected(
+    root: Path,
+    expected_tree: InstalledTreeSnapshot,
+) -> bool:
+    """Compare through held descriptors, bounded by the immutable expectation."""
+    expected = {entry[1]: entry for entry in expected_tree}
+    children_lists: dict[str, list[InstalledTreeEntry]] = {}
+    for entry in expected_tree:
+        if entry[1] == ".":
+            continue
+        parent = entry[1].rsplit("/", 1)[0] if "/" in entry[1] else "."
+        children_lists.setdefault(parent, []).append(entry)
+    children = {
+        parent: tuple(sorted(entries, key=lambda entry: entry[1]))
+        for parent, entries in children_lists.items()
+    }
+
+    descriptor: int | None = None
+    try:
+        before = root.stat(follow_symlinks=False)
+        descriptor = os.open(root, _INSTALLED_DIRECTORY_FLAGS)
+        opened = os.fstat(descriptor)
+        _require_installed_match(
+            stat.S_ISDIR(before.st_mode)
+            and stat.S_ISDIR(opened.st_mode)
+            and (before.st_dev, before.st_ino) == (opened.st_dev, opened.st_ino)
+            and _installed_stat_key(before) == _installed_stat_key(opened)
+        )
+        _compare_installed_directory(descriptor, ".", expected, children, [1])
+        after = os.fstat(descriptor)
+        after_path = root.stat(follow_symlinks=False)
+        _require_installed_match(
+            _installed_stat_key(opened) == _installed_stat_key(after)
+            and _installed_stat_key(before) == _installed_stat_key(after_path)
+        )
+        return True
+    except (OSError, _InstalledTreeMismatch):
+        return False
+    finally:
+        if descriptor is not None:
+            with contextlib.suppress(OSError):
+                os.close(descriptor)
+
+
 def transformed_skill_tree_matches(
-    source_dir: Path,
+    source: SkillTreeSource,
     destination: Path,
     transform_skill_md: Callable[[bytes], bytes],
 ) -> bool:
     """Compare a deployed skill with the complete target-specific rendering."""
+    if isinstance(source, ImportedTreeSnapshot):
+        expected_tree = _expected_imported_skill_tree(source, transform_skill_md)
+        return _installed_tree_matches_expected(destination, expected_tree)
     with tempfile.TemporaryDirectory(prefix="promptdeploy-skill-verify-") as temp:
-        expected = Path(temp) / "skill"
-        materialize_skill_tree(source_dir, expected, transform_skill_md)
-        expected_snapshot = _skill_tree_snapshot(expected)
+        expected_path = Path(temp) / "skill"
+        materialize_skill_tree(source, expected_path, transform_skill_md)
+        expected_snapshot = _skill_tree_snapshot(expected_path)
         deployed_snapshot = _skill_tree_snapshot(destination)
         return expected_snapshot is not None and expected_snapshot == deployed_snapshot
 

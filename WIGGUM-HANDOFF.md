@@ -216,12 +216,45 @@ recursive fess audit. Its final gates pass: 2,212 tests at 100% branch coverage,
 strict mypy over 78 source files, Ruff format/lint, package build, Home Manager
 module and activation checks, and the complete seven-check `nix flake check`.
 
+The first snapshot-only deployment sub-slice is implemented in the current
+work unit, while the legacy imported-item deploy guards remain fail-closed:
+
+- public imported snapshots are revalidated for per-file, tree-byte, entry,
+  link-expansion, normalized-mode, topology, digest, and link-payload
+  invariants before any target write;
+- a central catalog resolver binds every tree snapshot to its exact logical
+  manifest provenance, and imported skills additionally bind the captured
+  root `SKILL.md` bytes and digest to `SourceItem.content`;
+- imported skill trees materialize only from captured nodes, preserving exact
+  modes and empty directories, dereferencing captured links to regular files,
+  and reusing the existing atomic swap/restore transaction without changing
+  the primary path;
+- installed imported trees are compared through an expectation-bounded,
+  descriptor-held walk using `O_NOFOLLOW`, `O_NONBLOCK`, exact size/mode/kind
+  checks, bounded reads, and pre/open/post/path identity audits.
+
+The independent API and security reviews are
+`/var/tmp/wg-ponytail-20260715/materializer-api-review/report.md` and
+`/var/tmp/wg-ponytail-20260715/materializer-security-review/report.md`. Their
+three findings are resolved: all tree-backed items now enforce logical-root
+provenance, snapshot revalidation enforces the scanner's per-file ceiling, and
+target verification no longer performs an unbounded path-racy walk. The clean
+security remediation review is
+`/var/tmp/wg-ponytail-20260715/materializer-security-review/remediation.md`;
+the API reviewer also returned a clean remediation verdict. Final gates pass:
+2,249 tests at 100% branch coverage, strict mypy over 79 source files, Ruff
+format/lint, package build, Home Manager module and activation checks, and the
+complete seven-check `nix flake check`.
+
 Next:
 
-1. integrate the composed catalog with deploy/status/validate/verify using
-   snapshot-only imported-tree hashing and materialization, target-specific
-   dependency closure, manifest provenance, and `verify --target-root`;
-2. prove first deploy, no-op convergence, pin drift, source mutation/deletion,
+1. add target-owned support-bundle trees, target/remote imported-skill
+   interfaces, bundle type/category plumbing, and the pure operation-catalog
+   selection layer;
+2. atomically activate the composed catalog in deploy/status/validate/verify
+   with target-specific dependency closure, manifest provenance, global bundle
+   bindings, and `verify --target-root`;
+3. prove first deploy, no-op convergence, pin drift, source mutation/deletion,
    exact removal, and rollback in isolated target roots before enabling the
    root declaration.
 
