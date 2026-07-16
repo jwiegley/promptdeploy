@@ -99,7 +99,8 @@ must report that missing capability rather than silently claiming success.
 Two upstream behaviors are deliberately corrected by versioned adapter
 transforms. `ponytail-instructions.js` contains an embedded fallback copy of
 the main rules; the managed transform removes that fallback and makes an
-unreadable selected `skills/ponytail/SKILL.md` fail the runtime health probe.
+unreadable selected `skills/ponytail/SKILL.md` fail the rendered-snapshot
+conformance probe.
 `ponytail-mode-tracker.js` persists the internal `review` mode; the managed
 transform recognizes the one-shot review invocation without changing the
 ambient `lite`/`full`/`ultra`/`off` state. Both transforms require the exact
@@ -107,10 +108,15 @@ reviewed input digest and have semantic golden tests, so a pin update cannot
 silently carry the patch onto changed upstream code.
 
 Malformed client events retain upstream's fail-open/no-session-block behavior.
-That recovery is distinct from source or capability health: deployment and
-strict verification execute the selected instruction read, state write/read,
-event-output, and relative-module paths and fail if any required path is
-unhealthy.
+That recovery is distinct from source or capability conformance. The dormant
+snapshot probe executes the selected instruction read, state write/read,
+event-output, and relative-module paths only against private copies of the
+pinned retained artifact. It does not inspect deployed paths, registration,
+target Node, trust state, or reachability. The future installed-target
+transaction must repeat those checks through the target's real execution path
+and fail if any required capability is unavailable. The snapshot sequence
+checks default subagent injection; separate runtime goldens cover matcher
+match, mismatch, invalid-regex, and malformed-input behavior.
 
 ## Target and fleet mapping
 
@@ -320,8 +326,11 @@ the managed runtime; Codex commands additionally set a writable managed
 `PLUGIN_DATA` path. POSIX and PowerShell forms, timeouts, matchers, status
 messages, BOM/CRLF handling, and the non-closing-stdin fail-safe are preserved.
 The rendered instruction builder and mode tracker apply the two digest-guarded
-corrections above; runtime verification proves canonical instruction reads and
-that `ponytail-review` leaves the prior ambient mode unchanged.
+corrections above. The dormant rendered-snapshot probe proves canonical
+instruction reads and that `ponytail-review` leaves its seeded `full` mode
+unchanged in a private local copy; installed-target verification remains part
+of the future transaction layer. Broader semantic goldens cover every prior
+ambient mode.
 
 OpenCode receives the native relative layout and one managed plugin path. The
 target's remote rsync includes must cover the runtime directory. Removing the
@@ -410,8 +419,8 @@ path or a registration pointing at partial content.
   will execute the hooks.
 - Verify the canonical skill read, relative module graph, representative hook
   output, state write/read, and exact registration. Upstream fail-open handling
-  of a malformed individual event does not turn a failed health probe into a
-  successful full tier.
+  of a malformed individual event does not turn a failed installed-target
+  capability probe into a successful full tier.
 
 ## Known upstream risks retained with provenance
 

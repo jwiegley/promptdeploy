@@ -160,3 +160,51 @@ def test_review_is_one_shot_and_normal_switches_still_persist(
     )
     assert switched.returncode == 0
     assert state.read_text() == "lite"
+
+
+@pytest.mark.parametrize(
+    ("matcher", "payload", "injects"),
+    [
+        ("^general$", b'{"agent_type":"general"}', True),
+        ("^general$", b'{"agent_type":"explore"}', False),
+        ("[", b'{"agent_type":"explore"}', True),
+        ("^general$", b"{", True),
+    ],
+)
+def test_subagent_matcher_is_scoped_and_fails_open(
+    claude_runtime: ImportedTreeSnapshot,
+    tmp_path: Path,
+    matcher: str,
+    payload: bytes,
+    injects: bool,
+) -> None:
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    _materialize(claude_runtime, runtime)
+    node = shutil.which("node")
+    assert node is not None
+    plugin_data = tmp_path / "plugin-data"
+    plugin_data.mkdir()
+    (plugin_data / ".ponytail-active").write_text("full")
+    env = _node_environment(tmp_path)
+    env["PLUGIN_DATA"] = str(plugin_data)
+    env["PONYTAIL_SUBAGENT_MATCHER"] = matcher
+
+    result = subprocess.run(
+        [node, str(runtime / "hooks" / "ponytail-subagent.js")],
+        input=payload,
+        env=env,
+        capture_output=True,
+        check=False,
+        timeout=2,
+    )
+    assert result.returncode == 0
+    assert not result.stderr
+    if not injects:
+        assert not result.stdout
+        return
+    output = json.loads(result.stdout)
+    assert output["systemMessage"] == "PONYTAIL:FULL"
+    hook = output["hookSpecificOutput"]
+    assert hook["hookEventName"] == "SubagentStart"
+    assert "PONYTAIL MODE ACTIVE — level: full" in hook["additionalContext"]
