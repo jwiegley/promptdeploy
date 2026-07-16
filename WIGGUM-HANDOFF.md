@@ -1,10 +1,17 @@
 # Ponytail Wiggum handoff
 
+> **Authoritative scope correction (2026-07-16):** Read
+> `WIGGUM-SCOPE.md` first. The user rejected the mandatory runtime transaction
+> described below as scope creep. Existing commits are preserved, but the
+> active task is now only the proportional six-skill integration. The older
+> runtime history in this file is retained as evidence, not as remaining work.
+
 ## Goal and frozen criteria
 
-The active goal is the full ponytail-to-promptdeploy integration recorded in
-`WIGGUM-PLAN.md`. Read that file in full before resuming. Do not reduce the
-scope to copying one skill or configuring one client.
+The active goal is the proportional Ponytail integration recorded in
+`WIGGUM-SCOPE.md`: one reproducible pin, six complete skill trees, native skill
+mapping where supported, six GPTel prompt adapters, and an easy current-host
+operator path. Runtime hooks and mode persistence are optional follow-up work.
 
 ## Current state
 
@@ -705,21 +712,17 @@ Home Manager module/activation, and all seven flake checks. Host-independent
 capability tests exercise both Linux's portable `chmod` bootstrap and the
 advertised no-follow form regardless of the current runner.
 
-Next:
+Next, under the corrected scope:
 
-1. implement the strict local-Claude settings snapshot/render/CAS boundary from
-   `/var/tmp/wg-ponytail-20260715/strict-settings-slice/report.md`, then add the
-   managed-runtime transaction: exact rendered receipt threading,
-   content-addressed no-replace publication, installed-path health, collision
-   detection, rollback, journal recovery, receipt-bound old-tree capture and
-   removal, and fault injection;
-2. add local Codex activation, stable unsynced `PLUGIN_DATA`, and the remote
-   two-phase preseed/health/baseline-CAS switch using rendered live host paths;
-3. add native OpenCode registration and its remote transport/health contract;
-4. bind the pinned flake source through the package and Home Manager activation
-   path, enable the root declaration, finish operator/update documentation and
-   reference parity, drain observations, restack, and complete final audits and
-   final fess before any separately authorized live rollout.
+1. expose the pinned Nix source to the packaged promptdeploy CLI and enable the
+   root Ponytail bundle declaration;
+2. add OpenCode to the six generic skill exports while retaining the existing
+   six GPTel projections;
+3. document and prove the Ponytail-only isolated preview/deploy/verify path;
+4. deploy and strictly verify only the current host's `local` target group;
+5. run the full gate, independent final audit, observation cleanup, and local
+   rebase. Do not resume settings CAS, recovery, runtime publication, lifecycle
+   hooks, mode persistence, or remote rollout in this task.
 
 ## Gate attempt counts
 

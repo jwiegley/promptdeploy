@@ -1,4 +1,10 @@
-# Ponytail integration plan (frozen)
+# Ponytail integration plan (historical, superseded)
+
+> **Scope correction (2026-07-16):** The user rejected this runtime-heavy plan
+> as scope creep. `WIGGUM-SCOPE.md` is now the authoritative frozen completion
+> contract. This file remains only to preserve the design history of already
+> committed work; none of its lifecycle/runtime requirements enlarges the
+> current task.
 
 This plan records the full Definition of Done for the user request below. It
 may be annotated with evidence, but its requirements must not be weakened or
