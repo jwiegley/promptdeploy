@@ -146,6 +146,18 @@ The second Phase-1 slice is implemented and focused gates are green:
 - 1,963 tests pass at 100% branch coverage and strict mypy passes 69 source
   files.
 
+Its required independent audit is
+`/var/tmp/wg-ponytail-20260715/fess-88ee2fe/report.md`. The audit reproduced
+two exact-state defects: strict loading accepted existing but incomplete
+manifests, and both readers silently accepted duplicate JSON keys. The
+current remediation rejects an existing exact manifest without an `items`
+object or an explicit per-item `source_hash`, rejects duplicate keys at every
+JSON object depth, and preserves the documented missing-version legacy-v1
+migration case. The Nix pytest gate now passes 1,976 tests at 100% branch
+coverage, strict mypy passes 69 source files, and the full seven-check flake
+gate is green. This is a fess-fix-only unit and therefore does not receive a
+recursive audit.
+
 After committing and auditing the manifest slice:
 
 1. add the strict adapter manifest, provenance-bearing composite discovery,

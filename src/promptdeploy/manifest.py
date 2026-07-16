@@ -45,6 +45,19 @@ _SOURCE_FIELDS = frozenset(
 )
 
 
+class _DuplicateManifestKey(ValueError):
+    """A JSON object repeated a key and is therefore ambiguous."""
+
+
+def _unique_json_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value: dict[str, object] = {}
+    for key, item in pairs:
+        if key in value:
+            raise _DuplicateManifestKey(f"duplicate manifest key {key!r}")
+        value[key] = item
+    return value
+
+
 @dataclass(frozen=True)
 class ManifestSource:
     """Logical origin of one imported manifest item.
@@ -380,7 +393,12 @@ def load_manifest_strict(manifest_path: Path) -> Manifest:
     if not manifest_path.exists():
         return Manifest()
     try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        data = json.loads(
+            manifest_path.read_text(encoding="utf-8"),
+            object_pairs_hook=_unique_json_object,
+        )
+    except _DuplicateManifestKey as exc:
+        raise ValueError("Exact deployment refuses duplicate manifest keys") from exc
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise ValueError("Exact deployment requires a readable manifest") from exc
     if not isinstance(data, dict):
@@ -396,7 +414,9 @@ def load_manifest_strict(manifest_path: Path) -> Manifest:
         ) from exc
     if version not in _SUPPORTED_MANIFEST_VERSIONS:
         raise ValueError("Exact deployment refuses an unsupported manifest version")
-    raw_items = raw.get("items", {})
+    if "items" not in raw:
+        raise ValueError("Exact deployment requires object manifest items")
+    raw_items = raw["items"]
     if not isinstance(raw_items, dict):
         raise ValueError("Exact deployment requires object manifest items")
     allowed_item_fields = (
@@ -408,6 +428,10 @@ def load_manifest_strict(manifest_path: Path) -> Manifest:
         for name, values in entries.items():
             if not isinstance(name, str) or not isinstance(values, dict):
                 raise ValueError("Exact deployment requires object manifest entries")
+            if "source_hash" not in values:
+                raise ValueError(
+                    "Exact deployment requires source_hash on every manifest item"
+                )
             if set(values) - allowed_item_fields:
                 raise ValueError(
                     "Exact deployment refuses unknown manifest item fields"
@@ -425,8 +449,16 @@ def load_manifest(manifest_path: Path) -> Manifest:
     if not manifest_path.exists():
         return Manifest()
     try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        data = json.loads(
+            manifest_path.read_text(encoding="utf-8"),
+            object_pairs_hook=_unique_json_object,
+        )
+    except (
+        OSError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        _DuplicateManifestKey,
+    ) as exc:
         return _fallback_manifest(manifest_path, str(exc))
     if not isinstance(data, dict):
         return _fallback_manifest(manifest_path, "top level is not a JSON object")

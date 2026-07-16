@@ -151,6 +151,72 @@ def test_missing_version_remains_strict_legacy_compatible(tmp_path: Path) -> Non
     assert m.load_manifest_strict(path).version == 1
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"version": 2},
+        {"version": 2, "deployed_at": "2026-07-16T00:00:00+00:00"},
+    ],
+)
+def test_strict_rejects_existing_manifest_without_items(
+    payload: dict[str, object], tmp_path: Path
+) -> None:
+    path = tmp_path / m.MANIFEST_FILENAME
+    _write(path, payload)
+    with pytest.raises(ValueError, match="object manifest items"):
+        m.load_manifest_strict(path)
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_strict_rejects_item_without_source_hash(version: int, tmp_path: Path) -> None:
+    path = tmp_path / m.MANIFEST_FILENAME
+    _write(
+        path,
+        {
+            "version": version,
+            "items": {"agents": {"helper": {"target_path": "agents/helper.md"}}},
+        },
+    )
+    with pytest.raises(ValueError, match="source_hash"):
+        m.load_manifest_strict(path)
+
+
+DUPLICATE_MANIFEST_JSON = (
+    '{"version":1,"version":2,"items":{}}',
+    '{"version":2,"items":{"agents":{},"agents":{}}}',
+    (
+        '{"version":2,"items":{"agents":{"helper":{"source_hash":"first"},'
+        '"helper":{"source_hash":"second"}}}}'
+    ),
+    (
+        '{"version":2,"items":{"prompts":{"ponytail":{"source_hash":"x",'
+        '"source":{"bundle":"ponytail","bundle":"other",'
+        '"path":"skills/ponytail/SKILL.md","version":"4.8.4",'
+        '"revision":null,"narHash":null,"mutable":true,'
+        '"transform":"gptel-preset-v1","license":"MIT"}}}}}'
+    ),
+)
+
+
+@pytest.mark.parametrize("raw", DUPLICATE_MANIFEST_JSON)
+def test_strict_rejects_duplicate_json_keys(raw: str, tmp_path: Path) -> None:
+    path = tmp_path / m.MANIFEST_FILENAME
+    path.write_text(raw, encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate manifest keys"):
+        m.load_manifest_strict(path)
+
+
+@pytest.mark.parametrize("raw", DUPLICATE_MANIFEST_JSON)
+def test_normal_loader_falls_back_on_duplicate_json_keys(
+    raw: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / m.MANIFEST_FILENAME
+    path.write_text(raw, encoding="utf-8")
+    assert m.load_manifest(path).items == {}
+    assert "duplicate manifest key" in capsys.readouterr().err
+
+
 def test_strict_nonexistent_returns_empty_v2(tmp_path: Path) -> None:
     manifest = m.load_manifest_strict(tmp_path / "missing.json")
     assert manifest.version == 2
