@@ -121,6 +121,7 @@ def test_local_target_skill_interfaces_use_the_accepted_snapshot(
     tmp_path: Path,
 ) -> None:
     snapshot = _complete_snapshot()
+    mismatching_snapshot = _complete_snapshot(b"different\n")
     target = target_factory(tmp_path / "target")
     unavailable_diagnostic_path = tmp_path / "deleted-source" / "SKILL.md"
 
@@ -133,6 +134,14 @@ def test_local_target_skill_interfaces_use_the_accepted_snapshot(
         None,
         source_path=unavailable_diagnostic_path,
         imported_tree=snapshot,
+    )
+    assert not target.item_matches_source(
+        "skill",
+        "demo",
+        b"different\n",
+        None,
+        source_path=unavailable_diagnostic_path,
+        imported_tree=mismatching_snapshot,
     )
     assert (
         target.item_matches_source(
@@ -147,6 +156,7 @@ def test_local_target_skill_interfaces_use_the_accepted_snapshot(
 
 def test_remote_target_forwards_snapshot_skill_interfaces(tmp_path: Path) -> None:
     snapshot = _complete_snapshot()
+    mismatching_snapshot = _complete_snapshot(b"different\n")
     inner = ClaudeTarget("remote", tmp_path / "staging")
     target = RemoteTarget(
         inner,
@@ -164,6 +174,14 @@ def test_remote_target_forwards_snapshot_skill_interfaces(tmp_path: Path) -> Non
         None,
         source_path=tmp_path / "deleted-source" / "SKILL.md",
         imported_tree=snapshot,
+    )
+    assert not target.item_matches_source(
+        "skill",
+        "demo",
+        b"different\n",
+        None,
+        source_path=tmp_path / "deleted-source" / "SKILL.md",
+        imported_tree=mismatching_snapshot,
     )
 
 
