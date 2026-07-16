@@ -1,9 +1,18 @@
 import os
 import socket
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
+
+from .bundles import (
+    BundleConfig,
+    load_bundle_bindings_file,
+    parse_bundle_declarations,
+    parse_bundle_source_overrides,
+    resolve_bundle_configs,
+)
 
 
 def current_host() -> str:
@@ -66,6 +75,7 @@ class Config:
     source_root: Path
     targets: dict[str, TargetConfig]
     groups: dict[str, list[str]]
+    bundles: tuple[BundleConfig, ...] = field(default_factory=tuple)
 
 
 def find_config_file(start_dir: Path | None = None) -> Path:
@@ -82,7 +92,13 @@ def find_config_file(start_dir: Path | None = None) -> Path:
     )
 
 
-def load_config(config_path: Path | None = None) -> Config:
+def load_config(
+    config_path: Path | None = None,
+    *,
+    bundle_bindings_file: Path | None = None,
+    bundle_source_overrides: Sequence[str] = (),
+    require_immutable_bundles: bool = False,
+) -> Config:
     if config_path is None:
         config_path = find_config_file()
     with open(config_path, encoding="utf-8") as f:
@@ -166,7 +182,38 @@ def load_config(config_path: Path | None = None) -> Config:
             if tc.host is None and tid not in existing:
                 existing.append(tid)
 
-    return Config(source_root=source_root, targets=targets, groups=groups)
+    declarations = parse_bundle_declarations(
+        data.get("bundles"),
+        config_directory=config_path.parent,
+    )
+    if declarations:
+        descriptor_path = bundle_bindings_file
+        if descriptor_path is None:
+            raw_descriptor_path = os.environ.get("PROMPTDEPLOY_BUNDLE_BINDINGS_FILE")
+            descriptor_path = (
+                Path(raw_descriptor_path).expanduser() if raw_descriptor_path else None
+            )
+        descriptor_bindings = (
+            load_bundle_bindings_file(descriptor_path)
+            if descriptor_path is not None
+            else {}
+        )
+        overrides = parse_bundle_source_overrides(bundle_source_overrides)
+        bundles = resolve_bundle_configs(
+            declarations,
+            descriptor_bindings=descriptor_bindings,
+            source_overrides=overrides,
+            require_immutable=require_immutable_bundles,
+        )
+    else:
+        bundles = ()
+
+    return Config(
+        source_root=source_root,
+        targets=targets,
+        groups=groups,
+        bundles=bundles,
+    )
 
 
 def remap_targets_to_root(config: Config, root: Path) -> Config:
@@ -205,6 +252,7 @@ def remap_targets_to_root(config: Config, root: Path) -> Config:
         source_root=config.source_root,
         targets=new_targets,
         groups=config.groups,
+        bundles=config.bundles,
     )
 
 

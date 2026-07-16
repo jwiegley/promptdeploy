@@ -13,7 +13,10 @@ scope to copying one skill or configuring one client.
   check.
 - Planning/study commit: `99ece3134b4364410d10aa533c412bb84631d102`
   (`Document Ponytail integration plan`). Its required independent fess audit
-  is recorded below; the present edits resolve that audit before code work.
+  is recorded below.
+- Audit-remediation commit: `3328e2b` (`Resolve Ponytail design audit
+  findings`). Per the Wiggum protocol, this fess-fix-only commit does not need
+  a recursive audit.
 - Working tree was clean before these durable-state files were added.
 - Reference checkout is clean on `main` at
   `16f29800fd2681bdf24f3eb4ccffe38be3baec6b` (`package.json` version 4.8.4).
@@ -107,11 +110,26 @@ copy are prohibited.
 
 ## Next actions
 
-1. Commit the fess-driven design corrections; a fess-fix-only commit does not
-   require another audit under the Wiggum protocol.
-2. Implement Phase 1: bundle schema/bindings, composite discovery,
-   provenance, six skill imports, GPTel projections, and focused tests.
-3. Run focused and full gates, commit the unit, and dispatch its fess audit.
+The first Phase-1 implementation slice is implemented and verified:
+
+- `src/promptdeploy/bundles.py` adds closed schema-1 binding descriptors,
+  confined declarations, explicit mutable overrides, and the immutable
+  `/nix/store` gate;
+- `Config.bundles` is defaulted for compatibility, config loading performs no
+  bundle I/O when no bundle is declared, and target-root remapping preserves
+  the resolved tuple;
+- `tests/test_bundles.py` covers every binding/declaration branch. The Nix
+  pytest check passed 1,866 tests at 100% branch coverage, and the Nix mypy
+  check passed 68 source files.
+
+After committing and auditing that slice:
+
+1. add the strict adapter manifest, provenance-bearing composite discovery,
+   six selected skill trees, and the audited `gptel-preset-v1` projections;
+2. integrate the catalog with deploy/status/validate/verify and add
+   `verify --target-root`;
+3. run focused and full gates, commit the next unit, and dispatch its fess
+   audit.
 
 ## Gate attempt counts
 
@@ -120,7 +138,8 @@ copy are prohibited.
   is missing `pandas`, which upstream installs as a CSV-test dependency but the
   production runtime does not need. The baseline is non-green; the dependency
   was not installed under this run's constraints.
-- Implementation/full-suite gate: 0 consecutive failures.
+- Binding-slice pytest/mypy gates: passed on attempt 1; failure count reset.
+- Binding-slice full `nix flake check`: passed on attempt 1 (all 7 checks).
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature
