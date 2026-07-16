@@ -52,6 +52,26 @@ def _make_source(tmp_path: Path) -> Path:
     return src
 
 
+def test_linked_skill_hash_preserves_auxiliary_file_approval(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    skills = source / "skills"
+    skill = source / "translate-tool" / "skill"
+    skills.mkdir(parents=True)
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: translate-en\n---\nTranslate.\n")
+    (source / "translate-tool" / "glossary.csv").write_text("term,translation\n")
+    (skill / "GLOSSARY.csv").symlink_to("../glossary.csv")
+    (skills / "translate-en").symlink_to("../translate-tool/skill")
+    (skills / ".promptdeploy-skill-links.json").write_text(
+        '{"translate-en":{"GLOSSARY.csv":"translate-tool/glossary.csv"}}'
+    )
+
+    item = next(SourceDiscovery(source).discover_skills())
+    target = create_target(_make_claude_target(tmp_path))
+
+    assert compute_item_hash(item, target).startswith("sha256:")
+
+
 def _make_config(source_root: Path, targets: dict[str, TargetConfig]) -> Config:
     return Config(source_root=source_root, targets=targets, groups={})
 

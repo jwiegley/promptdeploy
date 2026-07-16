@@ -242,7 +242,7 @@ def compute_item_hash(
             json.dumps(effective, sort_keys=True, default=str).encode()
         )
     elif item.item_type == "skill":
-        base = compute_directory_hash(item.path.parent.resolve())
+        base = compute_directory_hash(item.path.parent)
     else:
         base = compute_file_hash(item.content)
     fingerprint = target.content_fingerprint(item.item_type)
