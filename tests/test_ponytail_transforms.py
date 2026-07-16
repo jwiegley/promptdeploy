@@ -262,6 +262,45 @@ def test_runtime_transform_structure_guards_survive_digest_guard_update(
         )
 
 
+def test_strict_transform_rejects_reversed_markers_after_digest_guard_update(
+    ponytail_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transform = "strict-canonical-instructions-v1"
+    logical_path, _size, _digest = RUNTIME_INPUTS[transform]
+    source = (ponytail_root / logical_path).read_bytes()
+    fallback = b"function getFallbackInstructions"
+    canonical = b"function getPonytailInstructions"
+    sentinel = b"function __promptdeploy_swap_marker__"
+    changed = source.replace(fallback, sentinel, 1)
+    changed = changed.replace(canonical, fallback, 1)
+    changed = changed.replace(sentinel, canonical, 1)
+    assert changed.count(fallback) == changed.count(canonical) == 1
+    assert changed.index(canonical) < changed.index(fallback)
+    guard = transforms._RUNTIME_TRANSFORM_GUARDS[transform]
+    monkeypatch.setitem(
+        transforms._RUNTIME_TRANSFORM_GUARDS,
+        transform,
+        replace(
+            guard,
+            byte_count=len(changed),
+            sha256=f"sha256:{hashlib.sha256(changed).hexdigest()}",
+        ),
+    )
+
+    with pytest.raises(
+        transforms.PonytailTransformError,
+        match="embedded fallback function",
+    ):
+        transforms.PONYTAIL_RUNTIME_TRANSFORMS[transform](
+            changed,
+            bundle_name="ponytail",
+            version=PONYTAIL_VERSION,
+            revision=PONYTAIL_REVISION,
+            logical_path=logical_path,
+        )
+
+
 @pytest.mark.parametrize("transform", tuple(RUNTIME_INPUTS))
 @pytest.mark.parametrize(
     ("mutation", "message"),

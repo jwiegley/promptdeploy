@@ -247,13 +247,13 @@ def _remove_between_once(
     logical_path: str,
     description: str,
 ) -> str:
-    if text.count(start) != 1 or text.count(end) != 1:
+    start_index = text.find(start)
+    end_index = text.find(end)
+    if text.count(start) != 1 or text.count(end) != 1 or start_index >= end_index:
         raise PonytailTransformError(
             f"{logical_path}: expected exactly one {description}"
         )
-    prefix, remainder = text.split(start, 1)
-    _removed, suffix = remainder.split(end, 1)
-    return prefix + end + suffix
+    return text[:start_index] + text[end_index:]
 
 
 def render_strict_canonical_instructions_v1(

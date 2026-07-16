@@ -230,6 +230,7 @@ def test_runtime_payloads_are_closed_transformed_snapshots(
 def test_runtime_inventory_rejects_unlisted_adapter_nodes_without_importing_them(
     ponytail_root: Path,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     relative_path: str,
     kind: str,
 ) -> None:
@@ -239,6 +240,20 @@ def test_runtime_inventory_rejects_unlisted_adapter_nodes_without_importing_them
         path.mkdir()
     else:
         path.write_bytes(b"must not enter payload")
+    original_open = os.open
+
+    def reject_unlisted_open(
+        candidate: os.PathLike[str] | str,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        if os.fspath(candidate) == path.name:
+            raise AssertionError(f"unlisted adapter node was opened: {relative_path}")
+        return original_open(candidate, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(os, "open", reject_unlisted_open)
 
     with pytest.raises(BundleSchemaError, match="runtime inventory mismatch"):
         catalog.discover_bundle_items(_bundle(source))
