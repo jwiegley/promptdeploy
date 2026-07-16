@@ -2,6 +2,9 @@
   description = "Deploy prompts, agents, skills, and MCP servers to multiple AI coding tools";
 
   inputs = {
+    # This repository has one tracked skill backed by a Git submodule.
+    # Include it in self.outPath so the composed deployment is complete.
+    self.submodules = true;
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     home-manager = {
@@ -222,6 +225,11 @@
             ponytail_root="$deployment_root/sources/ponytail"
             test -f "$deployment_root/deploy.yaml"
             test -f "$deployment_root/bundles/ponytail.yaml"
+            test -f "$deployment_root/skills/translate-en/SKILL.md"
+            test -z "$(
+              find "$deployment_root" -type l \
+                ! -exec test -e '{}' ';' -print -quit
+            )"
             test ! -L "$ponytail_root"
             test -f "$ponytail_root/hooks/ponytail-activate.js"
             for name in \

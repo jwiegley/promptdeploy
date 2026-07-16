@@ -274,10 +274,11 @@ activation or promptdeploy process is still running on any machine sharing the
 state directory. Only then remove `owner` and use `rmdir` on
 `activation.lock`; do not remove the lock recursively.
 
-The composed deployment never contains `.env` or other secrets. Store-backed
-apps receive deployment secrets only from the process environment. Use
-`apps.raw` when intentionally developing from a mutable checkout whose local
-`.env` should be loaded.
+The current composed deployment contains no `.env` or other secret file.
+Composition copies every tracked repository file and every mapped input, so
+those sources must never contain secrets. Store-backed apps receive deployment
+secrets only from the process environment. Use `apps.raw` when intentionally
+developing from a mutable checkout whose local `.env` should be loaded.
 
 ## Acknowledgements
 
