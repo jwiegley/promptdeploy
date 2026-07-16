@@ -426,6 +426,19 @@ Final gates pass: 2,469 tests at 100% statement and branch coverage, strict
 mypy over 84 source files, Ruff format/lint, package build, Home Manager module
 and activation checks, and the complete seven-check `nix flake check`.
 
+The required runtime-source fess audit is
+`/var/tmp/wg-ponytail-20260715/fess-8013b89/report.md` (SHA-256
+`1bebf2ba4934763d3559a7a0a3f3cde0f6935ad18f112d74d95bc838090ab623`).
+It found two low-severity issues: reversed-but-unique transform markers could
+leak a raw `ValueError`, and the unknown-adapter test proved rejection without
+proving that the unknown node's bytes stayed unread. Fess-fix-only commit
+`3d73cb6` (`Fix runtime snapshot audit findings`) enforces marker ordering
+through `PonytailTransformError`, adds a simulated guard-refresh regression,
+and places a descriptor-open canary on every unknown file/directory case. The
+complete flake gate and commit hooks pass 2,470 tests at 100% statement and
+branch coverage; per protocol, this narrow remediation does not receive a
+recursive fess audit.
+
 Next:
 
 1. add the pure target bundle renderer/receipt contract and the local Claude
@@ -485,6 +498,10 @@ Next:
   owner-writable, and five focused cases against the actual store source pass.
   The final 2,469-test coverage derivation, strict 84-file mypy derivation,
   Ruff, package, Home Manager, and complete seven-check flake gate are green.
+- Runtime-source fess remediation: the first full gate stopped on Ruff's exact
+  formatting diff; after applying the pinned formatter, the 2,470-test
+  coverage derivation, strict mypy, Ruff, package, Home Manager, and complete
+  seven-check flake gate are green.
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature
