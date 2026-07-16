@@ -15,6 +15,15 @@ import pytest
 
 from promptdeploy import bundle_render as render_module
 from promptdeploy.bundle_catalog import discover_bundle_items
+from promptdeploy.bundle_projection import (
+    BundleHashDescriptor,
+    BundleReceipt,
+    RegistrationProjection,
+    SelectedBundlePayload,
+)
+from promptdeploy.bundle_projection import (
+    RenderedBundle as ProjectedBundle,
+)
 from promptdeploy.bundle_render import (
     BundleRenderContext,
     BundleRenderError,
@@ -606,7 +615,7 @@ def test_claude_registration_has_exact_commands_owner_and_digest() -> None:
     assert rendered.abi == "claude-settings-hooks-v1"
     assert rendered.owner == "bundle:ponytail"
     assert rendered.sha256 == (
-        "sha256:46fddfe9d5c1ea7c7127a41915ff395d947f70c87bae32a34de6df6fc19d67b7"
+        "sha256:47a28219972c7079d8d9f6fd87062b0b95944646746a56fccdefbab6cadf671b"
     )
     first = rendered.value.events[0][1]
     runtime = "/srv/claude profile/.promptdeploy/bundles/ponytail/runtimes/" + "01" * 32
@@ -622,7 +631,8 @@ def test_claude_registration_has_exact_commands_owner_and_digest() -> None:
         "-ErrorAction SilentlyContinue; "
         f"$env:CLAUDE_PLUGIN_ROOT='{runtime}'; $env:PLUGIN_ROOT='{runtime}'; "
         "$env:CLAUDE_CONFIG_DIR='/srv/claude profile'; "
-        f"& node '{runtime}/hooks/ponytail-activate.js' }}"
+        f"& node '{runtime}/hooks/ponytail-activate.js' "
+        "} else { throw 'node is required for Ponytail hooks' }"
     )
 
     document = rendered.value.to_json_value()
@@ -645,7 +655,7 @@ def test_codex_home_registration_has_exact_commands_and_digest() -> None:
     )
     assert rendered.abi == "codex-hooks-json-v1"
     assert rendered.sha256 == (
-        "sha256:787bda798c1a30e572f723c671296288e041a70efd1a549d2684862bc4d338c4"
+        "sha256:47138d59526a85d947e51ddd046a36d2979535fbc43086929a6fa99af36cfeb6"
     )
     first = rendered.value.events[0][1].hook
     runtime = ".promptdeploy/bundles/ponytail/runtimes/" + "01" * 32
@@ -669,8 +679,126 @@ def test_codex_home_registration_has_exact_commands_and_digest() -> None:
         f"$env:PLUGIN_ROOT=(Join-Path {home} '{runtime}'); "
         f"$env:PLUGIN_DATA=(Join-Path {home} "
         "'.promptdeploy/plugin-data/codex/ponytail'); "
-        f"& node (Join-Path {home} '{runtime}/hooks/ponytail-activate.js') }}"
+        f"& node (Join-Path {home} '{runtime}/hooks/ponytail-activate.js') "
+        "} else { throw 'node is required for Ponytail hooks' }"
     )
+
+
+def test_windows_hook_executes_with_node_and_fails_closed_without_it(
+    tmp_path: Path,
+) -> None:
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is supplied by the Nix test check")
+
+    target_root = tmp_path / "target"
+    target_root.mkdir()
+    root = EmittedHostPath(
+        "local-target",
+        "posix",
+        "absolute",
+        tuple(target_root.resolve().parts[1:]),
+    )
+    rendered = render_claude_codex_registration(
+        HOOK_MAP,
+        _claude_context(root),
+        TREE_DIGEST,
+    )
+    command = rendered.value.events[0][1].hook.command_windows
+
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    environment = os.environ.copy()
+    powershell_home = tmp_path / "powershell-home"
+    powershell_home.mkdir()
+    environment.update(
+        {
+            "HOME": str(powershell_home),
+            "POWERSHELL_UPDATECHECK": "Off",
+            "PSModuleAnalysisCachePath": str(
+                powershell_home / ".cache" / "ModuleAnalysisCache"
+            ),
+            "XDG_CACHE_HOME": str(powershell_home / ".cache"),
+            "XDG_CONFIG_HOME": str(powershell_home / ".config"),
+            "XDG_DATA_HOME": str(powershell_home / ".local" / "share"),
+        }
+    )
+    missing_command = (
+        "$promptdeployOriginalPath=$env:PATH; try { "
+        f"$env:PATH={render_module._powershell_literal(str(empty_bin))}; {command} "
+        "} finally { $env:PATH=$promptdeployOriginalPath }"
+    )
+    missing = subprocess.run(
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            missing_command,
+        ],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+        timeout=60,
+    )
+    assert missing.returncode != 0
+    assert "node is required for Ponytail hooks" in missing.stderr
+
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    capture = tmp_path / "node-capture.txt"
+    fake_node = fake_bin / "node"
+    fake_node.write_text(
+        "#!/bin/sh\n"
+        "{\n"
+        "  printf '%s\\n' \"$1\"\n"
+        "  printf '%s\\n' \"$CLAUDE_PLUGIN_ROOT\"\n"
+        "  printf '%s\\n' \"$PLUGIN_ROOT\"\n"
+        "  printf '%s\\n' \"$CLAUDE_CONFIG_DIR\"\n"
+        '} > "$PONYTAIL_TEST_CAPTURE"\n',
+        encoding="utf-8",
+    )
+    fake_node.chmod(0o755)
+    available_command = (
+        "$promptdeployOriginalPath=$env:PATH; try { "
+        f"$env:PATH={render_module._powershell_literal(str(fake_bin))}; "
+        f"$env:PONYTAIL_TEST_CAPTURE="
+        f"{render_module._powershell_literal(str(capture))}; {command} "
+        "} finally { $env:PATH=$promptdeployOriginalPath }"
+    )
+    available = subprocess.run(
+        [
+            pwsh,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            available_command,
+        ],
+        check=False,
+        capture_output=True,
+        env=environment,
+        text=True,
+        timeout=60,
+    )
+    assert available.returncode == 0, available.stderr
+    observed = capture.read_text(encoding="utf-8").splitlines()
+    runtime_root = (
+        target_root
+        / ".promptdeploy"
+        / "bundles"
+        / "ponytail"
+        / "runtimes"
+        / ("01" * 32)
+    )
+    assert observed == [
+        str(runtime_root / "hooks" / "ponytail-activate.js"),
+        str(runtime_root),
+        str(runtime_root),
+        str(target_root),
+    ]
 
 
 def test_windows_registration_quotes_apostrophe_dollar_and_backtick() -> None:
@@ -963,15 +1091,15 @@ def _target_context(target_type: str) -> BundleRenderContext:
             "claude",
             CLAUDE_CODEX_RUNTIME_PAYLOAD,
             "sha256:46bd65bad6023d631340e3262418866206e95ea5afb38d9bab8dbd567fc32d24",
-            "sha256:6fd3d8442d78ae37c845d0cebd24ef74c2560139763dfd581aa87d501b555443",
-            "sha256:02501dd96b7dd68dcba2e0d70a4ee7383643ca7ffbd96ff14edaa86456bc48ed",
+            "sha256:b51209662441683baa7660b00fdee5018d559b3b05fd5feefe9fe88cd85ed4dc",
+            "sha256:1af387756d7406f4c61a41d8899afb1441ffcff09fd8319124958de0d38dec90",
         ),
         (
             "codex",
             CLAUDE_CODEX_RUNTIME_PAYLOAD,
             "sha256:46bd65bad6023d631340e3262418866206e95ea5afb38d9bab8dbd567fc32d24",
-            "sha256:7e50bbdf2e911bc74cf9cea218c93c742d70a5ae5b47034b67673d33693979df",
-            "sha256:defcffb1173e6356381e537064ad98cd89c68c61ac5a0adb1a3fd0c3b5463b16",
+            "sha256:85b913210c8fdcc713244f2488e77668d2509b3ff69040c70606f376a28f3b8e",
+            "sha256:21c1b83c9875f9e93e51539b29e0801c88b15fba28831c7133c368cf7cbbcd9d",
         ),
         (
             "opencode",
@@ -1154,6 +1282,324 @@ def test_plan_cross_checks_hook_registration_and_context_shape(
             ponytail_bundle,
             BundleRenderContext("droid", root, root, None),
         )
+
+
+def test_plan_rejects_subclass_dispatch_bypasses(
+    ponytail_bundle: SourceItem,
+) -> None:
+    rendered = render_bundle(ponytail_bundle, _target_context("claude"))
+    hook = rendered.hook_registration
+    assert hook is not None
+    event_name, matcher = hook.value.events[0]
+    changed_value = replace(
+        hook.value,
+        events=(
+            (
+                event_name,
+                replace(
+                    matcher,
+                    hook=replace(matcher.hook, command="different command"),
+                ),
+            ),
+            *hook.value.events[1:],
+        ),
+    )
+    expected_projection = rendered.desired.registration
+    assert expected_projection is not None
+
+    class BypassRegistration(render_module.RenderedHookRegistration):
+        def to_projection(self) -> RegistrationProjection:
+            return cast(RegistrationProjection, expected_projection)
+
+    bypass_registration = BypassRegistration(
+        hook.abi,
+        hook.owner,
+        changed_value,
+        registration_semantic_sha256(changed_value),
+    )
+    with pytest.raises(BundleRenderError, match="exact hook registration"):
+        RenderedBundlePlan(rendered.desired, bypass_registration)
+
+    class BypassBundle(ProjectedBundle):
+        def __post_init__(self) -> None:
+            pass
+
+    desired = rendered.desired
+    bypass_desired = BypassBundle(
+        name=desired.name,
+        target_type=desired.target_type,
+        selected=desired.selected,
+        adapter_abi=desired.adapter_abi,
+        support_tree=desired.support_tree,
+        support_tree_sha256=desired.support_tree_sha256,
+        runtime_tree=desired.runtime_tree,
+        runtime_tree_sha256=desired.runtime_tree_sha256,
+        runtime_path=desired.runtime_path,
+        registration=desired.registration,
+        hash_descriptor=desired.hash_descriptor,
+        receipt=desired.receipt,
+    )
+    with pytest.raises(BundleRenderError, match="exact bundle"):
+        RenderedBundlePlan(bypass_desired, hook)
+
+    class EqualProjection(RegistrationProjection):
+        def __post_init__(self) -> None:
+            pass
+
+        def __eq__(self, other: object) -> bool:
+            return True
+
+    bypass_projection = EqualProjection(
+        expected_projection.abi,
+        expected_projection.owner,
+        expected_projection.sha256,
+        expected_projection.identity,
+    )
+    projection_desired = replace(
+        rendered.desired,
+        registration=bypass_projection,
+    )
+    with pytest.raises(BundleRenderError, match="exact registration projection"):
+        RenderedBundlePlan(projection_desired, hook)
+
+    class BypassPlan(RenderedBundlePlan):
+        def __post_init__(self) -> None:
+            pass
+
+        def __eq__(self, other: object) -> bool:
+            return True
+
+    bypass_plan = BypassPlan(rendered.desired, None)
+    with pytest.raises(BundleRenderError, match="exact rendered value"):
+        revalidate_rendered_bundle(
+            ponytail_bundle,
+            _target_context("claude"),
+            bypass_plan,
+        )
+
+
+def test_plan_rejects_nested_projection_subclasses_before_revalidation(
+    ponytail_bundle: SourceItem,
+) -> None:
+    rendered = render_bundle(ponytail_bundle, _target_context("claude"))
+    desired = rendered.desired
+    hook = rendered.hook_registration
+    assert hook is not None
+
+    class BypassSelected(SelectedBundlePayload):
+        pass
+
+    selected = BypassSelected(
+        desired.selected.name,
+        desired.selected.target_type,
+        desired.selected.logical_root,
+        desired.selected.payload_tree_sha256,
+        desired.selected.snapshot,
+    )
+
+    class BypassDescriptor(BundleHashDescriptor):
+        def __eq__(self, other: object) -> bool:
+            return BundleHashDescriptor.__eq__(self, other) is not False
+
+        def __ne__(self, other: object) -> bool:
+            return False
+
+    original_descriptor = desired.hash_descriptor
+    descriptor = BypassDescriptor(
+        bundle_name=original_descriptor.bundle_name,
+        target_type=original_descriptor.target_type,
+        support_content_sha256=original_descriptor.support_content_sha256,
+        support_tree_sha256=original_descriptor.support_tree_sha256,
+        source=original_descriptor.source,
+        payload_name=original_descriptor.payload_name,
+        logical_root=original_descriptor.logical_root,
+        payload_tree_sha256=original_descriptor.payload_tree_sha256,
+        adapter_abi=original_descriptor.adapter_abi,
+        runtime_tree_sha256=original_descriptor.runtime_tree_sha256,
+        runtime_path=original_descriptor.runtime_path,
+        registration_abi=original_descriptor.registration_abi,
+        registration_owner=original_descriptor.registration_owner,
+        registration_sha256=original_descriptor.registration_sha256,
+        registration_identity=original_descriptor.registration_identity,
+    )
+
+    class BypassReceipt(BundleReceipt):
+        def __eq__(self, other: object) -> bool:
+            return BundleReceipt.__eq__(self, other) is not False
+
+        def __ne__(self, other: object) -> bool:
+            return False
+
+    original_receipt = desired.receipt
+    receipt = BypassReceipt(
+        payload_name=original_receipt.payload_name,
+        target_type=original_receipt.target_type,
+        logical_root=original_receipt.logical_root,
+        payload_tree_sha256=original_receipt.payload_tree_sha256,
+        adapter_abi=original_receipt.adapter_abi,
+        rendered_tree_sha256=original_receipt.rendered_tree_sha256,
+        runtime_path=original_receipt.runtime_path,
+        registration_abi=original_receipt.registration_abi,
+        registration_owner=original_receipt.registration_owner,
+        registration_sha256=original_receipt.registration_sha256,
+        registration_identity=original_receipt.registration_identity,
+        effective_sha256=original_receipt.effective_sha256,
+    )
+
+    variants = (
+        (replace(desired, selected=selected), "selected payload"),
+        (replace(desired, hash_descriptor=descriptor), "hash descriptor"),
+        (replace(desired, receipt=receipt), "receipt"),
+    )
+    for changed_desired, message in variants:
+        with pytest.raises(BundleRenderError, match=message):
+            RenderedBundlePlan(changed_desired, hook)
+
+        unchecked = object.__new__(RenderedBundlePlan)
+        object.__setattr__(unchecked, "desired", changed_desired)
+        object.__setattr__(unchecked, "hook_registration", hook)
+        with pytest.raises(BundleRenderError, match=message):
+            revalidate_rendered_bundle(
+                ponytail_bundle,
+                _target_context("claude"),
+                unchecked,
+            )
+
+
+def test_rendered_hook_value_rejects_nested_subclasses() -> None:
+    rendered = render_claude_codex_registration(
+        HOOK_MAP,
+        _claude_context(),
+        TREE_DIGEST,
+    )
+    event_name, matcher = rendered.value.events[0]
+
+    class BypassValue(HookRegistration):
+        pass
+
+    with pytest.raises(BundleRenderError, match="immutable events"):
+        render_module._validate_rendered_hook_value(BypassValue(rendered.value.events))
+
+    class BypassMatcher(HookMatcher):
+        pass
+
+    changed_matcher = replace(
+        rendered.value,
+        events=(
+            (event_name, BypassMatcher(matcher.matcher, matcher.hook)),
+            *rendered.value.events[1:],
+        ),
+    )
+    with pytest.raises(BundleRenderError, match="event set"):
+        render_module._validate_rendered_hook_value(changed_matcher)
+
+    class BypassCommand(HookCommand):
+        pass
+
+    bypass_command = BypassCommand(
+        matcher.hook.command,
+        matcher.hook.command_windows,
+        matcher.hook.timeout,
+        matcher.hook.status_message,
+    )
+    changed_command = replace(
+        rendered.value,
+        events=(
+            (event_name, HookMatcher(matcher.matcher, bypass_command)),
+            *rendered.value.events[1:],
+        ),
+    )
+    with pytest.raises(BundleRenderError, match="matcher"):
+        render_module._validate_rendered_hook_value(changed_command)
+
+
+def test_rendered_hook_value_rejects_string_subclass_dispatch() -> None:
+    rendered = render_claude_codex_registration(
+        HOOK_MAP,
+        _claude_context(),
+        TREE_DIGEST,
+    )
+
+    class AlwaysEqual(str):
+        def __eq__(self, other: object) -> bool:
+            return True
+
+        def __ne__(self, other: object) -> bool:
+            return False
+
+        __hash__ = str.__hash__
+
+    with pytest.raises(BundleRenderError, match="ABI"):
+        replace(rendered, abi=cast(Any, AlwaysEqual(rendered.abi)))
+    with pytest.raises(BundleRenderError, match="owner"):
+        replace(rendered, owner=cast(Any, AlwaysEqual(rendered.owner)))
+    with pytest.raises(BundleRenderError, match="lowercase SHA-256"):
+        replace(rendered, sha256=AlwaysEqual(rendered.sha256))
+
+    event_name, matcher = rendered.value.events[0]
+    changed_event = replace(
+        rendered.value,
+        events=(
+            (cast(Any, AlwaysEqual(event_name)), matcher),
+            *rendered.value.events[1:],
+        ),
+    )
+    with pytest.raises(BundleRenderError, match="event set"):
+        render_module._validate_rendered_hook_value(changed_event)
+
+    assert matcher.matcher is not None
+    changed_matcher = replace(
+        rendered.value,
+        events=(
+            (
+                event_name,
+                replace(matcher, matcher=AlwaysEqual(matcher.matcher)),
+            ),
+            *rendered.value.events[1:],
+        ),
+    )
+    with pytest.raises(BundleRenderError, match="matcher"):
+        render_module._validate_rendered_hook_value(changed_matcher)
+
+    for field in ("command", "command_windows", "status_message"):
+        value = cast(str, getattr(matcher.hook, field))
+        changed_hook = cast(
+            HookCommand,
+            replace(
+                cast(Any, matcher.hook),
+                **{field: AlwaysEqual(value)},
+            ),
+        )
+        changed_command = replace(
+            rendered.value,
+            events=(
+                (event_name, replace(matcher, hook=changed_hook)),
+                *rendered.value.events[1:],
+            ),
+        )
+        with pytest.raises(BundleRenderError, match="command shape"):
+            render_module._validate_rendered_hook_value(changed_command)
+
+    changed_value = replace(
+        rendered.value,
+        events=(
+            (
+                event_name,
+                replace(
+                    matcher,
+                    hook=replace(matcher.hook, command="different command"),
+                ),
+            ),
+            *rendered.value.events[1:],
+        ),
+    )
+    forged = object.__new__(type(rendered))
+    object.__setattr__(forged, "abi", rendered.abi)
+    object.__setattr__(forged, "owner", rendered.owner)
+    object.__setattr__(forged, "value", changed_value)
+    object.__setattr__(forged, "sha256", AlwaysEqual("sha256:" + "0" * 64))
+    with pytest.raises(BundleRenderError, match="lowercase SHA-256"):
+        render_module.RenderedHookRegistration.__post_init__(forged)
 
 
 @pytest.mark.parametrize("replacement_kind", [None, "directory"])

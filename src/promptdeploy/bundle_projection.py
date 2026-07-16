@@ -332,6 +332,14 @@ class RegistrationProjection:
     identity: str | None = None
 
     def __post_init__(self) -> None:
+        if type(self.abi) is not str:
+            raise BundleProjectionError("registration ABI must be an exact string")
+        if type(self.owner) is not str:
+            raise BundleProjectionError("registration owner must be an exact string")
+        if type(self.sha256) is not str:
+            raise BundleProjectionError("registration digest must be an exact string")
+        if self.identity is not None and type(self.identity) is not str:
+            raise BundleProjectionError("registration identity must be an exact string")
         _require_identifier(self.abi, field="registration ABI", versioned=True)
         if self.abi not in _KNOWN_REGISTRATION_ABIS:
             raise BundleProjectionError("registration ABI is unsupported")
@@ -707,6 +715,224 @@ class RenderedBundle:
             raise BundleProjectionError("rendered receipt is inconsistent")
 
 
+def _require_exact_fields(
+    value: object,
+    fields: tuple[tuple[str, type[object]], ...],
+) -> None:
+    for name, expected_type in fields:
+        if type(getattr(value, name)) is not expected_type:
+            raise BundleProjectionError(
+                f"closed rendered bundle field {name!r} must be an exact "
+                f"{expected_type.__name__}"
+            )
+
+
+def _require_exact_optional_fields(
+    value: object,
+    fields: tuple[tuple[str, type[object]], ...],
+) -> None:
+    for name, expected_type in fields:
+        item = getattr(value, name)
+        if item is not None and type(item) is not expected_type:
+            raise BundleProjectionError(
+                f"closed rendered bundle field {name!r} must be null or an exact "
+                f"{expected_type.__name__}"
+            )
+
+
+def _validate_closed_manifest_source(source: ManifestSource) -> None:
+    if type(source) is not ManifestSource:
+        raise BundleProjectionError(
+            "closed rendered bundle requires an exact manifest source"
+        )
+    _require_exact_fields(
+        source,
+        (
+            ("bundle", str),
+            ("path", str),
+            ("version", str),
+            ("mutable", bool),
+            ("license", str),
+        ),
+    )
+    _require_exact_optional_fields(
+        source,
+        (("revision", str), ("nar_hash", str), ("transform", str)),
+    )
+    validate_manifest_source(source)
+
+
+def _validate_closed_imported_tree(snapshot: ImportedTreeSnapshot) -> None:
+    if type(snapshot) is not ImportedTreeSnapshot:
+        raise BundleProjectionError(
+            "closed rendered bundle requires an exact imported snapshot"
+        )
+    _require_exact_fields(
+        snapshot,
+        (("logical_root", str), ("entries", tuple), ("tree_sha256", str)),
+    )
+    for entry in snapshot.entries:
+        if type(entry) is not ImportedTreeEntry:
+            raise BundleProjectionError(
+                "closed rendered bundle requires exact imported entries"
+            )
+        _require_exact_fields(
+            entry,
+            (("kind", str), ("relative_path", str), ("normalized_mode", int)),
+        )
+        _require_exact_optional_fields(
+            entry,
+            (("content", bytes), ("link_target", str)),
+        )
+        ImportedTreeEntry.__post_init__(entry)
+    ImportedTreeSnapshot.__post_init__(snapshot)
+    validate_imported_tree_snapshot(snapshot)
+
+
+def _validate_closed_selected_payload(selected: SelectedBundlePayload) -> None:
+    if type(selected) is not SelectedBundlePayload:
+        raise BundleProjectionError(
+            "closed rendered bundle requires an exact selected payload"
+        )
+    _require_exact_fields(
+        selected,
+        (
+            ("name", str),
+            ("target_type", str),
+            ("logical_root", str),
+            ("payload_tree_sha256", str),
+        ),
+    )
+    _validate_closed_imported_tree(selected.snapshot)
+    SelectedBundlePayload.__post_init__(selected)
+
+
+def _validate_closed_installed_tree(entries: InstalledTreeSnapshot) -> None:
+    if type(entries) is not tuple:
+        raise BundleProjectionError(
+            "closed rendered bundle requires an exact installed-tree tuple"
+        )
+    for entry in entries:
+        if type(entry) is not InstalledTreeEntry:
+            raise BundleProjectionError(
+                "closed rendered bundle requires exact installed-tree entries"
+            )
+        _require_exact_fields(
+            entry,
+            (("kind", str), ("relative_path", str), ("normalized_mode", int)),
+        )
+        _require_exact_optional_fields(entry, (("content", bytes),))
+        InstalledTreeEntry.__post_init__(entry)
+    _validate_installed_tree(entries)
+
+
+def _validate_closed_registration(
+    registration: RegistrationProjection,
+) -> None:
+    if type(registration) is not RegistrationProjection:
+        raise BundleProjectionError(
+            "closed rendered bundle requires an exact registration projection"
+        )
+    RegistrationProjection.__post_init__(registration)
+
+
+def _validate_closed_hash_descriptor(descriptor: BundleHashDescriptor) -> None:
+    if type(descriptor) is not BundleHashDescriptor:
+        raise BundleProjectionError(
+            "closed rendered bundle requires an exact hash descriptor"
+        )
+    _require_exact_fields(
+        descriptor,
+        (
+            ("bundle_name", str),
+            ("target_type", str),
+            ("support_content_sha256", str),
+            ("support_tree_sha256", str),
+            ("payload_name", str),
+            ("logical_root", str),
+            ("payload_tree_sha256", str),
+            ("adapter_abi", str),
+        ),
+    )
+    _require_exact_optional_fields(
+        descriptor,
+        (
+            ("runtime_tree_sha256", str),
+            ("runtime_path", str),
+            ("registration_abi", str),
+            ("registration_owner", str),
+            ("registration_sha256", str),
+            ("registration_identity", str),
+        ),
+    )
+    _validate_closed_manifest_source(descriptor.source)
+    BundleHashDescriptor.__post_init__(descriptor)
+
+
+def _validate_closed_receipt(receipt: BundleReceipt) -> None:
+    if type(receipt) is not BundleReceipt:
+        raise BundleProjectionError("closed rendered bundle requires an exact receipt")
+    _require_exact_fields(
+        receipt,
+        (
+            ("payload_name", str),
+            ("target_type", str),
+            ("logical_root", str),
+            ("payload_tree_sha256", str),
+            ("adapter_abi", str),
+            ("effective_sha256", str),
+        ),
+    )
+    _require_exact_optional_fields(
+        receipt,
+        (
+            ("rendered_tree_sha256", str),
+            ("runtime_path", str),
+            ("registration_abi", str),
+            ("registration_owner", str),
+            ("registration_sha256", str),
+            ("registration_identity", str),
+        ),
+    )
+    BundleReceipt.__post_init__(receipt)
+
+
+def validate_closed_rendered_bundle(bundle: RenderedBundle) -> RenderedBundle:
+    """Revalidate one deeply immutable projected plan without subclass dispatch."""
+    if type(bundle) is not RenderedBundle:
+        raise BundleProjectionError(
+            "closed rendered bundle requires an exact projected bundle"
+        )
+    _require_exact_fields(
+        bundle,
+        (
+            ("name", str),
+            ("target_type", str),
+            ("adapter_abi", str),
+            ("support_tree", tuple),
+            ("support_tree_sha256", str),
+        ),
+    )
+    _require_exact_optional_fields(
+        bundle,
+        (
+            ("runtime_tree", tuple),
+            ("runtime_tree_sha256", str),
+            ("runtime_path", str),
+        ),
+    )
+    _validate_closed_selected_payload(bundle.selected)
+    _validate_closed_installed_tree(bundle.support_tree)
+    if bundle.runtime_tree is not None:
+        _validate_closed_installed_tree(bundle.runtime_tree)
+    if bundle.registration is not None:
+        _validate_closed_registration(bundle.registration)
+    _validate_closed_hash_descriptor(bundle.hash_descriptor)
+    _validate_closed_receipt(bundle.receipt)
+    RenderedBundle.__post_init__(bundle)
+    return bundle
+
+
 def _support_snapshot(content: bytes) -> ImportedTreeSnapshot:
     entries = (
         ImportedTreeEntry("directory", ".", 0o755),
@@ -918,19 +1144,21 @@ def render_bundle(
         ),
     )
     receipt = BundleReceipt.from_descriptor(hash_descriptor)
-    return RenderedBundle(
-        name="ponytail",
-        target_type=checked_target,
-        selected=selected,
-        adapter_abi=adapter_abi,
-        support_tree=support_tree,
-        support_tree_sha256=support_digest,
-        runtime_tree=runtime_tree,
-        runtime_tree_sha256=runtime_digest,
-        runtime_path=runtime_path,
-        registration=registration,
-        hash_descriptor=hash_descriptor,
-        receipt=receipt,
+    return validate_closed_rendered_bundle(
+        RenderedBundle(
+            name="ponytail",
+            target_type=checked_target,
+            selected=selected,
+            adapter_abi=adapter_abi,
+            support_tree=support_tree,
+            support_tree_sha256=support_digest,
+            runtime_tree=runtime_tree,
+            runtime_tree_sha256=runtime_digest,
+            runtime_path=runtime_path,
+            registration=registration,
+            hash_descriptor=hash_descriptor,
+            receipt=receipt,
+        )
     )
 
 
@@ -942,6 +1170,7 @@ def revalidate_rendered_bundle(
     registration: RegistrationProjection | None = None,
 ) -> None:
     """Recompute desired state and reject any changed source/plan field."""
+    validate_closed_rendered_bundle(expected)
     actual = render_bundle(item, target_type, registration=registration)
     if actual != expected:
         raise BundleProjectionError("rendered bundle changed before target mutation")

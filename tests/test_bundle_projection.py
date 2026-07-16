@@ -588,6 +588,153 @@ def test_full_revalidation_catches_source_plan_and_registration_changes() -> Non
         )
 
 
+def test_closed_bundle_rejects_every_nested_subclass_route() -> None:
+    item = _bundle()
+    registration = _registration("claude")
+    rendered = projection.render_bundle(item, "claude", registration=registration)
+    assert rendered.runtime_tree is not None
+    assert rendered.receipt.runtime_path is not None
+
+    class SnapshotSubclass(ImportedTreeSnapshot):
+        pass
+
+    snapshot = rendered.selected.snapshot
+    changed_snapshot = SnapshotSubclass(
+        snapshot.logical_root,
+        snapshot.entries,
+        snapshot.tree_sha256,
+    )
+    snapshot_variant = replace(
+        rendered,
+        selected=replace(rendered.selected, snapshot=changed_snapshot),
+    )
+
+    class ImportedEntrySubclass(ImportedTreeEntry):
+        pass
+
+    imported = snapshot.entries[0]
+    changed_imported = ImportedEntrySubclass(
+        imported.kind,
+        imported.relative_path,
+        imported.normalized_mode,
+        imported.content,
+        imported.link_target,
+    )
+    imported_entries = (changed_imported, *snapshot.entries[1:])
+    imported_snapshot = ImportedTreeSnapshot(
+        snapshot.logical_root,
+        imported_entries,
+        framed_tree_sha256(imported_entries),
+    )
+    imported_variant = replace(
+        rendered,
+        selected=replace(rendered.selected, snapshot=imported_snapshot),
+    )
+
+    class InstalledEntrySubclass(projection.InstalledTreeEntry):
+        pass
+
+    installed = rendered.runtime_tree[0]
+    changed_installed = InstalledEntrySubclass(
+        installed.kind,
+        installed.relative_path,
+        installed.normalized_mode,
+        installed.content,
+    )
+    installed_variant = replace(
+        rendered,
+        runtime_tree=(changed_installed, *rendered.runtime_tree[1:]),
+    )
+
+    source = rendered.hash_descriptor.source
+
+    class ManifestSourceSubclass(ManifestSource):
+        pass
+
+    changed_source = ManifestSourceSubclass(
+        source.bundle,
+        source.path,
+        source.version,
+        source.revision,
+        source.nar_hash,
+        source.mutable,
+        source.transform,
+        source.license,
+    )
+    source_variant = replace(
+        rendered,
+        hash_descriptor=replace(rendered.hash_descriptor, source=changed_source),
+    )
+
+    class ExactLookingString(str):
+        pass
+
+    receipt_variant = replace(
+        rendered,
+        receipt=replace(
+            rendered.receipt,
+            runtime_path=ExactLookingString(rendered.receipt.runtime_path),
+        ),
+    )
+    scalar_variant = replace(
+        rendered,
+        support_tree_sha256=ExactLookingString(rendered.support_tree_sha256),
+    )
+
+    class TupleSubclass(tuple[projection.InstalledTreeEntry, ...]):
+        pass
+
+    with pytest.raises(projection.BundleProjectionError, match="installed-tree tuple"):
+        projection._validate_closed_installed_tree(
+            cast(Any, TupleSubclass(rendered.support_tree))
+        )
+
+    tuple_variant = replace(
+        rendered,
+        support_tree=cast(Any, TupleSubclass(rendered.support_tree)),
+    )
+
+    class RenderedBundleSubclass(projection.RenderedBundle):
+        pass
+
+    bundle_subclass = RenderedBundleSubclass(
+        name=rendered.name,
+        target_type=rendered.target_type,
+        selected=rendered.selected,
+        adapter_abi=rendered.adapter_abi,
+        support_tree=rendered.support_tree,
+        support_tree_sha256=rendered.support_tree_sha256,
+        runtime_tree=rendered.runtime_tree,
+        runtime_tree_sha256=rendered.runtime_tree_sha256,
+        runtime_path=rendered.runtime_path,
+        registration=rendered.registration,
+        hash_descriptor=rendered.hash_descriptor,
+        receipt=rendered.receipt,
+    )
+    with pytest.raises(projection.BundleProjectionError, match="projected bundle"):
+        projection.validate_closed_rendered_bundle(bundle_subclass)
+
+    variants = (
+        (snapshot_variant, "imported snapshot"),
+        (imported_variant, "imported entries"),
+        (installed_variant, "installed-tree entries"),
+        (source_variant, "manifest source"),
+        (receipt_variant, "runtime_path"),
+        (scalar_variant, "support_tree_sha256"),
+        (tuple_variant, "support_tree"),
+    )
+    for changed, message in variants:
+        with pytest.raises(projection.BundleProjectionError, match=message):
+            projection.validate_closed_rendered_bundle(changed)
+        with pytest.raises(projection.BundleProjectionError, match=message):
+            projection.revalidate_rendered_bundle(
+                item,
+                "claude",
+                changed,
+                registration=registration,
+            )
+
+
 def test_bundle_identity_and_provenance_are_revalidated() -> None:
     item = _bundle()
     with pytest.raises(projection.BundleProjectionError, match="bundle:ponytail"):
@@ -705,6 +852,35 @@ def test_projection_rejects_links_to_excluded_render_inputs(chained: bool) -> No
 
 def test_registration_projection_rejects_owner_digest_and_identity() -> None:
     digest = "sha256:" + "0" * 64
+
+    class ExactLookingString(str):
+        pass
+
+    with pytest.raises(projection.BundleProjectionError, match="exact string"):
+        projection.RegistrationProjection(
+            cast(Any, ExactLookingString("claude-settings-hooks-v1")),
+            projection.REGISTRATION_OWNER,
+            digest,
+        )
+    with pytest.raises(projection.BundleProjectionError, match="exact string"):
+        projection.RegistrationProjection(
+            "claude-settings-hooks-v1",
+            cast(Any, ExactLookingString(projection.REGISTRATION_OWNER)),
+            digest,
+        )
+    with pytest.raises(projection.BundleProjectionError, match="exact string"):
+        projection.RegistrationProjection(
+            "claude-settings-hooks-v1",
+            projection.REGISTRATION_OWNER,
+            ExactLookingString(digest),
+        )
+    with pytest.raises(projection.BundleProjectionError, match="exact string"):
+        projection.RegistrationProjection(
+            "opencode-plugin-array-v1",
+            projection.REGISTRATION_OWNER,
+            digest,
+            ExactLookingString("./runtime/.opencode/plugins/ponytail.mjs"),
+        )
     with pytest.raises(projection.BundleProjectionError, match="unsupported"):
         projection.RegistrationProjection(
             "other-registration-v1",

@@ -135,6 +135,7 @@
                 nativeBuildInputs = [
                   pythonWithDeps
                   pkgs.nodejs
+                  pkgs.powershell
                   pkgs.rsync
                   pkgs.openssh
                 ];

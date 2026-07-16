@@ -16,10 +16,12 @@ from dataclasses import dataclass
 from typing import Literal, cast
 
 from .bundle_projection import (
+    BundleProjectionError,
     RegistrationProjection,
     installed_tree_sha256,
     project_installed_tree,
     select_bundle_payload,
+    validate_closed_rendered_bundle,
 )
 from .bundle_projection import (
     RenderedBundle as ProjectedBundle,
@@ -336,12 +338,15 @@ class RenderedHookRegistration:
     sha256: str
 
     def __post_init__(self) -> None:
-        if self.abi not in {"claude-settings-hooks-v1", "codex-hooks-json-v1"}:
+        if type(self.abi) is not str or self.abi not in {
+            "claude-settings-hooks-v1",
+            "codex-hooks-json-v1",
+        }:
             raise BundleRenderError("rendered hook registration ABI is unsupported")
-        if self.owner != _OWNER:
+        if type(self.owner) is not str or self.owner != _OWNER:
             raise BundleRenderError("rendered hook registration owner is invalid")
         _validate_rendered_hook_value(self.value)
-        if _SHA256.fullmatch(self.sha256) is None:
+        if type(self.sha256) is not str or _SHA256.fullmatch(self.sha256) is None:
             raise BundleRenderError(
                 "rendered hook registration digest must be lowercase SHA-256"
             )
@@ -385,7 +390,7 @@ _EVENT_SPECS: tuple[
 
 
 def _validate_rendered_hook_value(value: HookRegistration) -> None:
-    if not isinstance(value, HookRegistration) or type(value.events) is not tuple:
+    if type(value) is not HookRegistration or type(value.events) is not tuple:
         raise BundleRenderError("rendered hook value must contain immutable events")
     if len(value.events) != len(_EVENT_SPECS):
         raise BundleRenderError("rendered hook value must contain exactly three events")
@@ -394,21 +399,27 @@ def _validate_rendered_hook_value(value: HookRegistration) -> None:
             raise BundleRenderError("rendered hook event must be one immutable pair")
         name, matcher = actual
         expected_name, expected_matcher, _script, expected_status = expected
-        if name != expected_name or not isinstance(matcher, HookMatcher):
+        if (
+            type(name) is not str
+            or name != expected_name
+            or type(matcher) is not HookMatcher
+        ):
             raise BundleRenderError("rendered hook event set or order is invalid")
-        if matcher.matcher != expected_matcher or not isinstance(
-            matcher.hook,
-            HookCommand,
+        if (
+            (matcher.matcher is not None and type(matcher.matcher) is not str)
+            or matcher.matcher != expected_matcher
+            or type(matcher.hook) is not HookCommand
         ):
             raise BundleRenderError("rendered hook matcher is invalid")
         hook = matcher.hook
         if (
-            not isinstance(hook.command, str)
+            type(hook.command) is not str
             or not hook.command
-            or not isinstance(hook.command_windows, str)
+            or type(hook.command_windows) is not str
             or not hook.command_windows
             or type(hook.timeout) is not int
             or hook.timeout != 5
+            or type(hook.status_message) is not str
             or hook.status_message != expected_status
         ):
             raise BundleRenderError("rendered hook command shape is invalid")
@@ -570,7 +581,8 @@ def _render_powershell_command(
     return (
         "if (Get-Command node -ErrorAction SilentlyContinue) { "
         f"{remove}; $env:CLAUDE_PLUGIN_ROOT={runtime}; $env:PLUGIN_ROOT={runtime}; "
-        f"{state}; & node {script_path} }}"
+        f"{state}; & node {script_path} "
+        "} else { throw 'node is required for Ponytail hooks' }"
     )
 
 
@@ -649,6 +661,15 @@ class RenderedBundlePlan:
     hook_registration: RenderedHookRegistration | None
 
     def __post_init__(self) -> None:
+        if type(self.desired) is not ProjectedBundle:
+            raise BundleRenderError("rendered bundle plan requires an exact bundle")
+        try:
+            validate_closed_rendered_bundle(self.desired)
+        except BundleProjectionError as exc:
+            raise BundleRenderError(
+                f"rendered bundle plan requires a closed bundle: {exc}"
+            ) from exc
+        projected = self.desired.registration
         expects_hooks = self.desired.target_type in {"claude", "codex"}
         if expects_hooks != (self.hook_registration is not None):
             raise BundleRenderError(
@@ -656,16 +677,16 @@ class RenderedBundlePlan:
             )
         if self.hook_registration is None:
             return
-        _validate_rendered_hook_value(self.hook_registration.value)
-        if (
-            registration_semantic_sha256(self.hook_registration.value)
-            != self.hook_registration.sha256
-        ):
+        if type(self.hook_registration) is not RenderedHookRegistration:
             raise BundleRenderError(
-                "rendered hook registration digest does not match its value"
+                "rendered bundle plan requires an exact hook registration"
             )
-        projected = self.desired.registration
-        if projected != self.hook_registration.to_projection():
+        RenderedHookRegistration.__post_init__(self.hook_registration)
+        expected_projection = RenderedHookRegistration.to_projection(
+            self.hook_registration
+        )
+        RegistrationProjection.__post_init__(expected_projection)
+        if projected != expected_projection:
             raise BundleRenderError(
                 "rendered hook registration does not match bundle provenance"
             )
@@ -730,5 +751,8 @@ def revalidate_rendered_bundle(
     expected: RenderedBundlePlan,
 ) -> None:
     """Recompute the whole pure plan immediately before a future write."""
+    if type(expected) is not RenderedBundlePlan:
+        raise BundleRenderError("expected bundle plan must be an exact rendered value")
+    RenderedBundlePlan.__post_init__(expected)
     if render_bundle(item, context) != expected:
         raise BundleRenderError("rendered bundle changed before target mutation")
