@@ -119,10 +119,19 @@ The first Phase-1 implementation slice is implemented and verified:
   bundle I/O when no bundle is declared, and target-root remapping preserves
   the resolved tuple;
 - `tests/test_bundles.py` covers every binding/declaration branch. The Nix
-  pytest check passed 1,866 tests at 100% branch coverage, and the Nix mypy
+  pytest check passed 1,870 tests at 100% branch coverage, and the Nix mypy
   check passed 68 source files.
 
-After committing and auditing that slice:
+Its required independent audit is
+`/var/tmp/wg-ponytail-20260715/fess-3113fcc/report.md`. The audit reproduced
+three defects, all resolved by the current remediation: explicit overrides no
+longer disappear when no declaration exists; declarations retain the resolved
+manifest path rather than a swappable lexical symlink; and unknown `~user`
+expansion is normalized to a clean bundle error for both overrides and the
+ambient descriptor path. This is a fess-fix-only unit and therefore does not
+receive a recursive audit.
+
+After committing this remediation:
 
 1. add the strict adapter manifest, provenance-bearing composite discovery,
    six selected skill trees, and the audited `gptel-preset-v1` projections;
@@ -139,7 +148,8 @@ After committing and auditing that slice:
   production runtime does not need. The baseline is non-green; the dependency
   was not installed under this run's constraints.
 - Binding-slice pytest/mypy gates: passed on attempt 1; failure count reset.
-- Binding-slice full `nix flake check`: passed on attempt 1 (all 7 checks).
+- Binding slice and audit remediation full `nix flake check`: each passed on
+  attempt 1 (all 7 checks); failure count reset.
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature

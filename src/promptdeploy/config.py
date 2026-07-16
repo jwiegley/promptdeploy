@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml
 
 from .bundles import (
+    BundleBindingError,
     BundleConfig,
     load_bundle_bindings_file,
     parse_bundle_declarations,
@@ -186,19 +187,24 @@ def load_config(
         data.get("bundles"),
         config_directory=config_path.parent,
     )
+    overrides = parse_bundle_source_overrides(bundle_source_overrides)
     if declarations:
         descriptor_path = bundle_bindings_file
         if descriptor_path is None:
             raw_descriptor_path = os.environ.get("PROMPTDEPLOY_BUNDLE_BINDINGS_FILE")
-            descriptor_path = (
-                Path(raw_descriptor_path).expanduser() if raw_descriptor_path else None
-            )
+            if raw_descriptor_path:
+                try:
+                    descriptor_path = Path(raw_descriptor_path).expanduser()
+                except RuntimeError as exc:
+                    raise BundleBindingError(
+                        "PROMPTDEPLOY_BUNDLE_BINDINGS_FILE has an unknown "
+                        "home directory"
+                    ) from exc
         descriptor_bindings = (
             load_bundle_bindings_file(descriptor_path)
             if descriptor_path is not None
             else {}
         )
-        overrides = parse_bundle_source_overrides(bundle_source_overrides)
         bundles = resolve_bundle_configs(
             declarations,
             descriptor_bindings=descriptor_bindings,
@@ -206,6 +212,12 @@ def load_config(
             require_immutable=require_immutable_bundles,
         )
     else:
+        if overrides:
+            resolve_bundle_configs(
+                (),
+                descriptor_bindings={},
+                source_overrides=overrides,
+            )
         bundles = ()
 
     return Config(

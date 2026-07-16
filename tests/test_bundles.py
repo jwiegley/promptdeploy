@@ -86,7 +86,7 @@ class TestBundleDeclarations:
     def test_absent_is_empty(self, tmp_path: Path) -> None:
         assert parse_bundle_declarations(None, config_directory=tmp_path) == ()
 
-    def test_valid_manifest_is_lexical_and_ordered(self, tmp_path: Path) -> None:
+    def test_valid_manifest_is_resolved_and_ordered(self, tmp_path: Path) -> None:
         first = _manifest(tmp_path, "bundles/alpha.yaml")
         second = _manifest(tmp_path, "bundles/beta.yaml")
 
@@ -173,6 +173,28 @@ class TestBundleDeclarations:
         finally:
             outside.unlink()
 
+    def test_confined_manifest_link_cannot_be_swapped_after_parse(
+        self, tmp_path: Path
+    ) -> None:
+        safe = tmp_path / "safe.yaml"
+        safe.write_text("safe\n", encoding="utf-8")
+        outside = tmp_path.parent / f"{tmp_path.name}-outside.yaml"
+        outside.write_text("outside\n", encoding="utf-8")
+        lexical = tmp_path / "bundle.yaml"
+        lexical.symlink_to(safe)
+        try:
+            (declaration,) = parse_bundle_declarations(
+                {"ponytail": {"manifest": "bundle.yaml"}},
+                config_directory=tmp_path,
+            )
+            assert declaration.manifest_path == safe.resolve()
+
+            lexical.unlink()
+            lexical.symlink_to(outside)
+            assert declaration.manifest_path.read_text(encoding="utf-8") == "safe\n"
+        finally:
+            outside.unlink()
+
 
 class TestBundleOverrides:
     def test_valid_override_is_resolved(self, tmp_path: Path) -> None:
@@ -207,6 +229,16 @@ class TestBundleOverrides:
         path.write_text("x", encoding="utf-8")
         with pytest.raises(BundleBindingError, match="must be a directory"):
             parse_bundle_source_overrides([f"ponytail={path}"])
+
+    def test_override_unknown_home_is_a_binding_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fail_expanduser(_path: Path) -> Path:
+            raise RuntimeError("unknown user")
+
+        monkeypatch.setattr(Path, "expanduser", fail_expanduser)
+        with pytest.raises(BundleBindingError, match="unknown home directory"):
+            parse_bundle_source_overrides(["ponytail=~missing/source"])
 
 
 class TestBindingDescriptor:
@@ -552,18 +584,50 @@ class TestConfigIntegration:
         path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
         return path
 
-    def test_bundle_free_config_does_no_binding_io(
+    def test_bundle_free_config_ignores_ambient_descriptor(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv(
             "PROMPTDEPLOY_BUNDLE_BINDINGS_FILE", str(tmp_path / "missing.json")
         )
-        config = load_config(
-            self._config(tmp_path),
-            bundle_source_overrides=["malformed"],
-            require_immutable_bundles=True,
-        )
+        config = load_config(self._config(tmp_path), require_immutable_bundles=True)
         assert config.bundles == ()
+
+    def test_bundle_free_config_rejects_explicit_override(self, tmp_path: Path) -> None:
+        with pytest.raises(BundleBindingError, match="expected NAME=ABSOLUTE_PATH"):
+            load_config(
+                self._config(tmp_path),
+                bundle_source_overrides=["malformed"],
+            )
+
+        with pytest.raises(BundleBindingError, match="Unknown bundle override"):
+            load_config(
+                self._config(tmp_path),
+                bundle_source_overrides=[f"ponytail={tmp_path}"],
+            )
+
+    def test_ambient_descriptor_unknown_home_is_a_binding_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _manifest(tmp_path)
+        original_expanduser = Path.expanduser
+
+        def selective_expanduser(path: Path) -> Path:
+            if str(path).startswith("~missing"):
+                raise RuntimeError("unknown user")
+            return original_expanduser(path)
+
+        monkeypatch.setattr(Path, "expanduser", selective_expanduser)
+        monkeypatch.setenv(
+            "PROMPTDEPLOY_BUNDLE_BINDINGS_FILE", "~missing/bindings.json"
+        )
+        with pytest.raises(BundleBindingError, match="unknown home directory"):
+            load_config(
+                self._config(
+                    tmp_path,
+                    bundles={"ponytail": {"manifest": "bundles/ponytail.yaml"}},
+                )
+            )
 
     def test_explicit_descriptor_and_remap(self, tmp_path: Path) -> None:
         manifest = _manifest(tmp_path)

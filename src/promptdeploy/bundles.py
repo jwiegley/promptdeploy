@@ -141,7 +141,7 @@ def parse_bundle_declarations(
             raise BundleSchemaError(
                 f"bundle {name!r} manifest must be a confined regular file"
             )
-        result.append(BundleDeclaration(name=name, manifest_path=lexical))
+        result.append(BundleDeclaration(name=name, manifest_path=resolved))
     return tuple(result)
 
 
@@ -173,7 +173,12 @@ def parse_bundle_source_overrides(values: Sequence[str]) -> dict[str, Path]:
             raise BundleBindingError(str(exc)) from exc
         if name in overrides:
             raise BundleBindingError(f"Duplicate --bundle-source for {name!r}")
-        path = Path(raw_path).expanduser()
+        try:
+            path = Path(raw_path).expanduser()
+        except RuntimeError as exc:
+            raise BundleBindingError(
+                f"--bundle-source for {name!r} has an unknown home directory"
+            ) from exc
         if not path.is_absolute():
             raise BundleBindingError(
                 f"--bundle-source for {name!r} must be an absolute path"
