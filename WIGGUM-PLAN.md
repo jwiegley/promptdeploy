@@ -6,16 +6,16 @@
 > committed work; none of its lifecycle/runtime requirements enlarges the
 > current task.
 
-This plan records the full Definition of Done for the user request below. It
-may be annotated with evidence, but its requirements must not be weakened or
-redefined to fit an implementation.
+This plan recorded the former Definition of Done before the user corrected the
+scope. The historical requirements below no longer govern implementation or
+completion.
 
 > Study the family of "ponytail" skills and other AI tools in
 > `/Users/johnw/Desktop/ponytail`. I want to understand how to reference this
 > from promptdeploy so that I can make use of these skills in all of my agent,
 > everywhere that I use LLMs. `$command-wiggum`
 
-## Reference target
+## Historical reference target
 
 - Upstream checkout: `/Users/johnw/Desktop/ponytail`
 - Repository: `https://github.com/DietrichGebert/ponytail`
@@ -32,7 +32,7 @@ redefined to fit an implementation.
   persist `review` as the ambient mode; and GPTel projections must replace
   unsupported lifecycle/command claims with an explicit preset-only contract.
 
-## Non-negotiable done criteria
+## Historical done criteria
 
 1. **Complete study.** Every top-level ponytail artifact family is classified
    as portable behavior, host adapter, runtime/tooling, development evidence,
@@ -90,7 +90,7 @@ redefined to fit an implementation.
    are drained if present; the branch is locally current with `origin/main`;
    and a final fess audit finds no actionable defect in the completed work.
 
-## Planned work units
+## Historical work units
 
 1. Inventory ponytail and promptdeploy, then record the artifact/target matrix
    and chosen source-reference design.
@@ -106,7 +106,7 @@ redefined to fit an implementation.
 6. Run focused and full verification, independent audits, observation cleanup,
    local rebase/restack, parity audit, and final fess audit.
 
-## Authoritative evidence
+## Historical authoritative evidence
 
 - Source and adapter coverage: current files at the pinned ponytail revision.
 - Supported target behavior: promptdeploy target implementations and regression
@@ -119,7 +119,7 @@ redefined to fit an implementation.
 - Completion: committed diff, clean status, current-base ancestry, passing full
   suite, independent audit reports, and an item-by-item audit of this section.
 
-## Constraints
+## Historical constraints
 
 - Do not install dependencies on the fly or use `nix develop`; use the checked
   environment and existing Nix checks.

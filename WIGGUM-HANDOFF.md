@@ -55,11 +55,13 @@ against primary files:
 - `/var/tmp/wg-ponytail-20260715/matrix/report.md`: independent artifact/target
   matrix and source-reference trade-off decision.
 
-Their durable synthesis is `docs/ponytail-integration.md`. The accepted design
-is a named, allowlisted bundle manifest, an explicit mutable Desktop binding
-for development only, and a pinned non-flake Nix input for production. Direct
-external links, a submodule, committed generated copies, and marketplace-only
-installation are rejected as the canonical cross-agent source.
+Their durable synthesis is `docs/ponytail-integration.md`. Its source-reference
+decision remains current: a named, allowlisted bundle manifest, an explicit
+mutable Desktop binding for development only, and a pinned non-flake Nix input
+for production. Its mandatory managed-runtime endpoint was superseded by
+`WIGGUM-SCOPE.md`. Direct external links, a submodule, committed generated
+copies, and marketplace-only installation remain rejected as the canonical
+cross-agent source.
 
 Evidence established:
 
@@ -113,10 +115,10 @@ All implementation-seam reports are complete:
 - `/var/tmp/wg-ponytail-20260715/nix-binding/report.md`: pinned flake input,
   package passthru, Home Manager assertions, and activation binding.
 
-Where a seam report conflicts with the audited contracts above, the frozen
-plan and durable ADR win. In particular, raw stripped GPTel bodies, persistent
-review mode, recursive OpenCode adapter directories, and upstream's fallback
-copy are prohibited.
+During the former runtime design, the frozen plan and ADR governed conflicts
+between seam reports. `WIGGUM-SCOPE.md` now supersedes that runtime authority.
+The existing six GPTel projections remain current; persistent modes, OpenCode
+runtime adapters, and fallback-copy corrections are optional follow-up work.
 
 ## Next actions
 
@@ -726,6 +728,9 @@ Next, under the corrected scope:
 
 ## Gate attempt counts
 
+- Scope-correction baseline: `nix flake check --print-build-logs` passed all
+  seven checks on attempt 1 with 2,833 tests and 100% statement/branch
+  coverage. The `e35a829` pre-commit agnix gate reported zero errors.
 - Promptdeploy baseline: passed on attempt 1 (`nix flake check`, all 7 checks).
 - Ponytail reference baseline: attempt 1 reached 81/82; sole failure signature
   is missing `pandas`, which upstream installs as a CSV-test dependency but the

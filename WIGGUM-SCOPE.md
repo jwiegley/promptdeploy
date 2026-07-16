@@ -1,9 +1,10 @@
 # Ponytail proportional integration scope (frozen)
 
-This file supersedes the completion criteria in `WIGGUM-PLAN.md`. The user
-explicitly rejected the runtime-heavy expansion and clarified that the goal is
-to bring Ponytail into the current working environment through promptdeploy.
-Already committed work is preserved, but it does not enlarge this scope.
+This file supersedes every completion and runtime requirement in both
+`WIGGUM-PLAN.md` and `docs/ponytail-integration.md`. The user explicitly
+rejected the runtime-heavy expansion and clarified that the goal is to bring
+Ponytail into the current working environment through promptdeploy. Already
+committed work is preserved, but it does not enlarge this scope.
 
 ## Completion criteria
 

@@ -1,10 +1,17 @@
 # Ponytail integration study and architecture
 
-- Status: accepted design, implementation in progress
+- Status: proportional static integration in progress; runtime design is optional
 - Reference checkout: `/Users/johnw/Desktop/ponytail`
 - Upstream: `https://github.com/DietrichGebert/ponytail`
 - Reviewed revision: `16f29800fd2681bdf24f3eb4ccffe38be3baec6b`
 - Declared version: `4.8.4`
+
+> **Scope correction (2026-07-16):** `WIGGUM-SCOPE.md` supersedes every
+> lifecycle, mode-persistence, plugin-runtime, transaction, rollback, recovery,
+> and fleet-rollout requirement in this document. The current endpoint is the
+> pinned six-skill family on native skill targets plus six GPTel prompt
+> projections. Runtime sections remain below only as historical optional design
+> material and are not completion gates.
 
 ## Decision
 
@@ -118,7 +125,12 @@ and fail if any required capability is unavailable. The snapshot sequence
 checks default subagent injection; separate runtime goldens cover matcher
 match, mismatch, invalid-regex, and malformed-input behavior.
 
-## Target and fleet mapping
+## Target and fleet mapping (historical runtime proposal)
+
+The table below records the superseded runtime endpoint. The active proportional
+mapping is six ordinary skill trees on Claude, Codex, Droid, and OpenCode, plus
+six one-shot prompt projections on GPTel. No lifecycle or plugin runtime is
+required.
 
 The current `deploy.yaml` describes 21 targets: eight Claude, four Codex,
 seven OpenCode, one Factory Droid, and one GPTel. `RemoteTarget` is transport,
@@ -310,7 +322,7 @@ revision, and digest through package passthru. Home Manager asserts the binding
 is store-backed and matches the package metadata before activation. Activation
 performs no fetch, npm install, or plugin-manager mutation.
 
-## Managed runtime design
+## Managed runtime design (historical optional follow-up)
 
 Executable runtime code is part of the first-class, hashed
 `bundle:ponytail` item rather than an incidental hook side effect. A target
@@ -443,7 +455,7 @@ and verified rather than silent rewrites.
 - Instruction-only rules are deliberately weaker than lifecycle injection.
   Their availability must not be reported as full mode parity.
 
-## Verification and rollout
+## Runtime verification and rollout (historical optional follow-up)
 
 Implementation proceeds in independently audited work units:
 
