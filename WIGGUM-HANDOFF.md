@@ -364,9 +364,20 @@ isolated implementation prototypes are
 `/var/tmp/wg-ponytail-20260715/activation-cli-proto/report.md`. Every finding
 was fixed and both final review verdicts are clean under the documented
 non-concurrent ordinary-POSIX preview-tree threat model. Final gates pass:
-2,397 tests at 100% statement and branch coverage, strict mypy over 83 source
+2,401 tests at 100% statement and branch coverage, strict mypy over 83 source
 files, Ruff format/lint, package build, Home Manager module and activation
 checks, and the complete seven-check `nix flake check`.
+
+The required activation fess audit is
+`/var/tmp/wg-ponytail-20260715/fess-988c70e/report.md`. It found a high-severity
+target-root ancestor-symlink escape, two medium adversarial-test gaps, and three
+low evidence/documentation gaps. Fess-fix-only commit `089cd1c` (`Fix activation
+audit findings`) rejects every existing lexical ancestor symlink before
+resolution, adds config and CLI sentinel regressions, proves dependency-closed
+strict verification, replaces the vacuous collision test, proves sibling-bundle
+leniency and Codex secret indirection, and narrows the preflight claim above.
+The complete flake gate and commit hooks are green; per protocol, this narrow
+remediation does not receive a recursive fess audit.
 
 Next:
 
@@ -412,6 +423,10 @@ Next:
   each was corrected before the final gate. The final 2,397-test 100%-branch
   pytest derivation, strict 83-file mypy derivation, and all seven flake checks
   are green.
+- Activation fess remediation: the first full gate found only the new
+  missing-parent coverage branch; after adding that regression, the final
+  2,401-test 100%-branch derivation, strict mypy, Ruff, package, Home Manager,
+  and seven-check flake gates are green.
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature
