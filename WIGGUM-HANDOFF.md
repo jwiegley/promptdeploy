@@ -758,19 +758,29 @@ default app deploys from explicit store config/binding paths,
 only deliberate mutable-checkout path. Home Manager now defaults to and
 asserts the same deployment.
 
-The focused `checks.aarch64-darwin.deployment` derivation is green. It verifies
-the copied layout and exact binding metadata, runs validation from a caller
-directory containing conflicting invalid `deploy.yaml`, and performs a real
-isolated deploy/strict verify from the store tree. Both Home Manager module and
-activation checks also pass.
+Store composition is committed as `97ffcdb`. Its independent audit is
+`/var/tmp/wg-ponytail-store-deployment/fess-97ffcdb/report.md`. The audit found
+that `self.outPath` omitted the existing `translate-tool` submodule and left
+the tracked `skills/translate-en` link broken. Fix-only commit `3a57a43`
+enables `inputs.self.submodules`, requires `translate-en/SKILL.md`, and makes
+the deployment check reject broken links.
 
-Next, under the corrected scope:
+The final targeted deployment build is
+`/nix/store/sfjxczdm440nz5vwyph3da38922v6msn-promptdeploy-deployment`.
+Ponytail is a copied, link-free subtree under `sources/ponytail`; the descriptor
+binds that in-tree path; `translate-en` resolves; store-backed validation has
+zero errors and only the five pre-existing namespace warnings; the 42 local
+Ponytail artifacts converged unchanged; and all 13 exact selectors verified.
+No remote target was contacted.
 
-1. commit and independently audit the store-deployment unit;
-2. redeploy and strictly verify through the store-backed app;
-3. perform observation cleanup and local rebase. Do not resume settings CAS,
-   recovery, runtime publication, lifecycle hooks, mode persistence, or remote
-   rollout in this task.
+Explicit follow-up commit `5eb28a7` adds the read-only `discover-bundles`
+workflow requested after Ponytail integration. It rendered in isolation and
+was deployed locally to Claude, Codex, Droid, and OpenCode. It only reports
+and scores candidates; it does not add another input or install anything.
+
+There is no remaining work in the corrected scope. Do not resume settings CAS,
+recovery, runtime publication, lifecycle hooks, mode persistence, or remote
+rollout without a new request.
 
 ## Gate attempt counts
 
@@ -797,6 +807,14 @@ Next, under the corrected scope:
   normally instant fake transaction past the 10-second harness bound; the
   unchanged isolated derivation passed on the immediate retry as host load
   fell. No production or timeout value changed.
+- Store-deployment audit remediation: the targeted `.#deployment` build,
+  named-file/link assertions, store-backed validation, isolated rendering, and
+  live local convergence all pass. A focused Nix-check rerun invoked
+  Nixpkgs' Python runtime-dependency hook, which enumerated the host's entire
+  `/nix/store`; it completed that scan after 10 minutes 29 seconds and entered
+  the deployment-check derivation, but the run was interrupted at the user's
+  explicit instruction never to scan the full store. It is not claimed as a
+  completed gate, and no such scan should be repeated.
 - Scope-correction baseline: `nix flake check --print-build-logs` passed all
   seven checks on attempt 1 with 2,833 tests and 100% statement/branch
   coverage. The `e35a829` pre-commit agnix gate reported zero errors.
