@@ -96,9 +96,21 @@ output format. Node must be present on the non-interactive hook path. Static
 skills remain usable when it is absent, but a target claiming the full tier
 must report that missing capability rather than silently claiming success.
 
-The internal `review` mode is not a portable public intensity and will not be
-accepted as a default. `ponytail-review` remains the portable one-shot review
-surface.
+Two upstream behaviors are deliberately corrected by versioned adapter
+transforms. `ponytail-instructions.js` contains an embedded fallback copy of
+the main rules; the managed transform removes that fallback and makes an
+unreadable selected `skills/ponytail/SKILL.md` fail the runtime health probe.
+`ponytail-mode-tracker.js` persists the internal `review` mode; the managed
+transform recognizes the one-shot review invocation without changing the
+ambient `lite`/`full`/`ultra`/`off` state. Both transforms require the exact
+reviewed input digest and have semantic golden tests, so a pin update cannot
+silently carry the patch onto changed upstream code.
+
+Malformed client events retain upstream's fail-open/no-session-block behavior.
+That recovery is distinct from source or capability health: deployment and
+strict verification execute the selected instruction read, state write/read,
+event-output, and relative-module paths and fail if any required path is
+unhealthy.
 
 ## Target and fleet mapping
 
@@ -113,12 +125,34 @@ artifact set that a local target receives.
 | Codex CLI/Desktop/IDE | Six complete skills plus the same managed runtime, with an explicit writable `PLUGIN_DATA` binding so the shared code emits Codex JSON and stores state in the Codex-owned path. | Hook definitions remain subject to the user's Codex trust review. Promptdeploy must not edit trust state. |
 | OpenCode | Preserve the upstream native plugin's relative `.opencode/command`, `hooks/`, and `skills/` layout and manage exactly one plugin entry in `opencode.json`. | The native plugin owns its bundled skills; generic Ponytail skill deployment must be disabled there to avoid duplicates. |
 | Factory Droid | Six complete skills through the existing atomic skill-tree target path. | No proven always-on hook/instruction surface; claim callable skill tier only until a live client proves more. |
-| GPTel | Six named prompt projections made by stripping each `SKILL.md` frontmatter and retaining the body. | Prompt presets are not native skills, lifecycle hooks, or persistent modes. |
+| GPTel | Six named, target-aware preset projections derived from the six skills. Each projection keeps the substantive task/rules while replacing host-specific activation, persistence, slash-command, subagent, and update claims with an explicit one-invocation preset contract. | Prompt presets are not native skills, lifecycle hooks, commands, or persistent modes. |
+
+The exact Ponytail set is target-specific: Claude and Codex select
+`bundle:ponytail` plus six `skill:*` items; OpenCode selects only
+`bundle:ponytail`, whose native plugin owns its command and skill layout; Droid
+selects the bundle plus six skills; and GPTel selects the bundle plus six
+`prompt:*` projections. On Claude/Codex/OpenCode the bundle contains the
+target-native runtime and MIT notice. On Droid/GPTel it contains only the
+owned notice/provenance tree. This single bundle identity prevents the license
+from being orphaned during exact selection while avoiding duplicate OpenCode
+skills.
 
 The optional MCP package is not part of the minimum endpoint. Upstream states
 that it is user-invoked rather than always-on, and its uninstalled SDK/Zod
 dependencies require separate reproducible packaging. It may be added later as
 an explicitly weaker bridge, never as evidence of lifecycle parity.
+
+GPTel uses the versioned `gptel-preset-v1` transform, not raw frontmatter
+stripping. For the main skill it preserves the coding ladder, boundaries,
+output discipline, and full-intensity rules while replacing persistence and
+mode-switch sections with a one-invocation preset statement. Review, audit,
+debt, and gain retain their substantive one-shot tasks with a host-neutral
+invocation header. Help becomes an accurate catalog of the six installed GPTel
+presets and explicitly states that lifecycle activation, slash commands,
+subagent propagation, persistent modes, plugin configuration, and plugin
+updates are unavailable. Semantic goldens assert those retained and forbidden
+claims; byte equality with a stripped `SKILL.md` is intentionally not an
+acceptance rule.
 
 ## Source-reference alternatives
 
@@ -156,8 +190,15 @@ exports:
     - skills/ponytail-help
   gptel_prompts:
     from_skills: true
-    strip_frontmatter: true
+    transform: gptel-preset-v1
+  support_bundle:
+    name: ponytail
+    include:
+      - LICENSE
   claude_codex_runtime:
+    transforms:
+      hooks/ponytail-instructions.js: strict-canonical-instructions-v1
+      hooks/ponytail-mode-tracker.js: one-shot-review-v1
     include:
       - hooks/claude-codex-hooks.json
       - hooks/ponytail-activate.js
@@ -169,15 +210,26 @@ exports:
       - hooks/ponytail-statusline.ps1
       - hooks/ponytail-subagent.js
       - skills/ponytail/SKILL.md
-      - LICENSE
   opencode_plugin:
+    transforms:
+      hooks/ponytail-instructions.js: strict-canonical-instructions-v1
     include:
-      - .opencode/command
+      - .opencode/command/ponytail.md
+      - .opencode/command/ponytail-review.md
+      - .opencode/command/ponytail-audit.md
+      - .opencode/command/ponytail-debt.md
+      - .opencode/command/ponytail-gain.md
+      - .opencode/command/ponytail-help.md
       - .opencode/plugins/ponytail.mjs
       - .opencode/plugins/ponytail-frontmatter.cjs
-      - hooks
-      - skills
-      - LICENSE
+      - hooks/ponytail-config.js
+      - hooks/ponytail-instructions.js
+      - skills/ponytail
+      - skills/ponytail-review
+      - skills/ponytail-audit
+      - skills/ponytail-debt
+      - skills/ponytail-gain
+      - skills/ponytail-help
 ```
 
 Every include path must be canonical and relative. Discovery must reject
@@ -186,6 +238,19 @@ files, missing expected version/license files, duplicate names, and any
 unlisted new runtime file. `.git`, `.env`, `node_modules`, benchmarks, tests,
 publishing scripts, and marketing assets can never enter the payload by
 implicit recursion from the repository root.
+
+Directory recursion is allowed only for one of the six selected canonical
+skill trees, where future auxiliary files are part of the contract. Adapter
+directories such as `.opencode/command` and `hooks` are enumerated file by file.
+Every selected Ponytail item depends on the owned `bundle:ponytail`
+support artifact, installed under the target's hidden promptdeploy bundle
+area. It is verified and retained while any Ponytail item remains, including
+skill-only Droid and prompt-only GPTel deployments.
+
+Imported tree digests frame directory entries (including empty directories),
+node kinds, canonical relative paths, normalized permission/execute modes, and
+file bytes. A mode-only or empty-directory change therefore changes provenance
+and cannot hide behind an unchanged file-content hash.
 
 Each emitted item will carry bundle name, revision, logical relative path,
 and mutable/immutable source status. Those values participate in diagnostics,
@@ -197,8 +262,9 @@ and must be globally unique across the primary source and every bundle.
 The planned development interface is explicit and visibly mutable:
 
 ```text
-promptdeploy validate \
-  --bundle-source ponytail=/Users/johnw/Desktop/ponytail
+promptdeploy \
+  --bundle-source ponytail=/Users/johnw/Desktop/ponytail \
+  validate
 ```
 
 The production flake input is non-flake and pinned. The packaged executable
@@ -209,29 +275,44 @@ performs no fetch, npm install, or plugin-manager mutation.
 
 ## Managed runtime design
 
-Executable runtime code is a first-class, hashed item rather than an incidental
-hook side effect. A target stages a complete allowlisted tree under a managed,
-content-addressed directory, verifies it, then switches hook/plugin
-configuration to that exact digest. Only after the new configuration verifies
-may an unreferenced old digest be removed. Failure leaves either the complete
-old state or the complete new state—never hooks pointing at a partial tree.
+Executable runtime code is part of the first-class, hashed
+`bundle:ponytail` item rather than an incidental hook side effect. A target
+stages a complete allowlisted tree under a managed, content-addressed
+directory, verifies it, then switches hook/plugin configuration to that exact
+digest. Only after the new configuration verifies may an unreferenced old
+digest be removed. Failure leaves either the complete old state or the
+complete new state—never hooks pointing at a partial tree. On Droid and GPTel,
+the same bundle item owns only the license/provenance support tree.
 
 Claude and Codex hook commands are rendered from the upstream event map. They
 must not retain `${CLAUDE_PLUGIN_ROOT}` outside a plugin host. Commands point at
 the managed runtime; Codex commands additionally set a writable managed
 `PLUGIN_DATA` path. POSIX and PowerShell forms, timeouts, matchers, status
 messages, BOM/CRLF handling, and the non-closing-stdin fail-safe are preserved.
+The rendered instruction builder and mode tracker apply the two digest-guarded
+corrections above; runtime verification proves canonical instruction reads and
+that `ponytail-review` leaves the prior ambient mode unchanged.
 
 OpenCode receives the native relative layout and one managed plugin path. The
 target's remote rsync includes must cover the runtime directory. Removing the
 bundle removes only promptdeploy-owned configuration/runtime paths and retains
 the user's mode/default state unless an explicit purge is requested.
 
+Remote adapters receive both a local staging path and a distinct emitted live
+host path; generated commands may use only the latter. Remote updates are a
+two-phase transaction: preseed and verify the unreferenced digest tree first,
+then compare the live-config baseline and atomically switch the registration
+and manifest. Removal unregisters before garbage collection. Fault injection
+between transfer, config switch, manifest switch, and cleanup must always
+observe either the old complete pair or the new complete pair, never a staging
+path or a registration pointing at partial content.
+
 ## Safety, trust, and ownership
 
 - Detect an existing native Ponytail plugin or unmanaged same-name skills,
-  commands, hooks, or runtime before mutation. Normal deployment stops;
-  explicit migration/force establishes one owner.
+  commands, hooks, or runtime before mutation. Deployment stops even under
+  `--force`; the operator must remove the native installation with that
+  client's native command before promptdeploy can establish ownership.
 - Never install promptdeploy-managed generic Ponytail skills alongside an
   OpenCode plugin that already exposes the same skill directory.
 - Never pre-approve Codex hooks or edit its trust database. “Installed but
@@ -244,20 +325,26 @@ the user's mode/default state unless an explicit purge is requested.
   into a production hook command.
 - Verify Node through the same local or SSH non-interactive environment that
   will execute the hooks.
+- Verify the canonical skill read, relative module graph, representative hook
+  output, state write/read, and exact registration. Upstream fail-open handling
+  of a malformed individual event does not turn a failed health probe into a
+  successful full tier.
 
 ## Known upstream risks retained with provenance
 
-The imported bytes remain upstream-owned. Promptdeploy will not silently
-rewrite them.
+The imported bytes remain upstream-owned. Complete skill trees stay verbatim;
+the three disclosed target transforms are named, digest-guarded, versioned,
+and verified rather than silent rewrites.
 
 - `ponytail-gain` still presents the older single-shot 80–94% line reduction,
   47–77% cost reduction, and 3–6× speed card, while the current README leads
   with corrected 12-task agentic figures of roughly 54% less code, 20% lower
   cost, and 27% faster. The full skill is retained verbatim and this mismatch
   is disclosed until fixed upstream.
-- Some hosts differ on bare `/ponytail`, hidden `review` state, and default
-  reporting. The portable public contract is the six skills and four public
-  levels; target-native extras are not generalized without evidence.
+- Upstream's tracker persists a hidden `review` state and its instruction
+  builder can substitute a hardcoded rules copy. Managed Claude, Codex, and
+  OpenCode output applies the pinned, tested corrections described above; the
+  portable public contract remains the six skills and four public levels.
 - Instruction-only rules are deliberately weaker than lifecycle injection.
   Their availability must not be reported as full mode parity.
 
@@ -271,25 +358,33 @@ Implementation proceeds in independently audited work units:
 3. native OpenCode plugin ownership and remote transport;
 4. pinned Nix input, package passthru, Home Manager assertions, and exact
    activation selection;
-5. documentation, isolated target-root parity, full CI, live trust/capability
-   probes, and fleet rollout.
+5. documentation, isolated target-root parity, full CI, non-mutating
+   capability probes, and closeout audits.
 
 Completion requires more than file presence:
 
 - full `nix flake check` (format, lint, strict mypy, 100% branch coverage,
   Home Manager evaluation, activation driver, and package build);
-- isolated target-root deployment and strict verification for all six names on
-  all five target types at their declared tier;
+- isolated target-root deployment and `verify --target-root` strict
+  verification for all six names, the support bundle, and every target type at
+  its declared tier;
 - source/version/revision and selected-tree equality with the pinned Ponytail
   input;
 - first deploy, no-op redeploy, pin update, rollback, drift, removal, and
   failure-injection coverage;
-- actual session start, resume/compact, mode switch, off, and subagent behavior
-  on Claude/Codex; actual full/ultra/off and six commands on OpenCode; live
-  skill selection on Droid; live prompt loading on GPTel;
-- Codex trust reviewed by the user, never automated;
-- every configured local and remote target verified before claiming
-  “everywhere”.
+- representative Node and OpenCode runtime probes against the isolated
+  materialization, including canonical-read failure, state round trips,
+  one-shot review, and target-aware GPTel semantic goldens.
+
+Fleet rollout is a separately authorized operational phase. Only after that
+authorization may promptdeploy change the 21 live target configurations or
+remove an existing native Ponytail installation. The rollout acceptance is:
+actual session-start/resume/compact/mode/off/subagent behavior on Claude and
+Codex; actual full/ultra/off and six-command behavior on OpenCode; live skill
+selection on Droid; live prompt loading on GPTel; every configured remote
+transport path verified; and Codex hook trust reviewed by the user. Until
+those checks are completed, the implementation may be complete and deployable
+without claiming that the live fleet has already reached “everywhere.”
 
 ## Baseline evidence
 
@@ -297,16 +392,25 @@ Completion requires more than file presence:
   `direnv exec . nix flake check` passed all seven checks before implementation.
 - Ponytail was clean at the reviewed revision. Its root suite passed 81 of 82
   tests; the only failure was the documented CSV correctness benchmark because
-  this host's `python3` lacks the optional `pandas` dependency. No dependency
-  was installed, and the generated Python bytecode cache from that run was
-  removed; the Ponytail worktree was clean afterward.
-- An isolated temporary Codex home proved the official native plugin path:
-  marketplace registration wrote a `[marketplaces.ponytail]` config block;
-  installation cached version 4.8.4 and wrote
-  `[plugins."ponytail@ponytail"] enabled = true`; plugin hooks receive
-  `PLUGIN_DATA` and compatibility root variables. This also proved why native
-  plugin-manager state is not a pure static promptdeploy deployment and why
-  the managed-hook adapter must preserve the trust boundary.
+  this host's `python3` lacks `pandas`, which upstream CI installs as a required
+  CSV-test dependency even though production runtime does not require it. No
+  dependency was installed, the baseline remains visibly non-green at 81/82,
+  and the generated Python bytecode cache was removed afterward.
+- In isolated `HOME`/`CODEX_HOME` directories, marketplace registration created
+  `[marketplaces.ponytail]`; plugin installation cached the 4.8.4 tree and
+  created `[plugins."ponytail@ponytail"] enabled = true`. A second isolated
+  registration recorded the exact Git URL and reviewed `ref`. Those filesystem
+  observations prove marketplace/config/cache behavior only. The official
+  Codex hook contract—not the installation experiment—establishes
+  `PLUGIN_ROOT`, `PLUGIN_DATA`, and compatibility environment variables; the
+  managed adapter still exercises its rendered environment directly.
+
+The isolated evidence roots were
+`/var/tmp/promptdeploy-ponytail-codex.EXzur6` (local marketplace plus installed
+cache) and `/var/tmp/promptdeploy-ponytail-codex-git.J5UwSW` (Git marketplace at
+the exact reviewed ref). Their relevant `config.toml` and cache paths were
+inspected without touching the live Codex home. These temporary roots are
+diagnostic evidence, not production inputs, and are removed at closeout.
 
 Official Codex references used for this design: [build plugins](https://learn.chatgpt.com/docs/build-plugins),
 [lifecycle hooks](https://learn.chatgpt.com/docs/hooks), and

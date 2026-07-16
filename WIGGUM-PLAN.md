@@ -20,6 +20,11 @@ redefined to fit an implementation.
 - Native tooling to account for: lifecycle hooks and mode state, slash-command
   adapters, plugin/extension manifests, OpenCode and Pi runtimes, Hermes
   integration, MCP package, and instruction-only rule adapters.
+- Adapter corrections required by the independent design audit: managed
+  runtimes must read the selected main skill fail-closed instead of using
+  upstream's embedded fallback copy; invoking `ponytail-review` must not
+  persist `review` as the ambient mode; and GPTel projections must replace
+  unsupported lifecycle/command claims with an explicit preset-only contract.
 
 ## Non-negotiable done criteria
 
@@ -34,35 +39,46 @@ redefined to fit an implementation.
 3. **Full skill family.** `ponytail`, `ponytail-review`, `ponytail-audit`,
    `ponytail-debt`, `ponytail-gain`, and `ponytail-help` remain sourced from the
    reference tree (not hand-maintained divergent copies), including future
-   auxiliary files inside each skill tree.
+   auxiliary files inside each skill tree. Any target-specific correction is
+   a deterministic, versioned transform whose expected input is pinned and
+   whose output is covered by semantic goldens.
 4. **Every configured LLM surface.** Each target type present in
    `deploy.yaml`—Claude, Codex, Droid, OpenCode, and GPTel—gets the strongest
    safe form it supports. Skill-capable targets receive the complete skill
-   trees. Prompt-only targets receive faithful prompt adapters rather than
-   silently losing the capability. Remote instances use the same source and
-   target-specific transformation as local instances.
+   trees. Prompt-only targets receive faithful prompt adapters that explicitly
+   replace unsupported activation, persistence, slash-command, and update
+   claims rather than silently losing or overstating capability. Remote
+   instances use the same source and target-specific transformation as local
+   instances.
 5. **Native runtime where supportable.** Ponytail's always-on/mode tooling is
    enabled through a thin native adapter wherever promptdeploy can manage it
    safely and reproducibly. Unsupported host features are explicitly mapped
    to the best instruction/skill fallback; nothing is claimed as native parity
    without runtime evidence. Node-dependent lifecycle hooks must fail quiet as
-   upstream intends and must not rely on plugin-only environment variables
-   outside a plugin host.
+   upstream intends for malformed client events, but a selected canonical
+   skill that cannot be read is a hard health failure, never an embedded-text
+   fallback. The adapter must not persist the one-shot review skill as an
+   ambient mode and must not rely on plugin-only environment variables outside
+   a plugin host.
 6. **No collision or stale-copy traps.** Discovery, naming, source confinement,
    manifests, exact-item selection, removal, verification, and target-specific
    transforms handle imported items deterministically. Existing unmanaged user
    artifacts are not overwritten or removed without the repository's normal
-   force/adoption rules.
+   force/adoption rules. Imported-tree digests cover node kind, relative path,
+   normalized mode, empty directories, and file bytes. Every redistributed
+   target collection owns and verifies the MIT notice.
 7. **Usable operator path.** Documentation explains the architecture, what each
    target receives, how to deploy/verify just ponytail, how to update the pin,
    required executables or hook trust, and the difference between skill,
    prompt, instruction, and full plugin parity.
 8. **Independent verification.** Focused regression tests cover the imported
    source and every target mapping. The full `nix flake check` suite and package
-   build pass. A target-root deployment and strict verification prove the six
-   named capabilities on all configured local target types without mutating
-   live agent configuration. Reference parity is checked against the pinned
-   ponytail files and version.
+   build pass. A target-root deployment and `verify --target-root` strict
+   verification prove the six named capabilities on all configured local
+   target types without mutating live agent configuration. Reference parity is
+   checked against the pinned ponytail files and version. Fleet rollout and
+   client trust remain a separately authorized operational phase rather than
+   an implementation gate.
 9. **Wiggum closeout.** Logical work units are committed and independently
    audited; real findings are fixed; non-hidden `doc/observations/*.md` items
    are drained if present; the branch is locally current with `origin/main`;
@@ -77,7 +93,9 @@ redefined to fit an implementation.
 3. Deploy the six skill trees to native skill targets and faithful adapters to
    prompt-only targets, with selection/manifest/verification coverage.
 4. Add safe native runtime adapters where the target and promptdeploy model
-   support them; document deliberate fallbacks elsewhere.
+   support them, including remote live-path rendering and a two-phase
+   runtime-before-registration transaction; document deliberate fallbacks
+   elsewhere.
 5. Add operator documentation and provenance/update checks.
 6. Run focused and full verification, independent audits, observation cleanup,
    local rebase/restack, parity audit, and final fess audit.
@@ -89,8 +107,9 @@ redefined to fit an implementation.
   tests, not assumptions about product names.
 - Fresh/Nix portability: `nix flake check`, package contents, and Home Manager
   module/activation tests.
-- Deployment parity: isolated `--target-root` output plus `verify --strict` and
-  exact path/content comparisons for all six capabilities.
+- Deployment parity: isolated `--target-root` output plus
+  `verify --target-root` and exact path/content comparisons for all six
+  capabilities.
 - Completion: committed diff, clean status, current-base ancestry, passing full
   suite, independent audit reports, and an item-by-item audit of this section.
 

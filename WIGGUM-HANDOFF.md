@@ -11,6 +11,9 @@ scope to copying one skill or configuring one client.
 - Branch: `codex/ponytail-integration`, created from `origin/main` at
   `c308988401fe9a7087aedfeba38bd59143f4cc7d` after a zero-ahead/zero-behind
   check.
+- Planning/study commit: `99ece3134b4364410d10aa533c412bb84631d102`
+  (`Document Ponytail integration plan`). Its required independent fess audit
+  is recorded below; the present edits resolve that audit before code work.
 - Working tree was clean before these durable-state files were added.
 - Reference checkout is clean on `main` at
   `16f29800fd2681bdf24f3eb4ccffe38be3baec6b` (`package.json` version 4.8.4).
@@ -55,42 +58,68 @@ Evidence established:
   full objective requires a faithful skill-to-prompt fallback or equivalent.
 - A plain external symlink to `/Users/johnw/Desktop/ponytail` is not acceptable:
   it would fail on remote hosts and immutable Nix/Home Manager sources.
-- Official Codex documentation and an isolated temporary HOME/CODEX_HOME test
-  proved that plugin installation supplies the required `PLUGIN_DATA` and root
-  variables, caches host-local content, writes marketplace/plugin config, and
-  preserves a human hook-trust boundary. The promptdeploy endpoint will use a
-  managed runtime plus rendered hooks rather than pretend static marketplace
-  config is a complete installation.
+- Official Codex documentation establishes the plugin root/data environment
+  and human hook-trust boundary. Separate isolated temporary HOME/CODEX_HOME
+  tests proved only host-local cache and marketplace/plugin config behavior.
+  The promptdeploy endpoint will exercise its rendered environment directly
+  and use a managed runtime plus rendered hooks rather than pretend static
+  marketplace config is a complete installation.
 - The upstream `ponytail-gain` skill retains superseded single-shot headline
   figures. The integration will preserve the pinned upstream bytes and disclose
   the inconsistency instead of silently editing or omitting one of six skills.
 
-## Active work
+## Independent planning audit and resolved contracts
 
-Three implementation-seam reports are in flight:
+The required fess audit for `99ece31` is
+`/var/tmp/wg-ponytail-20260715/fess-99ece31/report.md`. It found five genuine
+implementation-blocking contradictions. The frozen plan and ADR now resolve
+them as follows:
 
-- `/var/tmp/wg-ponytail-20260715/bundle-api/report.md`: exact Phase-1 Python,
-  schema, provenance, collision, and test design.
-- `/var/tmp/wg-ponytail-20260715/runtime-adapters/report.md`: managed runtime,
-  Claude/Codex hooks, OpenCode layout, rollback, and remote behavior.
+- remove the embedded instruction fallback through a digest-guarded runtime
+  transform; a missing canonical main skill is a health failure;
+- render commands from an explicit remote live path and use a two-phase
+  runtime-before-registration transaction;
+- generate honest `gptel-preset-v1` adapters instead of byte-equal stripped
+  bodies;
+- keep `ponytail-review` one-shot by preventing the tracker from persisting
+  `review`;
+- enumerate the six OpenCode commands and required shared modules instead of
+  recursively admitting adapter directories.
+
+The remediation also makes `verify --target-root`, mode/empty-directory-aware
+tree digests, an owned cross-target MIT notice, health probes, accurate 81/82
+baseline wording, and the implementation-versus-live-rollout authority split
+explicit.
+
+All implementation-seam reports are complete:
+
+- `/var/tmp/wg-ponytail-20260715/bundle-api/report.md`: source composition,
+  schema, provenance, collision, and test design;
+- `/var/tmp/wg-ponytail-20260715/runtime-adapter/report.md`: managed runtime,
+  Claude/Codex hooks, OpenCode layout, rollback, and remote behavior;
 - `/var/tmp/wg-ponytail-20260715/nix-binding/report.md`: pinned flake input,
   package passthru, Home Manager assertions, and activation binding.
 
+Where a seam report conflicts with the audited contracts above, the frozen
+plan and durable ADR win. In particular, raw stripped GPTel bodies, persistent
+review mode, recursive OpenCode adapter directories, and upstream's fallback
+copy are prohibited.
+
 ## Next actions
 
-1. Review the three implementation-seam reports against the accepted ADR.
-2. Commit this durable planning/study work as the first coherent unit and run
-   its context-complete fess audit.
-3. Implement Phase 1: bundle schema/bindings, composite discovery,
+1. Commit the fess-driven design corrections; a fess-fix-only commit does not
+   require another audit under the Wiggum protocol.
+2. Implement Phase 1: bundle schema/bindings, composite discovery,
    provenance, six skill imports, GPTel projections, and focused tests.
-4. Run focused and full gates, commit the unit, and dispatch its fess audit.
+3. Run focused and full gates, commit the unit, and dispatch its fess audit.
 
 ## Gate attempt counts
 
 - Promptdeploy baseline: passed on attempt 1 (`nix flake check`, all 7 checks).
 - Ponytail reference baseline: attempt 1 reached 81/82; sole failure signature
-  is missing optional `pandas` for the CSV benchmark. This dependency does not
-  block source parity or promptdeploy implementation and was not installed.
+  is missing `pandas`, which upstream installs as a CSV-test dependency but the
+  production runtime does not need. The baseline is non-green; the dependency
+  was not installed under this run's constraints.
 - Implementation/full-suite gate: 0 consecutive failures.
 - Rebase/restack gate: 0 consecutive failures.
 
