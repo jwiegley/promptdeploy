@@ -35,6 +35,43 @@ promptdeploy settings reconcile [--target T] [--apply]          # pull host sett
 
 The deploy pipeline works like this: discover all source items, filter by target, compute SHA256 hashes against the last manifest, write only what changed, clean up anything that's been removed from source. Unmanaged items in target directories are never touched. `--force` redeploys everything even when unchanged; `--target-root DIR` redirects all output under a scratch directory (one subdirectory per target id) so you can preview a deploy without touching real configuration.
 
+### Ponytail skills
+
+The packaged Nix CLI pins Ponytail and supplies its source binding
+automatically. Claude, Codex, Droid, and OpenCode receive the six complete
+skill trees; GPTel receives six one-shot prompt projections. This selection
+does not install hooks, persistent modes, or an OpenCode plugin.
+
+Use an isolated target root to prove every configured target without SSH or
+live configuration changes:
+
+```zsh
+ponytail_items=(--only-item bundle:ponytail)
+for name in ponytail ponytail-review ponytail-audit ponytail-debt ponytail-gain ponytail-help; do
+  ponytail_items+=(--only-item "skill:$name" --only-item "prompt:$name")
+done
+
+proof_root=$(mktemp -d /private/var/tmp/promptdeploy-ponytail-proof.XXXXXX)
+nix run '.#promptdeploy' -- validate
+nix run '.#promptdeploy' -- deploy --target-root "$proof_root" "${ponytail_items[@]}"
+nix run '.#promptdeploy' -- verify --target-root "$proof_root" "${ponytail_items[@]}"
+```
+
+After that succeeds, deploy only to the current `hera` surfaces—never the
+targetless remote fleet:
+
+```zsh
+local_targets=(
+  --target claude-personal --target claude-positron --target codex-local
+  --target droid --target opencode-hera --target gptel-emacs
+)
+nix run '.#promptdeploy' -- deploy --local-only "${local_targets[@]}" "${ponytail_items[@]}"
+nix run '.#promptdeploy' -- verify --local-only "${local_targets[@]}" "${ponytail_items[@]}"
+```
+
+For development against the mutable Desktop checkout, add the global option
+`--bundle-source ponytail=/Users/johnw/Desktop/ponytail` before the subcommand.
+
 ### Targets
 
 Targets are defined in `deploy.yaml`. Each has a type (`claude`, `codex`, `droid`, `opencode`, or `gptel`) and a path. Remote targets add a `host:` field and deploy via rsync over SSH. The `gptel` type receives only prompts: `.poet` files are copied for gptel-prompts to read directly, Jinja variants render to JSON, and plain prompts are copied verbatim. The other coding-agent types receive the full content set they support.

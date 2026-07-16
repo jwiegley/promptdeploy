@@ -42,6 +42,20 @@
 
         src = self.outPath;
         revision = self.rev or null;
+        ponytailVersion =
+          (builtins.fromJSON (builtins.readFile "${ponytail}/package.json")).version;
+        ponytailBindings = pkgs.writeText "promptdeploy-bundle-bindings.json" (
+          builtins.toJSON {
+            schema = 1;
+            bindings.ponytail = {
+              path = toString ponytail;
+              revision = ponytail.rev;
+              narHash = ponytail.narHash;
+              version = ponytailVersion;
+              mutable = false;
+            };
+          }
+        );
 
         promptdeploy = python.pkgs.buildPythonApplication {
           pname = "promptdeploy";
@@ -66,6 +80,10 @@
           passthru = {
             promptdeploySource = src;
             promptdeployRevision = revision;
+            ponytailSource = ponytail;
+            ponytailRevision = ponytail.rev;
+            ponytailNarHash = ponytail.narHash;
+            inherit ponytailBindings ponytailVersion;
           };
 
           # Remote deployment shells out to rsync/ssh (src/promptdeploy/ssh.py),
@@ -82,6 +100,9 @@
               pkgs.rsync
               pkgs.openssh
             ]}"
+            "--set-default"
+            "PROMPTDEPLOY_BUNDLE_BINDINGS_FILE"
+            "${ponytailBindings}"
           ];
 
           meta = {
@@ -152,6 +173,14 @@
           };
 
           hm-activation = pkgs.callPackage ./nix/hm-activation-test.nix { };
+
+          ponytail-binding = pkgs.runCommand "ponytail-binding" { } ''
+            export HOME="$TMPDIR/home"
+            mkdir -p "$HOME"
+            cd ${src}
+            ${pkgs.lib.getExe promptdeploy} validate
+            touch $out
+          '';
 
           build = promptdeploy;
         };

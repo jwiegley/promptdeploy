@@ -714,20 +714,50 @@ Home Manager module/activation, and all seven flake checks. Host-independent
 capability tests exercise both Linux's portable `chmod` bootstrap and the
 advertised no-follow form regardless of the current runner.
 
+## Proportional integration checkpoint
+
+- `deploy.yaml` now declares the Ponytail bundle; the packaged Nix CLI supplies
+  a generated immutable binding for revision
+  `16f29800fd2681bdf24f3eb4ccffe38be3baec6b`, version 4.8.4, and its locked NAR
+  hash. A dedicated flake check executes packaged `promptdeploy validate`.
+- Claude, Codex, Droid, and OpenCode now select all six complete imported skill
+  trees. GPTel retains the six deterministic `gptel-preset-v1` projections.
+  Runtime payloads remain dormant.
+- The focused gate passes 216 tests. The complete eight-check
+  `nix flake check --print-build-logs` passes 2,837 tests with 100% statement
+  and branch coverage, strict mypy, Ruff, both Home Manager checks, package
+  build, and packaged-binding validation.
+- Isolated deployment and strict verification passed all 13 exact selectors
+  across all 21 configured target IDs at
+  `/private/var/tmp/promptdeploy-ponytail-proof.fRTm5M`: 120 native
+  `SKILL.md` files, six GPTel prompts, and 21 support licenses. It emitted zero
+  settings, hook, OpenCode plugin-config, or runtime paths. The first attempt
+  used symlinked `/var/tmp` and correctly failed before mutation; the canonical
+  `/private/var/tmp` retry passed.
+
 Next, under the corrected scope:
 
-1. expose the pinned Nix source to the packaged promptdeploy CLI and enable the
-   root Ponytail bundle declaration;
-2. add OpenCode to the six generic skill exports while retaining the existing
-   six GPTel projections;
-3. document and prove the Ponytail-only isolated preview/deploy/verify path;
-4. deploy and strictly verify only the current host's `local` target group;
-5. run the full gate, independent final audit, observation cleanup, and local
+1. commit and independently audit the proportional static integration;
+2. deploy and strictly verify only the current host's named local targets;
+3. run the final gate, independent final audit, observation cleanup, and local
    rebase. Do not resume settings CAS, recovery, runtime publication, lifecycle
    hooks, mode persistence, or remote rollout in this task.
 
 ## Gate attempt counts
 
+- Proportional integration commit gate: the first complete post-code
+  `nix flake check --print-build-logs` passed all eight checks and 2,837 tests.
+  After the documentation-only follow-up changed the Nix source identity, the
+  pre-commit gate and two isolated
+  `nix build .#checks.aarch64-darwin.pytest --no-link` retries all failed at the
+  same untouched dormant-runtime test:
+  `test_windows_hook_executes_with_node_and_fails_closed_without_it`. In each
+  run, the available-node `pwsh` subprocess timed out after 60 seconds near 10%
+  suite progress. The third retry used `--max-jobs 1 --cores 1` and reproduced
+  the same signature. No PowerShell process remained afterward; system memory
+  was ample, while host load was elevated. Stop count: 3 consecutive attempts.
+  The proportional integration remains staged; do not change or weaken the
+  optional runtime test without explicit authority.
 - Scope-correction baseline: `nix flake check --print-build-logs` passed all
   seven checks on attempt 1 with 2,833 tests and 100% statement/branch
   coverage. The `e35a829` pre-commit agnix gate reported zero errors.

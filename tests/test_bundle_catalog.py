@@ -170,7 +170,7 @@ def test_target_matrix_dependency_and_provenance(
         skill = by_identity[("skill", name)]
         prompt = by_identity[("prompt", name)]
         assert skill.target_types == PONYTAIL_SKILL_TARGET_TYPES
-        assert "opencode" not in skill.target_types
+        assert "opencode" in skill.target_types
         assert prompt.target_types == frozenset({"gptel"})
         assert skill.requires == prompt.requires == catalog.SUPPORT_REQUIREMENT
         assert skill.provenance.source is not None

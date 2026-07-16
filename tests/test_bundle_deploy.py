@@ -124,7 +124,10 @@ def test_full_catalog_converges_and_verifies_across_all_target_tiers(
             ("bundle", "ponytail"),
             *(("skill", name) for name in PONYTAIL_NAMES),
         },
-        "opencode": {("bundle", "ponytail")},
+        "opencode": {
+            ("bundle", "ponytail"),
+            *(("skill", name) for name in PONYTAIL_NAMES),
+        },
         "gptel": {
             ("bundle", "ponytail"),
             *(("prompt", name) for name in PONYTAIL_NAMES),
@@ -167,7 +170,9 @@ def test_full_catalog_converges_and_verifies_across_all_target_tiers(
         / "ponytail-review"
         / "SKILL.md"
     ).is_file()
-    assert not (config.targets["opencode"].path / "skills" / "ponytail").exists()
+    assert (
+        config.targets["opencode"].path / "skills" / "ponytail" / "SKILL.md"
+    ).is_file()
     for name in PONYTAIL_NAMES:
         assert (config.targets["gptel"].path / f"{name}.md").is_file()
 
@@ -233,7 +238,11 @@ def test_full_catalog_converges_and_verifies_across_all_target_tiers(
             {("bundle", "ponytail"), ("prompt", "ponytail")},
         ),
         ("gptel", ("skill", "ponytail"), set()),
-        ("opencode", ("skill", "ponytail"), set()),
+        (
+            "opencode",
+            ("skill", "ponytail"),
+            {("bundle", "ponytail"), ("skill", "ponytail")},
+        ),
     ],
 )
 def test_exact_selection_closes_dependencies_only_on_applicable_targets(
@@ -372,7 +381,7 @@ def test_matching_preexisting_gptel_prompt_records_exact_owned_path(
     assert sibling.read_text() == "unrelated user prompt"
 
 
-@pytest.mark.parametrize("target_type", ["claude", "codex", "droid"])
+@pytest.mark.parametrize("target_type", ["claude", "codex", "droid", "opencode"])
 @pytest.mark.parametrize("mismatching", [False, True])
 @pytest.mark.parametrize("force", [False, True])
 def test_unmanaged_ponytail_skill_blocks_before_mutation_even_with_force(

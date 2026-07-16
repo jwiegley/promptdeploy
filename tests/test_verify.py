@@ -20,6 +20,17 @@ from promptdeploy.verify import verify_items
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
+def _load_root_config() -> Config:
+    ponytail = Path(
+        os.environ.get("PONYTAIL_TEST_SOURCE", "/Users/johnw/Desktop/ponytail")
+    )
+    return load_config(
+        ROOT / "deploy.yaml",
+        bundle_source_overrides=[f"ponytail={ponytail}"],
+    )
+
+
 SELECTORS = [
     ("mcp", "anvil"),
     ("mcp", "anvil-tools"),
@@ -332,7 +343,7 @@ def test_real_fleet_local_only_exact_deploy_and_verify_never_use_remote_io(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("PROMPTDEPLOY_HOST", host)
-    real_config = load_config(ROOT / "deploy.yaml")
+    real_config = _load_root_config()
     config = Config(
         source_root=real_config.source_root,
         targets={
@@ -398,7 +409,7 @@ def test_shared_nfs_work_targets_converge_without_host_specific_churn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("PROMPTDEPLOY_HOST", "outside-fleet")
-    real_config = load_config(ROOT / "deploy.yaml")
+    real_config = _load_root_config()
     shared_claude = tmp_path / "shared" / "claude"
     shared_opencode = tmp_path / "shared" / "opencode"
     shared_target_ids = {

@@ -483,7 +483,7 @@ def load_bundle_manifest(bundle: BundleConfig) -> BundleManifest:
             raise BundleSchemaError(f"{where}.path must match the exported name")
         target_types = _exact_string_list(
             value["target_types"],
-            expected=("claude", "codex", "droid"),
+            expected=("claude", "codex", "droid", "opencode"),
             where=f"{where}.target_types",
         )
         projections = value["projections"]

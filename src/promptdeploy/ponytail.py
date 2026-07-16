@@ -13,9 +13,9 @@ PONYTAIL_NAMES = (
     "ponytail-help",
 )
 
-# OpenCode is deliberately absent: its final integration is owned by the
-# later native bundle/plugin slice, which must not coexist with generic skills.
-PONYTAIL_SKILL_TARGET_TYPES = frozenset({"claude", "codex", "droid"})
+# These clients already expose ordinary skill-tree paths. Runtime/plugin
+# integration is optional and must not be required for the portable skills.
+PONYTAIL_SKILL_TARGET_TYPES = frozenset({"claude", "codex", "droid", "opencode"})
 PONYTAIL_PROMPT_TARGET_TYPES = frozenset({"gptel"})
 PONYTAIL_ALL_TARGET_TYPES = frozenset({"claude", "codex", "droid", "opencode", "gptel"})
 GPTEL_PRESET_TRANSFORM = "gptel-preset-v1"

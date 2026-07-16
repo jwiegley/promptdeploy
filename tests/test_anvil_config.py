@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tomllib
 from pathlib import Path
 
@@ -19,6 +20,17 @@ from promptdeploy.targets.opencode import OpenCodeTarget
 from promptdeploy.targets.remote import RemoteTarget
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_root_config() -> Config:
+    ponytail = Path(
+        os.environ.get("PONYTAIL_TEST_SOURCE", "/Users/johnw/Desktop/ponytail")
+    )
+    return load_config(
+        ROOT / "deploy.yaml",
+        bundle_source_overrides=[f"ponytail={ponytail}"],
+    )
+
 
 MAIN_TARGETS = {
     "claude-personal",
@@ -85,7 +97,7 @@ def _selected_targets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> set[str]:
     monkeypatch.setenv("PROMPTDEPLOY_HOST", host)
-    config = load_config(ROOT / "deploy.yaml")
+    config = _load_root_config()
     selected: set[str] = set()
     for target_id, target_config in config.targets.items():
         target = create_target(target_config)
@@ -111,7 +123,7 @@ def test_anvil_target_matrix_and_retired_tombstone(
     assert active == {"anvil"}
 
     monkeypatch.setenv("PROMPTDEPLOY_HOST", "outside-fleet")
-    config = load_config(ROOT / "deploy.yaml")
+    config = _load_root_config()
     assert {
         host: set(config.groups[host]) for host in FLEET_HOST_TARGETS
     } == FLEET_HOST_TARGETS

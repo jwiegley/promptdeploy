@@ -105,7 +105,7 @@ The flake exports `homeManagerModules.default` (`nix/hm-module.nix`), an exact, 
 
 ## CI
 
-`.github/workflows/ci.yml` runs `nix flake check`, which executes all 7 checks defined in `flake.nix`: `ruff format --check`, `ruff check` (curated `select` baseline), `mypy` (strict), `pytest` with the 100% line+branch coverage gate, Home Manager module evaluation, activation-driver behavior, and `nix build`. `lefthook.yml` mirrors those as pre-commit checks with fast staged-file feedback, plus `nix flake check` as the authoritative full-tree gate, plus an `agnix` lint pass over Markdown/YAML/JSON/TOML files -- an additional gate that is not part of the flake checks.
+`.github/workflows/ci.yml` runs `nix flake check`, which executes all 8 checks defined in `flake.nix`: `ruff format --check`, `ruff check` (curated `select` baseline), `mypy` (strict), `pytest` with the 100% line+branch coverage gate, Home Manager module evaluation, activation-driver behavior, packaged Ponytail-binding validation, and `nix build`. `lefthook.yml` mirrors those as pre-commit checks with fast staged-file feedback, plus `nix flake check` as the authoritative full-tree gate, plus an `agnix` lint pass over Markdown/YAML/JSON/TOML files -- an additional gate that is not part of the flake checks.
 
 ## deploy.yaml
 

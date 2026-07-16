@@ -125,35 +125,26 @@ and fail if any required capability is unavailable. The snapshot sequence
 checks default subagent injection; separate runtime goldens cover matcher
 match, mismatch, invalid-regex, and malformed-input behavior.
 
-## Target and fleet mapping (historical runtime proposal)
-
-The table below records the superseded runtime endpoint. The active proportional
-mapping is six ordinary skill trees on Claude, Codex, Droid, and OpenCode, plus
-six one-shot prompt projections on GPTel. No lifecycle or plugin runtime is
-required.
+## Target and fleet mapping
 
 The current `deploy.yaml` describes 21 targets: eight Claude, four Codex,
 seven OpenCode, one Factory Droid, and one GPTel. `RemoteTarget` is transport,
 not a sixth semantic client; it must push the same complete target-specific
 artifact set that a local target receives.
 
-| Target | Required endpoint | Honest limitation |
+| Target | Current endpoint | Honest limitation |
 |---|---|---|
-| Claude Code | Six complete skills plus a target-local managed runtime and rendered lifecycle hooks; preserve profile-local `CLAUDE_CONFIG_DIR` behavior and optional statusline assets. | Hook execution requires Node. Native marketplace registration alone does not install content on a fresh host. |
-| Codex CLI/Desktop/IDE | Six complete skills plus the same managed runtime, with an explicit writable `PLUGIN_DATA` binding so the shared code emits Codex JSON and stores state in the Codex-owned path. | Hook definitions remain subject to the user's Codex trust review. Promptdeploy must not edit trust state. |
-| OpenCode | Preserve the upstream native plugin's relative `.opencode/command`, `hooks/`, and `skills/` layout and manage exactly one plugin entry in `opencode.json`. | The native plugin owns its bundled skills; generic Ponytail skill deployment must be disabled there to avoid duplicates. |
-| Factory Droid | Six complete skills through the existing atomic skill-tree target path. | No proven always-on hook/instruction surface; claim callable skill tier only until a live client proves more. |
+| Claude Code | Six complete skills through the existing skill-tree target path. | No lifecycle hooks or persistent Ponytail mode are installed. |
+| Codex CLI/Desktop/IDE | Six complete skills through the existing skill-tree target path. | No hooks, trust changes, or persistent Ponytail mode are installed. |
+| OpenCode | Six complete skills through the existing skill-tree target path. | No plugin registration, commands, hooks, or persistent mode are installed. |
+| Factory Droid | Six complete skills through the existing skill-tree target path. | No proven always-on hook/instruction surface; claim callable skill tier only. |
 | GPTel | Six named, target-aware preset projections derived from the six skills. Each projection keeps the substantive task/rules while replacing host-specific activation, persistence, slash-command, subagent, and update claims with an explicit one-invocation preset contract. | Prompt presets are not native skills, lifecycle hooks, commands, or persistent modes. |
 
-The exact Ponytail set is target-specific: Claude and Codex select
-`bundle:ponytail` plus six `skill:*` items; OpenCode selects only
-`bundle:ponytail`, whose native plugin owns its command and skill layout; Droid
-selects the bundle plus six skills; and GPTel selects the bundle plus six
-`prompt:*` projections. On Claude/Codex/OpenCode the bundle contains the
-target-native runtime and MIT notice. On Droid/GPTel it contains only the
-owned notice/provenance tree. This single bundle identity prevents the license
-from being orphaned during exact selection while avoiding duplicate OpenCode
-skills.
+Claude, Codex, Droid, and OpenCode select `bundle:ponytail` plus the six
+`skill:*` items. GPTel selects the bundle plus six `prompt:*` projections. The
+active bundle materializes only the owned MIT notice/provenance support tree;
+the captured runtime payloads remain dormant. This same mapping is applied by
+local targets and by each remote target's ordinary transport wrapper.
 
 The optional MCP package is not part of the minimum endpoint. Upstream states
 that it is user-invoked rather than always-on, and its uninstalled SDK/Zod
@@ -206,7 +197,7 @@ exports:
     path: skills/ponytail
     tree_sha256: sha256:c8a4e819082fc6fe7eed764e8114e7cbc2b259dba7293b63e53e1aaa7f0682e6
     skill_md_sha256: sha256:1316a2f3f95741d2300b116fe0c2d81ce4a9568656ed0a62643f54aaf09957f2
-    target_types: [claude, codex, droid]
+    target_types: [claude, codex, droid, opencode]
     projections:
       - {type: prompt, name: ponytail, target_types: [gptel], transform: gptel-preset-v1}
   # Five more exact skill/projection rows, in canonical Ponytail order.
@@ -308,7 +299,7 @@ and must be globally unique across the primary source and every bundle.
 
 ### Bindings
 
-The planned development interface is explicit and visibly mutable:
+The development interface is explicit and visibly mutable:
 
 ```text
 promptdeploy \
@@ -317,10 +308,10 @@ promptdeploy \
 ```
 
 The production flake input is non-flake and pinned. The packaged executable
-binds `ponytail` to that immutable store path and exposes the same source,
-revision, and digest through package passthru. Home Manager asserts the binding
-is store-backed and matches the package metadata before activation. Activation
-performs no fetch, npm install, or plugin-manager mutation.
+defaults `PROMPTDEPLOY_BUNDLE_BINDINGS_FILE` to a generated descriptor for that
+immutable store path and exposes the source, revision, NAR hash, version, and
+descriptor through package passthru. Home Manager uses the same packaged
+executable. Neither path fetches, runs npm, or mutates a plugin manager.
 
 ## Managed runtime design (historical optional follow-up)
 
@@ -449,9 +440,9 @@ and verified rather than silent rewrites.
   cost, and 27% faster. The full skill is retained verbatim and this mismatch
   is disclosed until fixed upstream.
 - Upstream's tracker persists a hidden `review` state and its instruction
-  builder can substitute a hardcoded rules copy. Managed Claude, Codex, and
-  OpenCode output applies the pinned, tested corrections described above; the
-  portable public contract remains the six skills and four public levels.
+  builder can substitute a hardcoded rules copy. The dormant runtime transforms
+  contain pinned corrections, but the current static integration invokes
+  neither runtime behavior; its portable contract is the six skills.
 - Instruction-only rules are deliberately weaker than lifecycle injection.
   Their availability must not be reported as full mode parity.
 
