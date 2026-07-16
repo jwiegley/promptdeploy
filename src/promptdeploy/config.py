@@ -263,6 +263,14 @@ def remap_targets_to_root(config: Config, root: Path) -> Config:
         raise ValueError("Target root contains an unknown home directory") from exc
     if expanded_root.is_symlink():
         raise ValueError(f"Target root must not be a symlink: {expanded_root}")
+    lexical_root = expanded_root.absolute()
+    for parent in lexical_root.parents:
+        try:
+            parent_mode = parent.lstat().st_mode
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(parent_mode):
+            raise ValueError(f"Target root parent must not be a symlink: {parent}")
     resolved_root = expanded_root.resolve()
     if resolved_root.exists() and not resolved_root.is_dir():
         raise ValueError(f"Target root is not a directory: {resolved_root}")

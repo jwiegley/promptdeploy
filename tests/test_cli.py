@@ -1196,6 +1196,37 @@ class TestTargetRootDeploy:
         assert raised.value.code == 1
         assert "unknown home directory" in capsys.readouterr().err
 
+    def test_deploy_target_root_rejects_symlinked_parent(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        src = _make_source(tmp_path)
+        live = tmp_path / "live-target"
+        live.mkdir()
+        sentinel = live / "sentinel"
+        sentinel.write_text("untouched")
+        lexical_parent = tmp_path / "preview-parent"
+        lexical_parent.symlink_to(live, target_is_directory=True)
+        tc = TargetConfig(id="tgt", type="droid", path=tmp_path / "original")
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=lexical_parent / "preview",
+            force=True,
+        )
+
+        with pytest.raises(SystemExit) as raised:
+            _run_deploy(args)
+
+        assert raised.value.code == 1
+        assert sentinel.read_text() == "untouched"
+        assert not (live / "preview").exists()
+        assert "parent must not be a symlink" in capsys.readouterr().err
+
 
 class TestTargetRootStatus:
     """Verify _run_status uses remapped paths when --target-root is set."""

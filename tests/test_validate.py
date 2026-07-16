@@ -2037,17 +2037,56 @@ def test_bundle_validation_failure_is_lenient_and_logically_labeled(
     agents = source / "agents"
     agents.mkdir(parents=True)
     (agents / "bad.md").write_bytes(b"---\nname: ../bad\n---\nbody\n")
+    sibling_bundle = BundleConfig(
+        "sibling",
+        tmp_path / "sibling.yaml",
+        BundleSourceBinding(
+            "sibling",
+            tmp_path,
+            True,
+            None,
+            None,
+            None,
+            "cli",
+        ),
+    )
+    sibling_item = SourceItem(
+        "skill",
+        "sibling",
+        tmp_path / "sibling-binding" / "skills" / "sibling" / "SKILL.md",
+        {"name": "sibling"},
+        b"---\nname: sibling\n---\nbody\n",
+        provenance=SourceProvenance.imported(
+            ManifestSource(
+                "sibling",
+                "skills/sibling",
+                "1.0.0",
+                None,
+                None,
+                True,
+                None,
+                "MIT",
+            )
+        ),
+        target_types=frozenset({"claude"}),
+    )
     config = Config(
         source_root=source,
         targets={
             "claude": TargetConfig("claude", "claude", tmp_path / "target"),
         },
         groups={},
-        bundles=(_validation_bundle(tmp_path),),
+        bundles=(_validation_bundle(tmp_path), sibling_bundle),
     )
+
+    def discover(bundle: BundleConfig) -> tuple[SourceItem, ...]:
+        if bundle.name == "ponytail":
+            raise ValueError("broken adapter")
+        return (sibling_item,)
+
     monkeypatch.setattr(
         "promptdeploy.validate.discover_bundle_items",
-        lambda _bundle: (_ for _ in ()).throw(ValueError("broken adapter")),
+        discover,
     )
 
     issues = validate_all(config)
@@ -2058,6 +2097,10 @@ def test_bundle_validation_failure_is_lenient_and_logically_labeled(
     )
     assert str(bundle_issue.file_path) == "ponytail:ponytail.yaml"
     assert str(tmp_path) not in str(bundle_issue.file_path)
+    sibling_issue = next(
+        issue for issue in issues if issue.message == "Skill 'description' is required"
+    )
+    assert str(sibling_issue.file_path) == "sibling:skills/sibling/SKILL.md"
 
 
 def test_imported_validation_uses_logical_paths(
@@ -2171,6 +2214,7 @@ def test_invalid_imported_filter_does_not_abort_collision_preflight(
     commands = source / "commands"
     commands.mkdir(parents=True)
     (commands / "ponytail.md").write_text("primary command\n")
+    (commands / "review.md").write_text("primary review command\n")
     imported = SourceItem(
         "skill",
         "ponytail",
@@ -2198,6 +2242,26 @@ def test_invalid_imported_filter_does_not_abort_collision_preflight(
         ),
         target_types=frozenset({"claude"}),
     )
+    colliding = SourceItem(
+        "skill",
+        "review",
+        tmp_path / "private-binding" / "skills" / "review" / "SKILL.md",
+        {"name": "review", "description": "Imported review skill."},
+        b"---\nname: review\ndescription: Imported review skill.\n---\nbody\n",
+        provenance=SourceProvenance.imported(
+            ManifestSource(
+                "ponytail",
+                "skills/review",
+                "4.8.4",
+                None,
+                None,
+                True,
+                None,
+                "MIT",
+            )
+        ),
+        target_types=frozenset({"claude"}),
+    )
     config = Config(
         source_root=source,
         targets={
@@ -2208,11 +2272,16 @@ def test_invalid_imported_filter_does_not_abort_collision_preflight(
     )
     monkeypatch.setattr(
         "promptdeploy.validate.discover_bundle_items",
-        lambda _bundle: (imported,),
+        lambda _bundle: (imported, colliding),
     )
 
     issues = validate_all(config)
 
     assert any(
         issue.level == "error" and "missing-target" in issue.message for issue in issues
+    )
+    assert any(
+        issue.level == "error"
+        and "imported slash-name collision 'review'" in issue.message
+        for issue in issues
     )

@@ -328,10 +328,11 @@ The composed-catalog activation slice is implemented in the current work unit:
   close target-specific dependencies in stable topological order, hash exact
   logical provenance, and compare imported bytes only through accepted
   snapshots;
-- deploy preflights the entire closed selection before mutation, refuses
-  unmanaged Ponytail skills even under `--force`, revalidates required support
-  before each dependent and manifest commit, and keeps dependent removal ahead
-  of bundle cleanup;
+- deploy preflights protected unmanaged Ponytail collisions and dependency
+  prerequisites before mutation; other ownership collisions remain per-item
+  checks before that item writes. It refuses unmanaged Ponytail skills even
+  under `--force`, revalidates required support before each dependent and
+  manifest commit, and keeps dependent removal ahead of bundle cleanup;
 - manifest v2 source provenance, target-rendered MCP/model hashes, exact GPTel
   adopted paths, and logical diagnostics make convergence, rotation, adoption,
   drift, and stale removal agree across deploy/status/verify without persisting
@@ -340,10 +341,10 @@ The composed-catalog activation slice is implemented in the current work unit:
   `--require-immutable-bundles` flags feed every command through the same
   binding authority, while `verify --target-root` uses the same isolated
   preview mapping as deploy/status/list;
-- target-root previews reject noncanonical IDs, lexical root/leaf/nested
-  symlinks, hard links, special files, and unknown-home paths before target
-  access; all four CLI paths report those failures cleanly, and preview hashes
-  never incorporate secret values that remain literal;
+- target-root previews reject noncanonical IDs, lexical root/ancestor/leaf/
+  nested symlinks, hard links, special files, and unknown-home paths before
+  target access; all four CLI paths report those failures cleanly, and preview
+  hashes never incorporate secret values that remain literal;
 - validation remains lenient per bundle, reports logical bundle paths, catches
   effective imported namespace/dependency failures, and never lets one broken
   binding hide primary or sibling diagnostics;

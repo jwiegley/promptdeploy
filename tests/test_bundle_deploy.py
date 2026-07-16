@@ -255,6 +255,27 @@ def test_exact_selection_closes_dependencies_only_on_applicable_targets(
     assert _support_path(config, target_type).exists() is bool(expected)
 
 
+def test_strict_verify_selected_skill_checks_required_support(
+    tmp_path: Path,
+    ponytail_root: Path,
+) -> None:
+    config = _config(tmp_path, ponytail_root, "claude")
+    selector = [("skill", "ponytail")]
+    deploy(config, item_selectors=selector)
+    _support_path(config, "claude").unlink()
+
+    failures = verify_items(
+        config,
+        target_ids=["claude"],
+        item_selectors=selector,
+    )
+
+    assert [
+        (failure.item_type, failure.name, failure.target_id, failure.reason)
+        for failure in failures
+    ] == [("bundle", "ponytail", "claude", "mismatch")]
+
+
 def test_only_type_skills_keeps_the_required_support_bundle(
     tmp_path: Path,
     ponytail_root: Path,

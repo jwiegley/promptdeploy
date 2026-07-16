@@ -408,6 +408,27 @@ class TestRemapTargetsToRoot:
 
         assert list(live.iterdir()) == []
 
+    def test_rejects_symlinked_target_root_parent(self, tmp_path: Path) -> None:
+        live = tmp_path / "live"
+        live.mkdir()
+        lexical_parent = tmp_path / "preview-parent"
+        lexical_parent.symlink_to(live, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="parent must not be a symlink"):
+            remap_targets_to_root(Config(tmp_path, {}, {}), lexical_parent / "preview")
+
+        assert list(live.iterdir()) == []
+
+    def test_allows_missing_target_root_parent(self, tmp_path: Path) -> None:
+        root = tmp_path / "missing-parent" / "preview"
+        tc = TargetConfig(id="local", type="claude", path=tmp_path / "original")
+        cfg = Config(source_root=tmp_path, targets={"local": tc}, groups={})
+
+        remapped = remap_targets_to_root(cfg, root)
+
+        assert remapped.targets["local"].path == root / "local"
+        assert not root.exists()
+
     def test_unknown_target_root_home_is_a_value_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

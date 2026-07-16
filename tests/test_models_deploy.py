@@ -656,6 +656,8 @@ class TestModelsDeployIntegration:
         monkeypatch.setenv("CODEX_API_KEY", "first-sensitive-value")
         deploy(config)
         output = (tc.path / ".codex" / "config.toml").read_bytes()
+        assert b"first-sensitive-value" not in output
+        assert b'env_key = "CODEX_API_KEY"' in output
         first_hash = compute_item_hash(item, target, config)
 
         monkeypatch.setenv("CODEX_API_KEY", "rotated-sensitive-value")
@@ -664,7 +666,11 @@ class TestModelsDeployIntegration:
         assert [
             action.action for action in actions if action.item_type == "models"
         ] == ["skip"]
-        assert (tc.path / ".codex" / "config.toml").read_bytes() == output
+        rotated_output = (tc.path / ".codex" / "config.toml").read_bytes()
+        assert rotated_output == output
+        assert b"first-sensitive-value" not in rotated_output
+        assert b"rotated-sensitive-value" not in rotated_output
+        assert b'env_key = "CODEX_API_KEY"' in rotated_output
 
     def test_opencode_baked_key_rotation_changes_output_and_hash(
         self, tmp_path: Path, monkeypatch
