@@ -148,7 +148,7 @@ def test_snapshot_comparison_rejects_installed_tree_drift(
     elif mutation == "missing-empty-directory":
         (destination / "empty").rmdir()
     elif mutation == "wrong-bytes":
-        (destination / "run").write_bytes(b"changed")
+        (destination / "run").write_bytes(b"#!/bin/xx\n")
     elif mutation == "wrong-file-mode":
         (destination / "run").chmod(0o700)
     else:
