@@ -631,8 +631,16 @@ class BundleSnapshotSession:
 
     def __init__(self, source_root: Path) -> None:
         self.source_root = source_root
-        self._root = _open_root(source_root)
-        self._root_identity = os.fstat(self._root)
+        root = _open_root(source_root)
+        try:
+            root_identity = os.fstat(root)
+        except OSError as exc:
+            os.close(root)
+            raise ImportedSourceError(
+                "bundle source root is not safely readable"
+            ) from exc
+        self._root = root
+        self._root_identity = root_identity
         self._bundle_bytes = 0
         self._closed = False
 
@@ -686,7 +694,6 @@ class BundleSnapshotSession:
         self._require_open()
         parts = _canonical_relative_path(relative_path, what="selected tree path")
         selected = _open_directory_path(self._root, parts)
-        selected_before = os.fstat(selected)
         budget = _TreeBudget()
 
         def consume(size: int) -> None:
@@ -694,6 +701,12 @@ class BundleSnapshotSession:
             self._consume_bundle_bytes(size)
 
         try:
+            try:
+                selected_before = os.fstat(selected)
+            except OSError as exc:
+                raise ImportedSourceError(
+                    "selected tree is not safely readable"
+                ) from exc
             entries: list[ImportedTreeEntry] = []
             _scan_directory(
                 selected,

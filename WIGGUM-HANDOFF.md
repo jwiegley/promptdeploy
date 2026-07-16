@@ -203,14 +203,25 @@ The final source-slice gates pass: 2,210 tests at 100% branch coverage, strict
 mypy over 78 source files, Ruff format/lint, package build, Home Manager module
 and activation checks, and the complete seven-check `nix flake check`.
 
+The source-catalog slice was committed as `61c2c4b` (`Add pinned Ponytail
+source catalog`). Its required independent audit is
+`/var/tmp/wg-ponytail-20260715/fess-61c2c4b/report.md`. The audit confirmed that
+canonical root-relative immediate link targets match the frozen scanner
+contract, and found two descriptor-cleanup defects: a failed session-root
+identity `fstat` and a failed selected-tree `fstat` could leak their open
+descriptors and expose raw `OSError`. This fess-fix-only work unit closes both
+descriptors, normalizes both failures to `ImportedSourceError`, and adds
+deterministic fault-injection coverage. Per protocol, it does not receive a
+recursive fess audit. Its final gates pass: 2,212 tests at 100% branch coverage,
+strict mypy over 78 source files, Ruff format/lint, package build, Home Manager
+module and activation checks, and the complete seven-check `nix flake check`.
+
 Next:
 
-1. commit this coherent source-catalog unit and dispatch its independent fess
-   audit;
-2. integrate the composed catalog with deploy/status/validate/verify using
+1. integrate the composed catalog with deploy/status/validate/verify using
    snapshot-only imported-tree hashing and materialization, target-specific
    dependency closure, manifest provenance, and `verify --target-root`;
-3. prove first deploy, no-op convergence, pin drift, source mutation/deletion,
+2. prove first deploy, no-op convergence, pin drift, source mutation/deletion,
    exact removal, and rollback in isolated target roots before enabling the
    root declaration.
 

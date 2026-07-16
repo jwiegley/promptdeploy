@@ -498,6 +498,73 @@ def test_open_root_closes_descriptor_when_fstat_fails(
         os.fstat(descriptor)
 
 
+def test_snapshot_session_closes_root_when_identity_fstat_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    original_fstat = os.fstat
+    original_open_root = tree._open_root
+    opened: list[int] = []
+
+    def recording_open_root(source_root: Path) -> int:
+        descriptor = original_open_root(source_root)
+        opened.append(descriptor)
+        return descriptor
+
+    calls = 0
+
+    def failing_identity_fstat(descriptor: int) -> os.stat_result:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("fstat")
+        return original_fstat(descriptor)
+
+    monkeypatch.setattr(tree, "_open_root", recording_open_root)
+    monkeypatch.setattr(os, "fstat", failing_identity_fstat)
+    with pytest.raises(tree.ImportedSourceError, match="root is not safely readable"):
+        tree.BundleSnapshotSession(tmp_path)
+    assert opened
+    with pytest.raises(OSError):
+        original_fstat(opened[-1])
+
+
+def test_scan_tree_closes_selected_descriptor_when_fstat_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _make_tree(tmp_path)
+    original_fstat = os.fstat
+    original_open_directory_path = tree._open_directory_path
+    opened: list[int] = []
+
+    def recording_open_directory_path(root: int, parts: tuple[str, ...]) -> int:
+        descriptor = original_open_directory_path(root, parts)
+        opened.append(descriptor)
+        return descriptor
+
+    failed = False
+
+    def failing_selected_fstat(descriptor: int) -> os.stat_result:
+        nonlocal failed
+        if opened and descriptor == opened[-1] and not failed:
+            failed = True
+            raise OSError("fstat")
+        return original_fstat(descriptor)
+
+    session = tree.BundleSnapshotSession(tmp_path)
+    monkeypatch.setattr(tree, "_open_directory_path", recording_open_directory_path)
+    monkeypatch.setattr(os, "fstat", failing_selected_fstat)
+    try:
+        with pytest.raises(
+            tree.ImportedSourceError, match="tree is not safely readable"
+        ):
+            session.scan_tree("skills/demo")
+        assert opened
+        with pytest.raises(OSError):
+            original_fstat(opened[-1])
+    finally:
+        session.close(audit=False)
+
+
 def test_open_root_and_child_reject_non_directory_after_open(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
