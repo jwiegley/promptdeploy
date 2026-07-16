@@ -257,7 +257,10 @@ Schema 2 capture is deliberately dormant at the current work-unit boundary:
 the two immutable payload snapshots are retained on `bundle:ponytail`, but
 deploy/status/verify still materialize and compare only the existing LICENSE
 support tree. Native runtime installation and registration begin only after
-the target transaction and remote live-path slice lands.
+the target transaction and remote live-path slice lands. The pure renderer is
+also present, but its receipts and target-effective candidate hashes are not
+yet persisted in deployment manifest v2 or substituted for the current bundle
+hash.
 
 Every include path must be canonical and relative. Discovery must reject
 absolute paths, `.`/`..`, broken or external links, directory links, special
@@ -324,6 +327,53 @@ OpenCode receives the native relative layout and one managed plugin path. The
 target's remote rsync includes must cover the runtime directory. Removing the
 bundle removes only promptdeploy-owned configuration/runtime paths and retains
 the user's mode/default state unless an explicit purge is requested.
+
+The implemented pure renderer now freezes the desired-state side of this
+contract without activating it. It selects exactly one of
+`claude-codex-runtime-v1`, `opencode-plugin-v1`, or synthesized `support-v1`
+for each of the five semantic target types; converts captured links to regular
+installed files; excludes the Claude/Codex hook-map render input; adds the MIT
+notice to the OpenCode runtime; and hashes the resulting kind/path/mode/byte
+tree with `promptdeploy-installed-tree-v1`. The reviewed snapshots currently
+produce these installed runtime digests:
+
+- Claude/Codex:
+  `sha256:46bd65bad6023d631340e3262418866206e95ea5afb38d9bab8dbd567fc32d24`;
+- OpenCode:
+  `sha256:897de1f6cdc260d6243a6920c20773407e3b654cd4e0d47681fb5d90472adfc0`;
+- Droid/GPTel support tree:
+  `sha256:5dd1e01459a1ae1f5b5fa5bdf181905ba8dbecfb4585d400a4622f5b4842ec83`.
+
+`EmittedHostPath` is a nominal live-target value, distinct from a transaction's
+staging `Path`, with explicit local/remote origin, strict UTF-8 components,
+depth and byte budgets, and root-path rejection. It renders quoted POSIX or
+PowerShell expressions, fails closed when a home anchor lacks `HOME`, and
+escapes every quote character that PowerShell treats as a delimiter. The pure
+API makes the authority distinction explicit; the future target adapter must
+prove that it mints this value from its configured live namespace while the
+staging `Path` remains a separate transaction value.
+The Claude/Codex renderer accepts the upstream hook map only when its exact
+three events, order, matcher, scripts, timeouts, and status messages match the
+reviewed contract. It then emits the complete promptdeploy-owned fragment,
+clears incompatible host variables, sets the managed plugin root, preserves
+Claude's profile-local configuration root, and gives Codex its stable writable
+plugin-data path. OpenCode derives one relative managed plugin identity from
+the installed-tree digest. The resulting target-effective value binds source
+provenance, payload name/root/digest, adapter ABI, installed tree, runtime
+identity, and registration digest under `promptdeploy-rendered-bundle-v1`.
+Those inputs live in one frozen effective-state descriptor; the candidate hash
+is derived rather than caller supplied, and the compact receipt is derived and
+cross-checked from that same descriptor. Hook registration values rehash their
+complete semantic JSON, while the OpenCode plugin identity rehashes its exact
+relative path beneath the owned runtime.
+
+These values remain candidates, not observed or committed target state. A
+target must recompute the complete render immediately before mutation and use
+an atomic transaction that preseeds and probes the runtime, compares the
+registration baseline, switches registration as the activation barrier,
+commits manifest ownership, and only then garbage-collects unreferenced
+content. Until that layer lands, manifest v2, the existing LICENSE-only bundle
+hash, and deploy/status/verify semantics remain authoritative.
 
 Remote adapters receive both a local staging path and a distinct emitted live
 host path; generated commands may use only the latter. Remote updates are a

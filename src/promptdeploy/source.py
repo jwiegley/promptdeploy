@@ -15,7 +15,10 @@ import yaml
 
 from promptdeploy.filetags import parse_filetags
 from promptdeploy.frontmatter import FrontmatterError, parse_frontmatter
-from promptdeploy.imported_tree import ImportedTreeSnapshot
+from promptdeploy.imported_tree import (
+    ImportedTreeSnapshot,
+    validate_imported_tree_snapshot,
+)
 from promptdeploy.manifest import ManifestSource, validate_manifest_source
 from promptdeploy.poet import (
     PLAIN_EXTENSIONS,
@@ -26,6 +29,8 @@ from promptdeploy.skilltree import scan_skill_source
 
 PROMPT_EXTENSIONS = POET_EXTENSIONS | PLAIN_EXTENSIONS | {".json"}
 _SHA256 = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_BUNDLE_PAYLOAD_NAME = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*-v[1-9][0-9]*\Z")
+_TARGET_TYPES = frozenset({"claude", "codex", "droid", "opencode", "gptel"})
 
 ItemIdentity = tuple[str, str]
 
@@ -100,6 +105,27 @@ class BundlePayload:
     name: str
     target_types: frozenset[str]
     imported_tree: ImportedTreeSnapshot
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.name, str)
+            or _BUNDLE_PAYLOAD_NAME.fullmatch(self.name) is None
+        ):
+            raise ValueError(
+                "Bundle payload name must be a canonical versioned identifier"
+            )
+        if type(self.target_types) is not frozenset or not self.target_types:
+            raise ValueError("Bundle payload target_types must be a nonempty frozenset")
+        if not all(isinstance(target, str) for target in self.target_types):
+            raise ValueError("Bundle payload target_types must contain strings")
+        unknown = self.target_types - _TARGET_TYPES
+        if unknown:
+            raise ValueError(
+                "Bundle payload target_types contain an unsupported target"
+            )
+        if not isinstance(self.imported_tree, ImportedTreeSnapshot):
+            raise ValueError("Bundle payload must carry an imported tree snapshot")
+        validate_imported_tree_snapshot(self.imported_tree)
 
 
 @dataclass

@@ -439,15 +439,97 @@ complete flake gate and commit hooks pass 2,470 tests at 100% statement and
 branch coverage; per protocol, this narrow remediation does not receive a
 recursive fess audit.
 
+The next dormant managed-runtime seam is implemented but not yet committed:
+
+- `bundle_projection.py` selects the exact five-target payload matrix,
+  projects retained snapshots into link-free installed trees, derives
+  content-addressed runtime identities, and returns a typed candidate receipt
+  plus `promptdeploy-rendered-bundle-v1` target-effective hash;
+- `bundle_render.py` represents emitted host paths as validated components,
+  strictly parses the reviewed three-event Claude/Codex hook map, renders
+  quoted POSIX and PowerShell commands with target-correct environment roots,
+  and binds the complete owned registration fragment to that candidate state;
+- the high-level renderer pins both committed source-tree digests and
+  recomputes the entire immutable plan immediately before a future target
+  mutation. It produces installed-tree digests
+  `sha256:46bd65bad6023d631340e3262418866206e95ea5afb38d9bab8dbd567fc32d24`
+  for Claude/Codex,
+  `sha256:897de1f6cdc260d6243a6920c20773407e3b654cd4e0d47681fb5d90472adfc0`
+  for OpenCode, and
+  `sha256:5dd1e01459a1ae1f5b5fa5bdf181905ba8dbecfb4585d400a4622f5b4842ec83`
+  for the support tree;
+- this seam intentionally changes neither target writes nor manifest v2,
+  deploy/status/verify hashing, active registration, remote transport, or
+  capability claims. A transaction-capable target must land before any of
+  these candidate receipts become committed state.
+
+The reconciled design reports are
+`/var/tmp/wg-ponytail-20260715/runtime-snapshot-design/report.md`,
+`/var/tmp/wg-ponytail-20260715/runtime-target-design/report.md`,
+`/var/tmp/wg-ponytail-20260715/opencode-runtime-design/report.md`,
+`/var/tmp/wg-ponytail-20260715/runtime-renderer-next/report.md`, and
+`/var/tmp/wg-ponytail-20260715/claude-runtime-next/report.md`. The two isolated
+prototypes are
+`/var/tmp/wg-ponytail-20260715/hostpath-hook-prototype/report.md` and
+`/var/tmp/wg-ponytail-20260715/bundle-projection-prototype/report.md`. Before
+independent review, 257 focused cases cover the new pure layer at 100%
+statement and branch coverage with strict typing clean; the complete local
+suite passed 2,602 tests at 100%.
+
+The initial correctness, security, and test audits are
+`/var/tmp/wg-ponytail-20260715/renderer-correctness-review/report.md`,
+`/var/tmp/wg-ponytail-20260715/renderer-security-review/report.md`, and
+`/var/tmp/wg-ponytail-20260715/renderer-test-review/report.md`. They reproduced
+unbound hook command values, an unbound OpenCode plugin identity, arbitrary
+receipt runtime prefixes, a split Claude root, caller-supplied effective-hash
+authority, incomplete emitted-path/root/UTF-8 budgets, excluded-file aliases,
+and two evidence gaps. The independent PowerShell audit at
+`/var/tmp/wg-ponytail-20260715/powershell-command-review/report.md` additionally
+proved that U+2018/U+2019 smart quotes could terminate the generated
+single-quoted literal and inject a command.
+
+The reconciled remediation design is
+`/var/tmp/wg-ponytail-20260715/renderer-remediation-design/report.md`. The
+current implementation derives its target-effective hash and compact receipt
+from one frozen descriptor; rehashes complete hook registrations and exact
+OpenCode identity; confines every runtime witness to the target-owned
+content-addressed namespace; distinguishes nominal emitted local/remote paths
+from staging values; fails closed for roots, absent `HOME`, invalid UTF-8,
+smart quotes, path budgets, context subclasses, and excluded link chains; and
+renders successfully from retained bytes after deleting the source copy. The
+nominal emitted-path type makes the authority choice explicit but cannot prove
+its provenance by itself: the future target transaction must construct it from
+the configured live namespace while retaining staging as a separate `Path`.
+
+All remediation and final narrow reviews are clean:
+
+- `/var/tmp/wg-ponytail-20260715/renderer-correctness-review/remediation.md`
+  and `remediation-final.md`;
+- `/var/tmp/wg-ponytail-20260715/renderer-security-review/remediation.md` and
+  `remediation-final.md`;
+- `/var/tmp/wg-ponytail-20260715/renderer-test-review/remediation.md` and
+  `remediation-final.md`.
+
+The final focused gate passes 162 cases over 817 statements and 350 branches
+at 100%; strict typing and pinned Ruff are clean. The complete seven-check Nix
+gate passes 2,632 tests at 100%, strict mypy over 88 source files, all 96-file
+Ruff checks, package build, Home Manager module evaluation, and Home Manager
+activation. The renderer remains absent from active deploy/status/verify and
+target imports; manifest v2 and the existing LICENSE-only bundle path remain
+authoritative. The commit and its required fess audit remain part of this work
+unit.
+
 Next:
 
-1. add the pure target bundle renderer/receipt contract and the local Claude
-   managed-runtime transaction, including first-class payload provenance,
-   health probes, collision detection, rollback, and fault injection;
-2. add local Codex activation, stable unsynced `PLUGIN_DATA`, and the remote
+1. finish and audit the pure renderer, then add the pure Node health harness;
+2. add manifest v3 and the local Claude managed-runtime transaction as one
+   atomic ownership boundary, including payload provenance, health probes,
+   collision detection, rollback, baseline compare-and-swap, and fault
+   injection;
+3. add local Codex activation, stable unsynced `PLUGIN_DATA`, and the remote
    two-phase preseed/health/baseline-CAS switch using rendered live host paths;
-3. add native OpenCode registration and its remote transport/health contract;
-4. bind the pinned flake source through the package and Home Manager activation
+4. add native OpenCode registration and its remote transport/health contract;
+5. bind the pinned flake source through the package and Home Manager activation
    path, enable the root declaration, finish operator/update documentation and
    reference parity, drain observations, restack, and complete final audits and
    final fess before any separately authorized live rollout.
@@ -502,6 +584,14 @@ Next:
   formatting diff; after applying the pinned formatter, the 2,470-test
   coverage derivation, strict mypy, Ruff, package, Home Manager, and complete
   seven-check flake gate are green.
+- Dormant pure-renderer slice: initial focused and full gates were green; three
+  independent audits plus a PowerShell syntax audit then exposed distinct
+  registration, receipt, emitted-path, hash-authority, alias, and evidence
+  findings. Each changed signature was repaired before the final clean
+  remediation reviews. The final focused 162-test gate covers 817 statements
+  and 350 branches at 100%; the complete 2,632-test coverage derivation,
+  strict 88-file mypy derivation, Ruff, package, Home Manager, and all seven
+  flake checks are green.
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature
