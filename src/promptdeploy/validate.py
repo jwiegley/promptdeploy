@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from .bundle_catalog import (
+    discover_bundle_items,
+    preflight_catalog,
+    preflight_name_collisions,
+)
+from .catalog import catalog_item_applies
 from .config import (
     Config,
     load_anthropic_default_model,
@@ -15,6 +21,7 @@ from .config import (
 )
 from .envsubst import find_env_refs, read_env_example_keys
 from .filetags import parse_filetags
+from .filters import FilterError
 from .frontmatter import FrontmatterError, parse_frontmatter
 from .names import require_canonical_item_name
 from .poet import POET_EXTENSIONS, PoetError, parse_poet
@@ -28,6 +35,17 @@ class ValidationIssue:
     level: str  # 'error' or 'warning'
     message: str
     file_path: Path
+
+
+def _logical_imported_item(item: SourceItem) -> SourceItem:
+    """Return a validation view that never exposes the bound source root."""
+    source = item.provenance.source
+    if source is None:
+        return item
+    logical = f"{source.bundle}:{source.path}"
+    if item.item_type == "skill":
+        logical += "/SKILL.md"
+    return replace(item, path=Path(logical))
 
 
 def validate_all(config: Config) -> list[ValidationIssue]:
@@ -52,6 +70,7 @@ def validate_all(config: Config) -> list[ValidationIssue]:
     ):
         discovery_errors: list[DiscoveryError] = []
         for item in markdown_discover_fn(errors=discovery_errors):
+            item = _logical_imported_item(item)
             all_items.append(item)
             issues.extend(validate_item(item, config, env_example_keys=env_keys))
         for err in discovery_errors:
@@ -73,6 +92,27 @@ def validate_all(config: Config) -> list[ValidationIssue]:
         discovery.discover_prompts,
     ):
         for item in discover_fn():
+            item = _logical_imported_item(item)
+            all_items.append(item)
+            issues.extend(validate_item(item, config, env_example_keys=env_keys))
+
+    # Bundle discovery remains lenient here: each binding is captured and
+    # validated independently so one broken bundle does not hide primary or
+    # sibling-bundle diagnostics.
+    for bundle in config.bundles:
+        try:
+            imported_items = discover_bundle_items(bundle)
+        except (OSError, ValueError) as exc:
+            issues.append(
+                ValidationIssue(
+                    level="error",
+                    message=f"Bundle discovery failed: {exc}",
+                    file_path=Path(f"{bundle.name}:{bundle.manifest_path.name}"),
+                )
+            )
+            continue
+        for imported_item in imported_items:
+            item = _logical_imported_item(imported_item)
             all_items.append(item)
             issues.extend(validate_item(item, config, env_example_keys=env_keys))
 
@@ -111,25 +151,62 @@ def validate_all(config: Config) -> list[ValidationIssue]:
     # Commands, skills, and prompts all surface in the same slash-command
     # namespace on claude targets, so a name shared across these types
     # collides in the live `/` menu even though each per-type check passes.
-    slash_seen: dict[str, tuple[str, Path]] = {}
+    slash_seen: dict[str, SourceItem] = {}
     for item in all_items:
         if item.item_type not in ("command", "skill", "prompt"):
             continue
         prev = slash_seen.get(item.name)
         if prev is None:
-            slash_seen[item.name] = (item.item_type, item.path)
-        elif prev[0] != item.item_type:
+            slash_seen[item.name] = item
+        elif prev.item_type != item.item_type and (
+            prev.provenance.source is None and item.provenance.source is None
+        ):
             issues.append(
                 ValidationIssue(
                     level="warning",
                     message=(
                         f"{item.item_type} '{item.name}' shares the "
-                        f"slash-command namespace with the {prev[0]} defined "
-                        f"by {prev[1]}"
+                        f"slash-command namespace with the {prev.item_type} "
+                        f"defined by {prev.path}"
                     ),
                     file_path=item.path,
                 )
             )
+
+    catalog_issues = [
+        issue
+        for issue in preflight_catalog(all_items)
+        if "duplicate source identity" not in issue.message
+    ]
+
+    def collision_applies(
+        item: SourceItem,
+        target_id: str,
+        target_type: str,
+    ) -> bool:
+        try:
+            return catalog_item_applies(
+                item,
+                target_id,
+                target_type,
+                config,
+            )
+        except (FilterError, ValueError):
+            # validate_item reports malformed filters independently.
+            return False
+
+    catalog_issues.extend(
+        preflight_name_collisions(
+            all_items,
+            configured_target_types={
+                target_id: target.type for target_id, target in config.targets.items()
+            },
+            applies=collision_applies,
+        )
+    )
+    issues.extend(
+        ValidationIssue("error", issue.message, issue.path) for issue in catalog_issues
+    )
 
     # Target-level rules: (a) per-target model: only applies to claude targets;
     # (b) warn when the effective model on a claude target is neither in
@@ -364,7 +441,7 @@ def validate_item(
                         file_path=item.path,
                     )
                 ]
-        elif item.item_type == "prompt":
+        elif item.item_type in {"bundle", "prompt"}:
             metadata = item.metadata
         else:
             metadata, _ = parse_frontmatter(item.content)

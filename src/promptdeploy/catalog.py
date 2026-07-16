@@ -137,9 +137,23 @@ def select_catalog_for_target(
     applicable_requested = frozenset(
         identity for identity in requested_set if requested_filter(index[identity])
     )
+    ordered: list[SourceItem] = []
+    visited: set[ItemIdentity] = set()
+
+    def append_with_requirements(item: SourceItem) -> None:
+        identity = (item.item_type, item.name)
+        if identity in visited or identity not in closed:
+            return
+        for required in item.requires:
+            append_with_requirements(index[required])
+        visited.add(identity)
+        ordered.append(item)
+
+    for item in items:
+        append_with_requirements(item)
     return TargetCatalogSelection(
         requested=requested_set,
         applicable_requested=applicable_requested,
         closed=closed,
-        items=tuple(item for item in items if (item.item_type, item.name) in closed),
+        items=tuple(ordered),
     )

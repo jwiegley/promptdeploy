@@ -745,6 +745,21 @@ class Target(ABC):
         """
         return None
 
+    def effective_hash_input(
+        self,
+        item_type: str,
+        name: str,
+        metadata: dict[str, Any],
+    ) -> Any:
+        """Return the target-rendered semantic value covered by the manifest.
+
+        Merged configuration targets override this for MCP and model entries
+        so stripped cross-target fields and runtime-only secret references do
+        not affect the persistent hash. Values actually baked into target
+        output remain part of the returned structure.
+        """
+        return metadata
+
     def prepare_force_deploy(
         self, item_type: str, name: str, metadata: dict[str, Any]
     ) -> None:
@@ -758,10 +773,9 @@ class Target(ABC):
     @property
     def remote_mcp_hash(self) -> bool:
         """True when this target bakes deploy-time-expanded MCP secrets into a
-        remote file, so its mcp manifest hash must fold current env values
-        (mirroring _expand_env_for_hash for models). Retained for remote
-        Claude merge behavior; use :attr:`mcp_hash_includes_env` for the
-        broader "MCP config bakes env values" behavior.
+        remote file. Retained for remote Claude merge behavior; use
+        :attr:`mcp_hash_includes_env` for the broader "MCP config bakes env
+        values" behavior.
         """
         return False
 
@@ -769,11 +783,16 @@ class Target(ABC):
     def mcp_hash_includes_env(self) -> bool:
         """True when MCP env/header references are expanded at deploy time.
 
-        Targets that bake expanded MCP secrets into their config need manifest
-        hashes to include current env values, so rotating a secret triggers a
-        redeploy even when the source YAML is unchanged.
+        Effective hash inputs and rendered entries use this same policy so
+        rotating a baked secret triggers a redeploy without hashing references
+        that remain runtime-indirect.
         """
         return False
+
+    @property
+    def models_hash_includes_env(self) -> bool:
+        """True when model deployment bakes current environment values."""
+        return True
 
     @abstractmethod
     def deploy_agent(self, name: str, content: bytes) -> None: ...

@@ -18,6 +18,7 @@ from promptdeploy.manifest import (
     MANIFEST_FILENAME,
     Manifest,
     ManifestItem,
+    compute_file_hash,
     load_manifest,
     save_manifest,
 )
@@ -1640,7 +1641,9 @@ class TestCacheInvalidation:
 class TestDeployItemDispatch:
     """_deploy_item dispatches on item type and rejects anything else."""
 
-    def test_imported_item_cannot_reach_legacy_live_path(self, tmp_path: Path) -> None:
+    def test_imported_item_uses_only_the_accepted_snapshot(
+        self, tmp_path: Path
+    ) -> None:
         from promptdeploy.imported_tree import (
             ImportedTreeEntry,
             ImportedTreeSnapshot,
@@ -1672,6 +1675,7 @@ class TestDeployItemDispatch:
                 None,
                 "MIT",
             ),
+            input_sha256=compute_file_hash(b"accepted\n"),
             tree_sha256=snapshot.tree_sha256,
         )
         item = SourceItem(
@@ -1685,13 +1689,14 @@ class TestDeployItemDispatch:
         )
         target = ClaudeTarget("t", tmp_path / "target")
 
+        accepted_hash = compute_item_hash(item, target)
         skill_md.write_bytes(b"mutated\n")
-        with pytest.raises(RuntimeError, match="snapshot-aware hashing"):
-            compute_item_hash(item, target)
+        assert compute_item_hash(item, target) == accepted_hash
         skill_md.unlink()
-        with pytest.raises(RuntimeError, match="snapshot-aware materialization"):
-            _deploy_item(target, item)
-        assert not (tmp_path / "target" / "skills" / "demo").exists()
+        _deploy_item(target, item)
+        assert (
+            tmp_path / "target" / "skills" / "demo" / "SKILL.md"
+        ).read_bytes() == b"accepted\n"
 
     def test_settings_item_type_rejected(self, tmp_path: Path):
         # settings items are dispatched through Target.deploy_settings in
@@ -1706,6 +1711,33 @@ class TestDeployItemDispatch:
         with pytest.raises(ValueError, match="settings"):
             _deploy_item(target, item)
 
+    def test_unsupported_imported_item_type_fails_closed(self, tmp_path: Path) -> None:
+        from promptdeploy.manifest import ManifestSource
+        from promptdeploy.source import SourceItem, SourceProvenance
+        from promptdeploy.targets.claude import ClaudeTarget
+
+        item = SourceItem(
+            "agent",
+            "imported",
+            tmp_path / "diagnostic.md",
+            None,
+            b"body",
+            provenance=SourceProvenance.imported(
+                ManifestSource(
+                    "ponytail",
+                    "agents/imported.md",
+                    "4.8.4",
+                    None,
+                    None,
+                    True,
+                    None,
+                    "MIT",
+                )
+            ),
+        )
+        with pytest.raises(RuntimeError, match="unsupported imported item type"):
+            _deploy_item(ClaudeTarget("claude", tmp_path / "target"), item)
+
 
 class TestTypeMappings:
     def test_marketplace_maps_to_category(self) -> None:
@@ -1713,6 +1745,103 @@ class TestTypeMappings:
 
     def test_cli_marketplaces_maps_to_item_type(self) -> None:
         assert _CLI_TYPE_TO_ITEM_TYPE["marketplaces"] == "marketplace"
+
+
+@pytest.mark.parametrize(
+    ("target_type", "relative_config"),
+    [
+        ("codex", Path(".codex/config.toml")),
+        ("opencode", Path("opencode.json")),
+    ],
+)
+def test_non_claude_preview_mcp_never_bakes_secrets(
+    target_type: str,
+    relative_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from promptdeploy.config import remap_targets_to_root
+
+    source = tmp_path / "source"
+    mcp = source / "mcp"
+    mcp.mkdir(parents=True)
+    (mcp / "secret.yaml").write_bytes(
+        b"name: secret\n"
+        b"url: https://example.invalid/?token=$"
+        b"{PREVIEW_SECRET}\n"
+        b"env:\n  TOKEN: $"
+        b"{PREVIEW_SECRET}\n"
+    )
+    config = Config(
+        source_root=source,
+        targets={
+            "local": TargetConfig("local", target_type, tmp_path / "original"),
+        },
+        groups={},
+    )
+    preview = remap_targets_to_root(config, tmp_path / "preview")
+    monkeypatch.setenv("PREVIEW_SECRET", "first-sensitive-value")
+
+    deploy(preview, item_selectors=[("mcp", "secret")])
+    deployed = (preview.targets["local"].path / relative_config).read_bytes()
+    assert b"first-sensitive-value" not in deployed
+    assert b"${PREVIEW_SECRET}" in deployed
+
+    monkeypatch.setenv("PREVIEW_SECRET", "rotated-sensitive-value")
+    assert {
+        action.action for action in deploy(preview, item_selectors=[("mcp", "secret")])
+    } == {"skip"}
+
+
+@pytest.mark.parametrize(
+    ("target_type", "relative_config"),
+    [
+        ("droid", Path("settings.json")),
+        ("opencode", Path("opencode.json")),
+    ],
+)
+def test_preview_models_never_bake_secrets(
+    target_type: str,
+    relative_config: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from promptdeploy.config import remap_targets_to_root
+
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "models.yaml").write_bytes(
+        b"providers:\n"
+        b"  preview:\n"
+        b"    api_key: $"
+        b"{PREVIEW_SECRET}\n"
+        b"    base_url: https://example.invalid/v1\n"
+        b"    droid: {}\n"
+        b"    opencode:\n"
+        b"      name: Preview\n"
+        b"    models:\n"
+        b"      demo: {}\n"
+    )
+    config = Config(
+        source_root=source,
+        targets={
+            "local": TargetConfig("local", target_type, tmp_path / "original"),
+        },
+        groups={},
+    )
+    preview = remap_targets_to_root(config, tmp_path / "preview")
+    monkeypatch.setenv("PREVIEW_SECRET", "first-sensitive-value")
+
+    deploy(preview, item_selectors=[("models", "models")])
+    deployed = (preview.targets["local"].path / relative_config).read_bytes()
+    assert b"first-sensitive-value" not in deployed
+    assert b"${PREVIEW_SECRET}" in deployed
+
+    monkeypatch.setenv("PREVIEW_SECRET", "rotated-sensitive-value")
+    assert {
+        action.action
+        for action in deploy(preview, item_selectors=[("models", "models")])
+    } == {"skip"}
 
 
 class TestActionType:
@@ -2474,7 +2603,9 @@ class TestRemoteMcpDeploy:
         ops = _json.loads(base64.b64decode(b).decode())
         assert ops == [{"action": "pop", "name": "srv", "entry": None}]
 
-    def test_remote_mcp_scope_flip_redeploys(self, tmp_path: Path, monkeypatch):
+    def test_remote_mcp_stripped_scope_flip_does_not_redeploy(
+        self, tmp_path: Path, monkeypatch
+    ):
         config = _remote_mcp_config(
             tmp_path, mcp_yaml=b"name: srv\ncommand: c\nscope: user\n"
         )
@@ -2491,18 +2622,10 @@ class TestRemoteMcpDeploy:
 
         actions = deploy(config)
 
-        updates = [a for a in actions if a.action == "update" and a.item_type == "mcp"]
-        assert len(updates) == 1
-        import base64
-        import json as _json
-
-        marker = 'base64.b64decode("'
-        s = captured["script"]
-        b = s[
-            s.index(marker) + len(marker) : s.index('"', s.index(marker) + len(marker))
+        assert [action.action for action in actions if action.item_type == "mcp"] == [
+            "skip"
         ]
-        ops = _json.loads(base64.b64decode(b).decode())
-        assert ops[0]["action"] == "set"
+        assert captured == {}
 
     def test_remote_mcp_stale_removal_flushes_pop(self, tmp_path: Path, monkeypatch):
         # No source for "gone", but the seeded manifest has it.
@@ -2671,6 +2794,41 @@ class TestRemoteMcpDeploy:
         monkeypatch.setenv("TOK", "v2")
         assert compute_item_hash(item, target, config) != h1
 
+    def test_claude_mcp_hash_ignores_secret_in_stripped_codex_override(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from promptdeploy.source import SourceDiscovery
+        from promptdeploy.targets import create_target
+
+        src = tmp_path / "source"
+        src.mkdir()
+        mcp_dir = src / "mcp"
+        mcp_dir.mkdir()
+        (mcp_dir / "srv.yaml").write_bytes(
+            b'name: srv\ncommand: c\ncodex:\n  env:\n    IGNORED: "${IGNORED_SECRET}"\n'
+        )
+        tc = _make_claude_target(tmp_path)
+        config = _make_config(src, {tc.id: tc})
+        target = create_target(tc)
+        item = next(
+            source_item
+            for source_item in SourceDiscovery(src).discover_all()
+            if source_item.item_type == "mcp"
+        )
+
+        monkeypatch.setenv("IGNORED_SECRET", "first-sensitive-value")
+        deploy(config)
+        output = (tc.path / ".claude.json").read_bytes()
+        first_hash = compute_item_hash(item, target, config)
+
+        monkeypatch.setenv("IGNORED_SECRET", "rotated-sensitive-value")
+        assert compute_item_hash(item, target, config) == first_hash
+        actions = deploy(config)
+        assert [action.action for action in actions if action.item_type == "mcp"] == [
+            "skip"
+        ]
+        assert (tc.path / ".claude.json").read_bytes() == output
+
     @staticmethod
     def _url_mcp_item_and_config(src: Path):
         """Write a url-with-${VAR} mcp source under ``src`` and return the item."""
@@ -2689,10 +2847,9 @@ class TestRemoteMcpDeploy:
     def test_remote_mcp_hash_changes_when_url_env_rotates(
         self, tmp_path: Path, monkeypatch
     ):
-        # Remote-mcp targets bake the deploy-time-expanded url secret into
-        # the remote .claude.json; compute_item_hash folds env values over
-        # the WHOLE mcp metadata (gated on mcp_hash_includes_env), so a
-        # rotated secret referenced from url must change the hash.
+        # Remote-mcp targets bake the deploy-time-expanded URL secret into
+        # the remote .claude.json, so their target-rendered hash input changes
+        # when the referenced secret rotates.
         from promptdeploy.deploy import compute_item_hash
         from promptdeploy.targets import create_target
 
@@ -2712,9 +2869,8 @@ class TestRemoteMcpDeploy:
     def test_local_claude_mcp_hash_changes_when_url_env_rotates(
         self, tmp_path: Path, monkeypatch
     ):
-        # Local claude also bakes the url secret at deploy time
-        # (ClaudeTarget.mcp_hash_includes_env is True), so its hash folds
-        # env values referenced from url just like the remote path.
+        # Local Claude also bakes the URL secret at deploy time, so its
+        # target-rendered hash input changes just like the remote path.
         from promptdeploy.deploy import compute_item_hash
         from promptdeploy.targets import create_target
 
@@ -2730,10 +2886,8 @@ class TestRemoteMcpDeploy:
         assert compute_item_hash(item, target, config) != h1
 
     def test_droid_mcp_hash_ignores_url_env_rotation(self, tmp_path: Path, monkeypatch):
-        # Droid writes the url verbatim (it expands ${VAR} itself at
-        # runtime), so its mcp hash stays source-bytes only
-        # (mcp_hash_includes_env is False) and a rotated secret must NOT
-        # trigger a redeploy.
+        # Droid writes the URL reference verbatim and expands it at runtime,
+        # so the target-rendered hash input ignores secret-value rotation.
         from promptdeploy.deploy import compute_item_hash
         from promptdeploy.targets import create_target
 

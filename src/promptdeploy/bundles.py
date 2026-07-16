@@ -151,7 +151,7 @@ def _resolve_source_root(path: Path, *, name: str) -> Path:
         mode = resolved.stat().st_mode
     except OSError as exc:
         raise BundleBindingError(
-            f"Source for bundle {name!r} is not safely readable: {path}"
+            f"Source for bundle {name!r} is not safely readable"
         ) from exc
     if not stat.S_ISDIR(mode):
         raise BundleBindingError(f"Source for bundle {name!r} must be a directory")

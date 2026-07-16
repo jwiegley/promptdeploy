@@ -6,7 +6,15 @@ from pathlib import Path
 import pytest
 import yaml
 
-from promptdeploy.cli import _run_deploy, _run_list, _run_status, _run_validate, main
+from promptdeploy.cli import (
+    _build_parser,
+    _load_config_or_exit,
+    _run_deploy,
+    _run_list,
+    _run_status,
+    _run_validate,
+    main,
+)
 from promptdeploy.config import Config, TargetConfig
 from promptdeploy.deploy import deploy
 
@@ -846,6 +854,47 @@ class TestRunStatus:
         captured = capsys.readouterr()
         assert "test-claude" in captured.out
 
+    def test_status_sanitizes_remote_error(self, tmp_path, monkeypatch, capsys):
+        from promptdeploy.ssh import SSHError
+
+        config = Config(source_root=tmp_path, targets={}, groups={})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+        monkeypatch.setattr(
+            "promptdeploy.status.get_status",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                SSHError("SECRET-SENTINEL from remote stderr")
+            ),
+        )
+
+        with pytest.raises(SystemExit) as raised:
+            _run_status(argparse.Namespace(target=None, target_root=None))
+
+        assert raised.value.code == 1
+        captured = capsys.readouterr()
+        assert captured.err.strip() == "ERROR: remote status failed"
+        assert "SECRET-SENTINEL" not in captured.out + captured.err
+
+    def test_status_reports_missing_env_without_a_value(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        from promptdeploy.envsubst import EnvVarError
+
+        config = Config(source_root=tmp_path, targets={}, groups={})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+        monkeypatch.setattr(
+            "promptdeploy.status.get_status",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                EnvVarError("Environment variable ANVIL_TOKEN is not set")
+            ),
+        )
+
+        with pytest.raises(SystemExit) as raised:
+            _run_status(argparse.Namespace(target=None, target_root=None))
+
+        assert raised.value.code == 1
+        captured = capsys.readouterr()
+        assert "ANVIL_TOKEN" in captured.err
+
 
 # ===================================================================
 # cli.py __name__ == "__main__" guard (line 190)
@@ -874,34 +923,10 @@ class TestCliMainGuard:
 
 
 class TestTargetRootArgParsing:
-    """Verify --target-root is accepted by deploy, status, and list parsers."""
+    """Verify target and bundle arguments on the production parser."""
 
     def _parse(self, argv: list[str]) -> argparse.Namespace:
-        """Build the real parser and parse the given argv."""
-        import argparse
-        from pathlib import Path
-
-        parser = argparse.ArgumentParser(prog="promptdeploy")
-        subparsers = parser.add_subparsers(dest="command", required=True)
-
-        deploy_parser = subparsers.add_parser("deploy")
-        deploy_parser.add_argument("--dry-run", action="store_true")
-        deploy_parser.add_argument("--target", action="append")
-        deploy_parser.add_argument("--only-type", action="append")
-        deploy_parser.add_argument("--verbose", action="store_true")
-        deploy_parser.add_argument("--quiet", action="store_true")
-        deploy_parser.add_argument("--force", action="store_true")
-        deploy_parser.add_argument("--target-root", type=Path, metavar="DIR")
-
-        status_parser = subparsers.add_parser("status")
-        status_parser.add_argument("--target", action="append")
-        status_parser.add_argument("--target-root", type=Path, metavar="DIR")
-
-        list_parser = subparsers.add_parser("list")
-        list_parser.add_argument("--target", action="append")
-        list_parser.add_argument("--target-root", type=Path, metavar="DIR")
-
-        return parser.parse_args(argv)
+        return _build_parser().parse_args(argv)
 
     def test_deploy_accepts_target_root(self, tmp_path):
         args = self._parse(["deploy", "--target-root", str(tmp_path)])
@@ -926,6 +951,72 @@ class TestTargetRootArgParsing:
     def test_list_target_root_defaults_to_none(self):
         args = self._parse(["list"])
         assert args.target_root is None
+
+    def test_verify_accepts_target_root(self, tmp_path):
+        args = self._parse(
+            [
+                "verify",
+                "--only-item",
+                "skill:ponytail",
+                "--target-root",
+                str(tmp_path),
+            ]
+        )
+        assert args.target_root == tmp_path
+
+    def test_verify_target_root_defaults_to_none(self):
+        args = self._parse(["verify", "--only-item", "skill:ponytail"])
+        assert args.target_root is None
+
+    def test_global_bundle_binding_flags(self, tmp_path):
+        descriptor = tmp_path / "bindings.json"
+        first = tmp_path / "first"
+        second = tmp_path / "second"
+        args = self._parse(
+            [
+                "--bundle-bindings-file",
+                str(descriptor),
+                "--bundle-source",
+                f"ponytail={first}",
+                "--bundle-source",
+                f"other={second}",
+                "--require-immutable-bundles",
+                "validate",
+            ]
+        )
+        assert args.bundle_bindings_file == descriptor
+        assert args.bundle_source == [
+            f"ponytail={first}",
+            f"other={second}",
+        ]
+        assert args.require_immutable_bundles
+
+
+def test_load_config_forwards_explicit_bundle_authority(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+    expected = Config(source_root=tmp_path, targets={}, groups={})
+
+    def fake_load_config(**kwargs: object) -> Config:
+        observed.update(kwargs)
+        return expected
+
+    monkeypatch.setattr("promptdeploy.cli.load_config", fake_load_config)
+    descriptor = tmp_path / "bindings.json"
+    args = argparse.Namespace(
+        bundle_bindings_file=descriptor,
+        bundle_source=["ponytail=/absolute/source"],
+        require_immutable_bundles=True,
+    )
+
+    assert _load_config_or_exit(args) is expected
+    assert observed == {
+        "bundle_bindings_file": descriptor,
+        "bundle_source_overrides": ("ponytail=/absolute/source",),
+        "require_immutable_bundles": True,
+    }
 
 
 # ===================================================================
@@ -1018,6 +1109,92 @@ class TestTargetRootDeploy:
         assert "[dry-run]" in captured.out
         # No actual files written
         assert not (preview_root / "tgt").exists()
+
+    def test_deploy_target_root_rejects_symlink_escape(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        src = _make_source(tmp_path)
+        live = tmp_path / "live-target"
+        live.mkdir()
+        sentinel = live / "sentinel"
+        sentinel.write_text("untouched")
+        tc = TargetConfig(id="tgt", type="claude", path=live)
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+        preview_root = tmp_path / "preview"
+        preview_root.mkdir()
+        (preview_root / "tgt").symlink_to(live, target_is_directory=True)
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=preview_root,
+            force=False,
+        )
+
+        with pytest.raises(SystemExit) as raised:
+            _run_deploy(args)
+
+        assert raised.value.code == 1
+        assert sentinel.read_text() == "untouched"
+        assert not (live / "agents").exists()
+        assert "is a symlink" in capsys.readouterr().err
+
+    def test_deploy_target_root_rejects_symlinked_root(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        src = _make_source(tmp_path)
+        live = tmp_path / "live-target"
+        live.mkdir()
+        sentinel = live / "sentinel"
+        sentinel.write_text("untouched")
+        tc = TargetConfig(id="tgt", type="droid", path=tmp_path / "original")
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+        preview_root = tmp_path / "preview"
+        preview_root.symlink_to(live, target_is_directory=True)
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=preview_root,
+            force=True,
+        )
+
+        with pytest.raises(SystemExit) as raised:
+            _run_deploy(args)
+
+        assert raised.value.code == 1
+        assert sentinel.read_text() == "untouched"
+        assert not (live / "droids").exists()
+        assert "must not be a symlink" in capsys.readouterr().err
+
+    def test_deploy_target_root_reports_unknown_home_cleanly(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        src = _make_source(tmp_path)
+        tc = TargetConfig(id="tgt", type="claude", path=tmp_path / "original")
+        config = _make_config(src, {tc.id: tc})
+        monkeypatch.setattr("promptdeploy.cli.load_config", lambda *a, **kw: config)
+        args = argparse.Namespace(
+            verbose=False,
+            quiet=False,
+            dry_run=False,
+            target=None,
+            only_type=None,
+            target_root=Path("~promptdeploy_no_such_user_98f31/preview"),
+            force=False,
+        )
+
+        with pytest.raises(SystemExit) as raised:
+            _run_deploy(args)
+
+        assert raised.value.code == 1
+        assert "unknown home directory" in capsys.readouterr().err
 
 
 class TestTargetRootStatus:

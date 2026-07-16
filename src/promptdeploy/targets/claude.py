@@ -156,9 +156,27 @@ class ClaudeTarget(Target):
             return "claude-mcp-entry-v6"
         return None
 
+    def effective_hash_input(
+        self,
+        item_type: str,
+        name: str,
+        metadata: dict[str, Any],
+    ) -> Any:
+        if item_type != "mcp":
+            return super().effective_hash_input(item_type, name, metadata)
+        if not metadata.get("enabled", True):
+            return None
+        return self._claude_mcp_entry(
+            metadata,
+            name=name,
+            expand_secrets=self.mcp_hash_includes_env,
+        )
+
     @property
     def mcp_hash_includes_env(self) -> bool:
-        return True
+        # Target-root previews deliberately keep references literal, so their
+        # manifest hashes must not encode secret values that were never written.
+        return self._expand_secrets
 
     def deploy_models(self, config: dict[str, Any]) -> None:
         pass  # Claude Code does not support custom models
@@ -524,7 +542,11 @@ class ClaudeTarget(Target):
         actual = servers.get(name, missing) if isinstance(servers, dict) else missing
         if not metadata.get("enabled", True):
             return actual is missing
-        expected = self._claude_mcp_entry(metadata, name=name)
+        expected = self._claude_mcp_entry(
+            metadata,
+            name=name,
+            expand_secrets=self._expand_secrets,
+        )
         return actual == expected
 
     def would_deploy_bytes(

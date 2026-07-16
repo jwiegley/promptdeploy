@@ -1,6 +1,8 @@
 """Tests for promptdeploy configuration loading."""
 
+import os
 from pathlib import Path
+from typing import cast
 
 import pytest
 import yaml
@@ -319,6 +321,127 @@ class TestRemapTargetsToRoot:
         root = tmp_path / "scratch"
         remapped = remap_targets_to_root(cfg, root)
         assert remapped.targets["my-target"].path == root / "my-target"
+
+    @pytest.mark.parametrize(
+        "target_id",
+        [
+            "",
+            ".",
+            "..",
+            "../live",
+            "/live",
+            "Foo",
+            "foo_bar",
+            "foo\\bar",
+            "föö",
+            "bad\nid",
+        ],
+    )
+    def test_rejects_unsafe_target_id(self, target_id: str, tmp_path: Path) -> None:
+        tc = TargetConfig(id=target_id, type="claude", path=tmp_path / "original")
+        cfg = Config(source_root=tmp_path, targets={target_id: tc}, groups={})
+
+        with pytest.raises(ValueError, match="Unsafe target ID"):
+            remap_targets_to_root(cfg, tmp_path / "preview")
+
+    def test_rejects_non_string_target_id(self, tmp_path: Path) -> None:
+        tc = TargetConfig(id="local", type="claude", path=tmp_path / "original")
+        targets = cast(dict[str, TargetConfig], {7: tc})
+        cfg = Config(source_root=tmp_path, targets=targets, groups={})
+
+        with pytest.raises(ValueError, match="must be strings"):
+            remap_targets_to_root(cfg, tmp_path / "preview")
+
+    def test_rejects_symlinked_target_leaf(self, tmp_path: Path) -> None:
+        live = tmp_path / "live"
+        live.mkdir()
+        root = tmp_path / "preview"
+        root.mkdir()
+        (root / "local").symlink_to(live, target_is_directory=True)
+        tc = TargetConfig(id="local", type="claude", path=live)
+        cfg = Config(source_root=tmp_path, targets={"local": tc}, groups={})
+
+        with pytest.raises(ValueError, match="target path is a symlink"):
+            remap_targets_to_root(cfg, root)
+
+        assert list(live.iterdir()) == []
+
+    def test_rejects_nested_symlink_in_existing_preview(self, tmp_path: Path) -> None:
+        live = tmp_path / "live"
+        live.mkdir()
+        target = tmp_path / "preview" / "local"
+        target.mkdir(parents=True)
+        (target / "agents").symlink_to(live, target_is_directory=True)
+        tc = TargetConfig(id="local", type="claude", path=live)
+        cfg = Config(source_root=tmp_path, targets={"local": tc}, groups={})
+
+        with pytest.raises(ValueError, match="tree contains a symlink"):
+            remap_targets_to_root(cfg, tmp_path / "preview")
+
+        assert list(live.iterdir()) == []
+
+    def test_rejects_non_directory_target_leaf(self, tmp_path: Path) -> None:
+        root = tmp_path / "preview"
+        root.mkdir()
+        (root / "local").write_text("not a directory")
+        tc = TargetConfig(id="local", type="claude", path=tmp_path / "original")
+        cfg = Config(source_root=tmp_path, targets={"local": tc}, groups={})
+
+        with pytest.raises(ValueError, match="target path is not a directory"):
+            remap_targets_to_root(cfg, root)
+
+    def test_rejects_non_directory_target_root(self, tmp_path: Path) -> None:
+        root = tmp_path / "preview"
+        root.write_text("not a directory")
+
+        with pytest.raises(ValueError, match="Target root is not a directory"):
+            remap_targets_to_root(Config(tmp_path, {}, {}), root)
+
+    def test_rejects_symlinked_target_root(self, tmp_path: Path) -> None:
+        live = tmp_path / "live"
+        live.mkdir()
+        root = tmp_path / "preview"
+        root.symlink_to(live, target_is_directory=True)
+
+        with pytest.raises(ValueError, match="Target root must not be a symlink"):
+            remap_targets_to_root(Config(tmp_path, {}, {}), root)
+
+        assert list(live.iterdir()) == []
+
+    def test_unknown_target_root_home_is_a_value_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def fail_expanduser(_path: Path) -> Path:
+            raise RuntimeError("unknown user")
+
+        monkeypatch.setattr(Path, "expanduser", fail_expanduser)
+
+        with pytest.raises(ValueError, match="unknown home directory"):
+            remap_targets_to_root(Config(tmp_path, {}, {}), Path("~missing/preview"))
+
+    def test_rejects_special_file_in_existing_preview(self, tmp_path: Path) -> None:
+        target = tmp_path / "preview" / "local"
+        target.mkdir(parents=True)
+        os.mkfifo(target / "settings.json")
+        tc = TargetConfig(id="local", type="claude", path=tmp_path / "original")
+        cfg = Config(source_root=tmp_path, targets={"local": tc}, groups={})
+
+        with pytest.raises(ValueError, match="contains a non-regular file"):
+            remap_targets_to_root(cfg, tmp_path / "preview")
+
+    def test_rejects_hard_link_in_existing_preview(self, tmp_path: Path) -> None:
+        outside = tmp_path / "outside.md"
+        outside.write_text("untouched")
+        target = tmp_path / "preview" / "local" / "agents"
+        target.mkdir(parents=True)
+        os.link(outside, target / "helper.md")
+        tc = TargetConfig(id="local", type="droid", path=tmp_path / "original")
+        cfg = Config(source_root=tmp_path, targets={"local": tc}, groups={})
+
+        with pytest.raises(ValueError, match="contains a hard-linked file"):
+            remap_targets_to_root(cfg, tmp_path / "preview")
+
+        assert outside.read_text() == "untouched"
 
     def test_remap_preserves_model(self, tmp_path: Path) -> None:
         tc = TargetConfig(

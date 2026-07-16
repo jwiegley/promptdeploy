@@ -285,8 +285,8 @@ both doubles the real signature and removes the suppressions. The 45 focused
 cases and strict typing pass; per protocol, this narrow remediation does not
 receive a recursive fess audit.
 
-The dormant operation-catalog and imported-skill interface slice is implemented
-in the current work unit:
+The dormant operation-catalog and imported-skill interface slice was committed
+as `4917e25` (`Add pure operation catalog interfaces`):
 
 - `src/promptdeploy/catalog.py` strictly composes one immutable catalog,
   preflights every configured target namespace, uses logical provenance labels,
@@ -314,14 +314,70 @@ name. Final gates pass: 2,312 tests at 100% branch coverage, strict mypy over
 82 source files, Ruff format/lint, package build, Home Manager module and
 activation checks, and the complete seven-check `nix flake check`.
 
+Its required independent audit is
+`/var/tmp/wg-ponytail-20260715/fess-4917e25/report.md`. Production received a
+clean verdict; the sole low finding was that four positive-only imported-match
+tests would also accept an unconditional `True`. Fess-fix-only commit
+`5cefa94` (`Test imported snapshot mismatches`) adds unequal accepted snapshots
+for Claude, Codex, Droid, OpenCode, and Remote. The five focused cases pass;
+per protocol, this narrow remediation does not receive a recursive fess audit.
+
+The composed-catalog activation slice is implemented in the current work unit:
+
+- deploy, status, and strict verify each capture one immutable composed catalog,
+  close target-specific dependencies in stable topological order, hash exact
+  logical provenance, and compare imported bytes only through accepted
+  snapshots;
+- deploy preflights the entire closed selection before mutation, refuses
+  unmanaged Ponytail skills even under `--force`, revalidates required support
+  before each dependent and manifest commit, and keeps dependent removal ahead
+  of bundle cleanup;
+- manifest v2 source provenance, target-rendered MCP/model hashes, exact GPTel
+  adopted paths, and logical diagnostics make convergence, rotation, adoption,
+  drift, and stale removal agree across deploy/status/verify without persisting
+  secret-derived hashes for stripped or runtime-indirect values;
+- global `--bundle-bindings-file`, repeatable `--bundle-source`, and
+  `--require-immutable-bundles` flags feed every command through the same
+  binding authority, while `verify --target-root` uses the same isolated
+  preview mapping as deploy/status/list;
+- target-root previews reject noncanonical IDs, lexical root/leaf/nested
+  symlinks, hard links, special files, and unknown-home paths before target
+  access; all four CLI paths report those failures cleanly, and preview hashes
+  never incorporate secret values that remain literal;
+- validation remains lenient per bundle, reports logical bundle paths, catches
+  effective imported namespace/dependency failures, and never lets one broken
+  binding hide primary or sibling diagnostics;
+- isolated end-to-end coverage proves all five local target types: Claude,
+  Codex, and Droid receive support plus six immutable skill trees; GPTel
+  receives support plus six `gptel-preset-v1` prompt projections; OpenCode
+  receives support only until the native runtime slice lands. First deploy,
+  no-op convergence, provenance drift, source deletion after composition,
+  strict verification, exact selection, and original-target non-mutation all
+  pass.
+
+The independent activation reviews are
+`/var/tmp/wg-ponytail-20260715/activation-correctness-review/report.md` and
+`/var/tmp/wg-ponytail-20260715/activation-security-review/report.md`; the two
+isolated implementation prototypes are
+`/var/tmp/wg-ponytail-20260715/activation-core-proto/report.md` and
+`/var/tmp/wg-ponytail-20260715/activation-cli-proto/report.md`. Every finding
+was fixed and both final review verdicts are clean under the documented
+non-concurrent ordinary-POSIX preview-tree threat model. Final gates pass:
+2,397 tests at 100% statement and branch coverage, strict mypy over 83 source
+files, Ruff format/lint, package build, Home Manager module and activation
+checks, and the complete seven-check `nix flake check`.
+
 Next:
 
-1. atomically activate the composed catalog in deploy/status/validate/verify
-   with target-specific dependency closure, manifest provenance, global bundle
-   bindings, and `verify --target-root`;
-2. prove first deploy, no-op convergence, pin drift, source mutation/deletion,
-   exact removal, and rollback in isolated target roots before enabling the
-   root declaration.
+1. add the managed runtime and native OpenCode plugin adapters, including
+   live-path rendering, collision detection, transactional registration, and
+   rollback/fault-injection coverage;
+2. bind the pinned flake source through the package and Home Manager activation
+   path, prove immutable metadata parity, and only then enable the root bundle
+   declaration;
+3. finish operator/update documentation, reference parity, observation drain,
+   restack, final audits, and final fess before any separately authorized live
+   rollout.
 
 ## Gate attempt counts
 
@@ -350,6 +406,11 @@ Next:
 - Dormant catalog/interface slice: the first Nix mypy attempt found only a
   test-factory annotation mismatch; the corrected 82-file strict mypy gate,
   2,312-test 100%-branch pytest gate, and full seven-check flake gate are green.
+- Composed-catalog activation slice: focused failures changed across typing,
+  stale expectations, coverage-only branches, and independent review findings;
+  each was corrected before the final gate. The final 2,397-test 100%-branch
+  pytest derivation, strict 83-file mypy derivation, and all seven flake checks
+  are green.
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature

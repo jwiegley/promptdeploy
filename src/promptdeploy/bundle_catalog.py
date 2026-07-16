@@ -600,6 +600,14 @@ def _logical_origin(item: SourceItem) -> str:
     return f"primary:{item.provenance.primary_path or item.path}"
 
 
+def _logical_issue_path(item: SourceItem) -> Path:
+    """Return a catalog diagnostic path without exposing a bound source root."""
+    source = item.provenance.source
+    if source is None:
+        return item.path
+    return Path(f"{source.bundle}:{source.path}")
+
+
 def preflight_catalog(items: Sequence[SourceItem]) -> tuple[CatalogIssue, ...]:
     """Check identity, dependency, cycle, and applicability invariants."""
     issues: list[CatalogIssue] = []
@@ -612,7 +620,7 @@ def preflight_catalog(items: Sequence[SourceItem]) -> tuple[CatalogIssue, ...]:
             origins = ", ".join(_logical_origin(item) for item in duplicates)
             issues.append(
                 CatalogIssue(
-                    duplicates[-1].path,
+                    _logical_issue_path(duplicates[-1]),
                     f"duplicate source identity {identity[0]}:{identity[1]} "
                     f"from {origins}",
                 )
@@ -627,7 +635,7 @@ def preflight_catalog(items: Sequence[SourceItem]) -> tuple[CatalogIssue, ...]:
             if required_item is None:
                 issues.append(
                     CatalogIssue(
-                        item.path,
+                        _logical_issue_path(item),
                         f"{identity[0]}:{identity[1]} requires missing or "
                         f"ambiguous {required[0]}:{required[1]}",
                     )
@@ -644,7 +652,7 @@ def preflight_catalog(items: Sequence[SourceItem]) -> tuple[CatalogIssue, ...]:
             if not covered:
                 issues.append(
                     CatalogIssue(
-                        item.path,
+                        _logical_issue_path(item),
                         f"{required[0]}:{required[1]} does not apply everywhere "
                         f"required by {identity[0]}:{identity[1]}",
                     )
@@ -660,7 +668,10 @@ def preflight_catalog(items: Sequence[SourceItem]) -> tuple[CatalogIssue, ...]:
             cycle = (*trail[trail.index(identity) :], identity)
             rendered = " -> ".join(f"{kind}:{name}" for kind, name in cycle)
             issues.append(
-                CatalogIssue(unique[identity].path, f"dependency cycle: {rendered}")
+                CatalogIssue(
+                    _logical_issue_path(unique[identity]),
+                    f"dependency cycle: {rendered}",
+                )
             )
             return
         visiting.add(identity)
@@ -698,7 +709,7 @@ def preflight_name_collisions(
                 ):
                     issues.append(
                         CatalogIssue(
-                            right.path,
+                            _logical_issue_path(right),
                             f"imported slash-name collision {name!r}: "
                             f"{left.item_type} from {_logical_origin(left)} and "
                             f"{right.item_type} from {_logical_origin(right)} both "

@@ -183,9 +183,16 @@ def _transform_for_opencode(content: bytes, warnings: list[str] | None = None) -
 class OpenCodeTarget(Target):
     """Deploy prompts and MCP servers into an OpenCode configuration directory."""
 
-    def __init__(self, target_id: str, config_path: Path) -> None:
+    def __init__(
+        self,
+        target_id: str,
+        config_path: Path,
+        *,
+        expand_secrets: bool = True,
+    ) -> None:
         self._id = target_id
         self._config_path = config_path.expanduser().resolve()
+        self._expand_secrets = expand_secrets
         # Warnings collected during the most recent deploy_prompt calls;
         # drained via consume_warnings() by the deploy loop.
         self._warnings: list[tuple[str, list[str]]] = []
@@ -225,17 +232,34 @@ class OpenCodeTarget(Target):
     def content_fingerprint(self, item_type: str) -> str | None:
         if item_type == "mcp":
             # Bump when the deployed opencode.json entry format changes so
-            # existing deployments refresh even though the source YAML (and
-            # the env-folded hash, which has always substituted ${VAR} in
-            # every string) is unchanged.
+            # existing deployments refresh even when the target-rendered
+            # semantic entry is otherwise unchanged.
             # v4: OpenCode overrides are merged before rendering, while other
             # client override metadata is stripped from the resulting entry.
             return "opencode-mcp-v4"
         return None
 
+    def effective_hash_input(
+        self,
+        item_type: str,
+        name: str,
+        metadata: dict[str, Any],
+    ) -> Any:
+        if item_type == "mcp":
+            if not metadata.get("enabled", True):
+                return None
+            return self._opencode_mcp_entry(name, metadata)
+        if item_type == "models":
+            return self._opencode_providers(metadata)
+        return super().effective_hash_input(item_type, name, metadata)
+
     @property
     def mcp_hash_includes_env(self) -> bool:
-        return True
+        return self._expand_secrets
+
+    @property
+    def models_hash_includes_env(self) -> bool:
+        return self._expand_secrets
 
     # ------------------------------------------------------------------
     # Deploy
@@ -292,10 +316,13 @@ class OpenCodeTarget(Target):
         pass
 
     def deploy_models(self, config: dict[str, Any]) -> None:
-        from ..envsubst import expand_env_vars_strict
-
         oc_path = self._opencode_path()
         data = self._load_json(oc_path)
+        data["provider"] = self._opencode_providers(config)
+        self._save_json(oc_path, data)
+
+    def _opencode_providers(self, config: dict[str, Any]) -> dict[str, Any]:
+        from ..envsubst import expand_env_vars_strict
 
         providers: dict[str, Any] = {}
 
@@ -304,9 +331,14 @@ class OpenCodeTarget(Target):
             if not oc_cfg:
                 continue
 
-            api_key = expand_env_vars_strict(
-                prov.get("api_key", ""),
-                context=f"models.providers.{prov_key}.api_key",
+            raw_api_key = prov.get("api_key", "")
+            api_key = (
+                expand_env_vars_strict(
+                    raw_api_key,
+                    context=f"models.providers.{prov_key}.api_key",
+                )
+                if self.models_hash_includes_env
+                else raw_api_key
             )
             base_url = prov.get("base_url", "")
 
@@ -345,9 +377,7 @@ class OpenCodeTarget(Target):
             if models_dict:
                 provider_entry["models"] = models_dict
                 providers[prov_key] = provider_entry
-
-        data["provider"] = providers
-        self._save_json(oc_path, data)
+        return providers
 
     def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:
         oc_path = self._opencode_path()
@@ -361,8 +391,11 @@ class OpenCodeTarget(Target):
 
         self._save_json(oc_path, data)
 
-    @staticmethod
-    def _opencode_mcp_entry(name: str, config: dict[str, Any]) -> dict[str, Any]:
+    def _opencode_mcp_entry(
+        self,
+        name: str,
+        config: dict[str, Any],
+    ) -> dict[str, Any]:
         from ..envsubst import expand_env_vars_strict
 
         config = OpenCodeTarget._apply_opencode_mcp_overrides(config)
@@ -377,32 +410,33 @@ class OpenCodeTarget(Target):
         # command is an array: command + args combined.
         if cmd is not None:
             entry["command"] = [cmd, *list(args)]
-        # "environment" key, not "env". Expand ${VAR} at deploy time since
-        # OpenCode runs without these source-repository variables.
+        # "environment" key, not "env". Normal deploys expand ${VAR} since
+        # OpenCode runs without these source-repository variables; previews
+        # preserve references so secrets never enter the preview tree.
         env = config.get("env")
         if env:
             entry["environment"] = {
                 key: (
                     expand_env_vars_strict(value, context=f"mcp.{name}.env.{key}")
-                    if isinstance(value, str)
+                    if self.mcp_hash_includes_env and isinstance(value, str)
                     else value
                 )
                 for key, value in env.items()
             }
-        # HTTP headers use the same strict deploy-time expansion.
+        # HTTP headers use the same normal-deploy expansion policy.
         headers = config.get("headers")
         if headers:
             entry["headers"] = {
                 key: (
                     expand_env_vars_strict(value, context=f"mcp.{name}.headers.{key}")
-                    if isinstance(value, str)
+                    if self.mcp_hash_includes_env and isinstance(value, str)
                     else value
                 )
                 for key, value in headers.items()
             }
         # Copy remaining non-metadata, non-handled keys. OpenCode's own
         # substitution syntax is {env:VAR}, not ${VAR}, so URLs also expand
-        # strictly at deployment.
+        # strictly during normal deploys and remain literal in previews.
         for key, value in config.items():
             if key not in _MCP_STRIP_KEYS and key not in (
                 "command",
@@ -411,8 +445,13 @@ class OpenCodeTarget(Target):
                 "headers",
             ):
                 if key == "url" and isinstance(value, str):
-                    entry[key] = expand_env_vars_strict(
-                        value, context=f"mcp.{name}.url"
+                    entry[key] = (
+                        expand_env_vars_strict(
+                            value,
+                            context=f"mcp.{name}.url",
+                        )
+                        if self.mcp_hash_includes_env
+                        else value
                     )
                 else:
                     entry[key] = value

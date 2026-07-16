@@ -621,6 +621,98 @@ class TestModelsDeployIntegration:
         settings = json.loads((tc.path / "settings.json").read_text())
         assert settings["customModels"][0]["apiKey"] == "key-two"
 
+    def test_codex_env_key_rotation_does_not_change_output_or_hash(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from promptdeploy.deploy import compute_item_hash
+        from promptdeploy.source import SourceDiscovery
+        from promptdeploy.targets import create_target
+
+        src = tmp_path / "source"
+        src.mkdir()
+        self._write_models_yaml(
+            src,
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://api.acme.com/v1",
+                        "api_key": "${CODEX_API_KEY}",
+                        "codex": {},
+                        "models": {"gpt-4": {}},
+                    }
+                }
+            },
+        )
+        tc = TargetConfig("codex", "codex", tmp_path / "codex")
+        config = _make_config(src, {tc.id: tc})
+        target = create_target(tc)
+        item = next(
+            source_item
+            for source_item in SourceDiscovery(src).discover_all()
+            if source_item.item_type == "models"
+        )
+
+        monkeypatch.setenv("CODEX_API_KEY", "first-sensitive-value")
+        deploy(config)
+        output = (tc.path / ".codex" / "config.toml").read_bytes()
+        first_hash = compute_item_hash(item, target, config)
+
+        monkeypatch.setenv("CODEX_API_KEY", "rotated-sensitive-value")
+        assert compute_item_hash(item, target, config) == first_hash
+        actions = deploy(config)
+        assert [
+            action.action for action in actions if action.item_type == "models"
+        ] == ["skip"]
+        assert (tc.path / ".codex" / "config.toml").read_bytes() == output
+
+    def test_opencode_baked_key_rotation_changes_output_and_hash(
+        self, tmp_path: Path, monkeypatch
+    ):
+        from promptdeploy.deploy import compute_item_hash
+        from promptdeploy.source import SourceDiscovery
+        from promptdeploy.targets import create_target
+
+        src = tmp_path / "source"
+        src.mkdir()
+        self._write_models_yaml(
+            src,
+            {
+                "providers": {
+                    "acme": {
+                        "display_name": "Acme",
+                        "base_url": "https://api.acme.com/v1",
+                        "api_key": "${OPENCODE_API_KEY}",
+                        "opencode": {"npm": "@ai-sdk/openai-compatible"},
+                        "models": {"gpt-4": {}},
+                    }
+                }
+            },
+        )
+        tc = TargetConfig("opencode", "opencode", tmp_path / "opencode")
+        config = _make_config(src, {tc.id: tc})
+        target = create_target(tc)
+        item = next(
+            source_item
+            for source_item in SourceDiscovery(src).discover_all()
+            if source_item.item_type == "models"
+        )
+
+        monkeypatch.setenv("OPENCODE_API_KEY", "key-one")
+        deploy(config)
+        first_hash = compute_item_hash(item, target, config)
+        first_output = json.loads((tc.path / "opencode.json").read_text())
+        assert first_output["provider"]["acme"]["options"]["apiKey"] == "key-one"
+
+        monkeypatch.setenv("OPENCODE_API_KEY", "key-two")
+        assert compute_item_hash(item, target, config) != first_hash
+        actions = deploy(config)
+        assert [
+            action.action for action in actions if action.item_type == "models"
+        ] == ["update"]
+        output = json.loads((tc.path / "opencode.json").read_text())
+        assert output["provider"]["acme"]["options"]["apiKey"] == "key-two"
+
     def test_unset_env_var_hash_is_stable(self, tmp_path: Path, monkeypatch):
         """An unset ${VAR} hashes as its literal text, so repeat deploys
         with the variable still unset skip instead of churning."""
@@ -695,23 +787,3 @@ class TestModelsDeployIntegration:
         # After removal, customModels should be gone
         settings = json.loads((tc.path / "settings.json").read_text())
         assert "customModels" not in settings
-
-
-class TestExpandEnvForHash:
-    def test_recurses_and_leaves_unset_vars_literal(self, monkeypatch):
-        from promptdeploy.deploy import _expand_env_for_hash
-
-        monkeypatch.setenv("PD_TEST_SET_VAR", "val")
-        monkeypatch.delenv("PD_TEST_UNSET_VAR", raising=False)
-        data = {
-            "a": "${PD_TEST_SET_VAR}",
-            "b": ["${PD_TEST_SET_VAR}", 3],
-            "c": {"d": "${PD_TEST_UNSET_VAR}"},
-            "e": 7,
-        }
-        assert _expand_env_for_hash(data) == {
-            "a": "val",
-            "b": ["val", 3],
-            "c": {"d": "${PD_TEST_UNSET_VAR}"},
-            "e": 7,
-        }

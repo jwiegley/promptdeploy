@@ -4,30 +4,35 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from .catalog import item_selected as item_selected
+from .bundle_catalog import compute_imported_source_hash, imported_skill_snapshot
+from .catalog import (
+    discover_operation_catalog,
+    select_catalog_for_target,
+)
+from .catalog import (
+    item_selected as item_selected,
+)
 from .config import Config, load_anthropic_default_model
-from .envsubst import _ENV_PATTERN
 from .filters import should_deploy_to
 from .manifest import (
     Manifest,
     ManifestItem,
     compute_directory_hash,
     compute_file_hash,
-    has_changed,
+    has_item_changed,
     load_manifest,
     load_manifest_strict,
     save_manifest,
 )
 from .names import require_canonical_item_name
 from .settings import render_settings
-from .source import SourceDiscovery, SourceItem
+from .source import SourceItem
 from .targets import create_target
 from .targets.base import Target
 
@@ -195,25 +200,6 @@ def _filter_models_config(
     return {"providers": filtered_providers}
 
 
-def _expand_env_for_hash(value: object) -> object:
-    """Recursively expand ``${VAR}`` references for hashing purposes only.
-
-    Unset variables stay as literal ``${VAR}`` text and no warning is
-    printed -- this expansion never produces deployed bytes. It exists so
-    the models manifest hash reflects the env values that droid/opencode
-    bake into their configs at deploy time: rotating a referenced key
-    changes the hash and triggers a redeploy even though models.yaml
-    itself is unchanged.
-    """
-    if isinstance(value, str):
-        return _ENV_PATTERN.sub(lambda m: os.environ.get(m.group(1), m.group(0)), value)
-    if isinstance(value, dict):
-        return {k: _expand_env_for_hash(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_expand_env_for_hash(v) for v in value]
-    return value
-
-
 def compute_item_hash(
     item: SourceItem, target: Target, config: Config | None = None
 ) -> str:
@@ -229,44 +215,33 @@ def compute_item_hash(
     their effective per-target output instead of raw source bytes: settings
     hash the :func:`promptdeploy.settings.render_settings` result (so a
     deploy.yaml edit such as a removed group label invalidates the cache),
-    and models hash the filtered config with current env values folded in
-    (so group edits and rotated API keys trigger a redeploy). Without
-    ``config`` these items fall back to hashing source bytes.
+    and models hash the target-rendered filtered config (so group edits and
+    API keys actually baked by that target trigger a redeploy, while runtime
+    env-key references do not). MCP items likewise hash their target-rendered
+    semantic entry. Without ``config`` model items fall back to source bytes.
 
-    Imported items fail closed here until the composite pipeline supplies
-    snapshot-aware hashing; their diagnostic ``path`` is never live authority.
+    Imported items use their accepted snapshot/content plus exact logical
+    provenance. Their diagnostic path is never live authority.
     """
     if item.provenance.source is not None:
-        raise RuntimeError(
-            "imported items require snapshot-aware hashing before deployment"
-        )
-    if config is not None and item.item_type == "settings":
+        base = compute_imported_source_hash(item)
+    elif config is not None and item.item_type == "settings":
         rendered = render_settings(item.metadata or {}, target.id, config)
-        return compute_file_hash(
+        base = compute_file_hash(
             json.dumps(rendered, sort_keys=True, default=str).encode()
         )
-    if config is not None and item.item_type == "models":
+    elif config is not None and item.item_type == "models":
         filtered = _filter_models_config(item.metadata or {}, target.id, config)
-        effective = _expand_env_for_hash(filtered)
-        return compute_file_hash(
-            json.dumps(effective, sort_keys=True, default=str).encode()
-        )
-    if item.item_type == "mcp" and target.mcp_hash_includes_env:
-        # Some targets bake deploy-time-expanded env/headers into their MCP
-        # config, so fold current env values into the hash (like models) -- a
-        # rotated secret VALUE changes the hash and triggers a redeploy.
-        # We fold over the RAW source metadata so enabled:/scope: flips are
-        # still detected (they live in item.metadata), then mix in the SAME
-        # fingerprint and the SAME sha256(f"{base}|{fingerprint}") shape as the
-        # generic branch so the two compose and the local path is byte-identical.
-        effective = _expand_env_for_hash(item.metadata or {})
+        effective = target.effective_hash_input("models", item.name, filtered)
         base = compute_file_hash(
             json.dumps(effective, sort_keys=True, default=str).encode()
         )
-        fingerprint = target.content_fingerprint(item.item_type)
-        digest = hashlib.sha256(f"{base}|{fingerprint}".encode()).hexdigest()
-        return f"sha256:{digest}"
-    if item.item_type == "skill":
+    elif item.item_type == "mcp":
+        effective = target.effective_hash_input("mcp", item.name, item.metadata or {})
+        base = compute_file_hash(
+            json.dumps(effective, sort_keys=True, default=str).encode()
+        )
+    elif item.item_type == "skill":
         base = compute_directory_hash(item.path.parent.resolve())
     else:
         base = compute_file_hash(item.content)
@@ -284,16 +259,22 @@ def _deploy_item(
     filtered_models_config: dict[str, Any] | None = None,
 ) -> None:
     """Deploy a single source item to a target."""
-    if item.provenance.source is not None:
+    source = item.provenance.source
+    if source is not None and item.item_type not in {"bundle", "prompt", "skill"}:
         raise RuntimeError(
-            "imported items require snapshot-aware materialization before deployment"
+            f"unsupported imported item type for deployment: {item.item_type!r}"
         )
     if item.item_type == "agent":
         target.deploy_agent(item.name, item.content)
+    elif item.item_type == "bundle":
+        target.deploy_bundle(item.name, item.content)
     elif item.item_type == "command":
         target.deploy_command(item.name, item.content)
     elif item.item_type == "skill":
-        target.deploy_skill(item.name, item.path.parent)
+        skill_source = (
+            imported_skill_snapshot(item) if source is not None else item.path.parent
+        )
+        target.deploy_skill(item.name, skill_source)
     elif item.item_type == "mcp":
         target.deploy_mcp_server(item.name, item.metadata or {})
     elif item.item_type == "models":
@@ -303,11 +284,85 @@ def _deploy_item(
     elif item.item_type == "marketplace":
         target.deploy_marketplace(item.name, item.metadata or {})
     elif item.item_type == "prompt":
-        target.deploy_prompt(item.name, item.content, item.path)
+        target.deploy_prompt(item.name, item.content, _diagnostic_source_path(item))
     else:
         # "settings" is dispatched through Target.deploy_settings in
         # deploy(); anything else here is a programming error.
         raise ValueError(f"unsupported item type for deploy: {item.item_type!r}")
+
+
+def _diagnostic_source_path(item: SourceItem) -> Path:
+    """Return a logical imported path or the unchanged primary filesystem path."""
+    source = item.provenance.source
+    if source is None:
+        return item.path
+    return Path(f"{source.bundle}:{source.path}")
+
+
+def _action_source_path(item: SourceItem) -> str:
+    return str(_diagnostic_source_path(item))
+
+
+def target_item_exists(target: Target, item: SourceItem) -> bool:
+    """Return whether the target already contains the item-specific artifact."""
+    if item.item_type == "bundle":
+        return target.bundle_exists(item.name)
+    return target.item_exists(item.item_type, item.name)
+
+
+def _preflight_required_artifacts(
+    target: Target,
+    manifest: Manifest,
+    items: tuple[SourceItem, ...],
+    *,
+    force: bool,
+) -> None:
+    """Reject protected and required collisions before any target mutation."""
+    for item in items:
+        source = item.provenance.source
+        if (
+            source is None
+            or source.bundle != "ponytail"
+            or item.item_type not in {"command", "hook", "skill"}
+        ):
+            continue
+        category = _TYPE_TO_CATEGORY[item.item_type]
+        if item.name in manifest.items.get(category, {}):
+            continue
+        if target_item_exists(target, item):
+            raise ValueError(
+                f"Cannot deploy unmanaged Ponytail {item.item_type}:{item.name}; "
+                "remove the native or sideloaded installation before "
+                "promptdeploy establishes ownership (--force is not allowed)"
+            )
+
+    required_by: dict[ItemSelector, list[ItemSelector]] = {}
+    for item in items:
+        dependent = (item.item_type, item.name)
+        for required in item.requires:
+            required_by.setdefault(required, []).append(dependent)
+    if force or not required_by:
+        return
+    for item in items:
+        identity = (item.item_type, item.name)
+        dependents = required_by.get(identity)
+        if dependents is None:
+            continue
+        category = _TYPE_TO_CATEGORY[item.item_type]
+        if item.name in manifest.items.get(category, {}):
+            continue
+        if not target_item_exists(target, item):
+            continue
+        if _disk_matches_source(target, item):
+            continue
+        rendered = ", ".join(
+            f"{item_type}:{name}" for item_type, name in sorted(dependents)
+        )
+        raise ValueError(
+            f"Cannot deploy {rendered}: required {identity[0]}:{identity[1]} "
+            "already exists outside the promptdeploy manifest and does not "
+            "match the accepted source; use --force to replace it"
+        )
 
 
 def _flush_remote_mcp(target: Target) -> None:
@@ -342,12 +397,22 @@ def target_item_matches_source(target: Target, item: SourceItem) -> bool | None:
     Other targets fall back to the existing single-file byte comparison.
     `None` means the target cannot prove either match or mismatch.
     """
+    if item.item_type == "bundle":
+        return target.bundle_matches(item.name, item.content)
+
+    imported_tree = (
+        imported_skill_snapshot(item)
+        if item.provenance.source is not None and item.item_type == "skill"
+        else None
+    )
+    source_path = _diagnostic_source_path(item)
     semantic_match = target.item_matches_source(
         item.item_type,
         item.name,
         item.content,
         item.metadata,
-        source_path=item.path,
+        source_path=source_path,
+        imported_tree=imported_tree,
     )
     if semantic_match is True:
         return True
@@ -355,7 +420,7 @@ def target_item_matches_source(target: Target, item: SourceItem) -> bool | None:
         return False
 
     would = target.would_deploy_bytes(
-        item.item_type, item.name, item.content, source_path=item.path
+        item.item_type, item.name, item.content, source_path=source_path
     )
     if would is None:
         return None
@@ -371,8 +436,15 @@ def _disk_matches_source(target: Target, item: SourceItem) -> bool:
     Merged configuration entries deliberately remain outside this adoption
     path: without a manifest, promptdeploy cannot prove it owns the entry.
     """
+    if item.item_type == "bundle" or (
+        item.item_type == "skill" and item.provenance.source is not None
+    ):
+        return target_item_matches_source(target, item) is True
     would = target.would_deploy_bytes(
-        item.item_type, item.name, item.content, source_path=item.path
+        item.item_type,
+        item.name,
+        item.content,
+        source_path=_diagnostic_source_path(item),
     )
     if would is None:
         return False
@@ -454,13 +526,21 @@ def deploy(
     if item_types:
         allowed_types = {_CLI_TYPE_TO_ITEM_TYPE[t] for t in item_types}
 
-    discovery = SourceDiscovery(config.source_root)
-    all_items = list(discovery.discover_all())
+    all_items = list(discover_operation_catalog(config))
     for item in all_items:
         require_canonical_item_name(item.item_type, item.name)
     exact_selectors = resolve_item_selectors(all_items, item_selectors)
     if exact_selectors == set():
         return []
+    all_identities = frozenset((item.item_type, item.name) for item in all_items)
+    if exact_selectors is not None:
+        requested = frozenset(exact_selectors)
+    elif allowed_types is not None:
+        requested = frozenset(
+            identity for identity in all_identities if identity[0] in allowed_types
+        )
+    else:
+        requested = all_identities
 
     # Resolve the Anthropic default model once from models.yaml; threaded
     # into ClaudeTarget via create_target so that agents/skills receive the
@@ -477,35 +557,74 @@ def deploy(
             local_host=local_host,
         )
         try:
+            selection = select_catalog_for_target(
+                all_items,
+                requested,
+                target=target,
+                target_id=target_id,
+                config=config,
+            )
             target.prepare(verbose=verbose)
             manifest = (
                 load_manifest_strict(target.manifest_path())
                 if exact_selectors is not None
                 else load_manifest(target.manifest_path())
             )
+            _preflight_required_artifacts(
+                target,
+                manifest,
+                selection.items,
+                force=force,
+            )
             new_manifest = Manifest(deployed_at=datetime.now(UTC).isoformat())
 
             # Track which (category, name) pairs we process for stale detection
             deployed_names: set[tuple[str, str]] = set()
+            satisfied_identities: set[ItemSelector] = set()
+            selected_by_identity = {
+                (item.item_type, item.name): item for item in selection.items
+            }
+            required_identities = {
+                required for item in selection.items for required in item.requires
+            }
 
-            for item in all_items:
-                selector = (item.item_type, item.name)
-                if exact_selectors is not None and selector not in exact_selectors:
-                    continue
-                # Apply --only-type filter.
-                if allowed_types is not None and item.item_type not in allowed_types:
-                    continue
-
-                # Apply environment filters (filetags + only/except) and
-                # target-side skip rules via the shared predicate.
-                if not item_selected(item, target, target_id, config):
-                    continue
-
+            for item in selection.items:
+                unsatisfied = [
+                    required
+                    for required in item.requires
+                    if required not in satisfied_identities
+                ]
+                if unsatisfied:
+                    rendered_requirements = ", ".join(
+                        f"{item_type}:{name}" for item_type, name in sorted(unsatisfied)
+                    )
+                    raise ValueError(
+                        f"Cannot deploy {item.item_type}:{item.name}: required "
+                        f"{rendered_requirements} was not successfully materialized"
+                    )
+                if not dry_run:
+                    for required in item.requires:
+                        required_item = selected_by_identity[required]
+                        if (
+                            target_item_matches_source(target, required_item)
+                            is not True
+                        ):
+                            raise ValueError(
+                                f"Cannot deploy {item.item_type}:{item.name}: required "
+                                f"{required[0]}:{required[1]} changed after "
+                                "materialization"
+                            )
                 category = _TYPE_TO_CATEGORY[item.item_type]
                 current_hash = compute_item_hash(item, target, config)
                 deployed_names.add((category, item.name))
 
-                changed = has_changed(manifest, category, item.name, current_hash)
+                changed = has_item_changed(
+                    manifest,
+                    category,
+                    item.name,
+                    current_hash,
+                    item.provenance.source,
+                )
 
                 if item.item_type == "settings":
                     rendered = render_settings(item.metadata or {}, target_id, config)
@@ -523,7 +642,7 @@ def deploy(
                                 item_type="settings",
                                 name=item.name,
                                 target_id=target_id,
-                                source_path=str(item.path),
+                                source_path=_action_source_path(item),
                             )
                         )
                         recorded_keys = list(rendered.keys())
@@ -534,7 +653,7 @@ def deploy(
                                 item_type="settings",
                                 name=item.name,
                                 target_id=target_id,
-                                source_path=str(item.path),
+                                source_path=_action_source_path(item),
                             )
                         )
                         # Nothing was deployed on this path: carry forward
@@ -548,11 +667,13 @@ def deploy(
                         ManifestItem(
                             source_hash=current_hash,
                             managed_keys=recorded_keys,
+                            source=item.provenance.source,
                         )
                     )
+                    satisfied_identities.add((item.item_type, item.name))
                     continue
 
-                exists_on_target = target.item_exists(item.item_type, item.name)
+                exists_on_target = target_item_exists(target, item)
 
                 # Drift detection is independent of the manifest hash. Named
                 # merged entries (notably MCP registrations) are compared
@@ -592,7 +713,7 @@ def deploy(
                                     item_type=item.item_type,
                                     name=item.name,
                                     target_id=target_id,
-                                    source_path=str(item.path),
+                                    source_path=_action_source_path(item),
                                 )
                             )
                             # Fall through to the manifest-recording block
@@ -605,7 +726,7 @@ def deploy(
                                     item_type=item.item_type,
                                     name=item.name,
                                     target_id=target_id,
-                                    source_path=str(item.path),
+                                    source_path=_action_source_path(item),
                                 )
                             )
                             continue
@@ -644,7 +765,7 @@ def deploy(
                                 item_type=item.item_type,
                                 name=item.name,
                                 target_id=target_id,
-                                source_path=str(item.path),
+                                source_path=_action_source_path(item),
                                 warnings=item_warnings,
                             )
                         )
@@ -655,7 +776,7 @@ def deploy(
                             item_type=item.item_type,
                             name=item.name,
                             target_id=target_id,
-                            source_path=str(item.path),
+                            source_path=_action_source_path(item),
                         )
                     )
 
@@ -687,7 +808,9 @@ def deploy(
                 new_manifest.items.setdefault(category, {})[item.name] = ManifestItem(
                     source_hash=current_hash,
                     target_path=target_path_str,
+                    source=item.provenance.source,
                 )
+                satisfied_identities.add((item.item_type, item.name))
 
             # Detect stale items: in old manifest but not in new source
             stale_categories = sorted(
@@ -702,27 +825,26 @@ def deploy(
                     old_selector = (
                         (category_type, name) if category_type is not None else None
                     )
-                    if (
-                        exact_selectors is not None
-                        and old_selector not in exact_selectors
-                    ):
+                    if exact_selectors is not None:
+                        stale_in_scope = (
+                            old_selector in exact_selectors
+                            or old_selector in selection.closed
+                        )
+                    elif allowed_types is not None:
+                        stale_in_scope = old_selector is not None and (
+                            old_selector[0] in allowed_types
+                            or old_selector in selection.closed
+                        )
+                    else:
+                        stale_in_scope = True
+                    if not stale_in_scope:
                         # Exact selection preserves same-category siblings and
-                        # unknown future manifest categories semantically.
+                        # unknown future manifest categories semantically;
+                        # type selection also preserves every out-of-scope item.
                         new_manifest.items.setdefault(category, {})[name] = items_dict[
                             name
                         ]
                         continue
-                    # If --only-type is active, only remove items of matching types.
-                    if allowed_types is not None:
-                        cat_type = {v: k for k, v in _TYPE_TO_CATEGORY.items()}.get(
-                            category
-                        )
-                        if cat_type not in allowed_types:
-                            # Preserve unfiltered items in new manifest
-                            new_manifest.items.setdefault(category, {})[name] = (
-                                items_dict[name]
-                            )
-                            continue
 
                     if category == "bundles" and any(
                         retained_category != "bundles"
@@ -770,6 +892,13 @@ def deploy(
 
             # Save updated manifest (atomic write)
             if not dry_run:
+                for required in sorted(required_identities):
+                    required_item = selected_by_identity[required]
+                    if target_item_matches_source(target, required_item) is not True:
+                        raise ValueError(
+                            f"Required {required[0]}:{required[1]} changed before "
+                            "manifest commit"
+                        )
                 _flush_remote_mcp(target)
                 save_manifest(new_manifest, target.manifest_path())
                 target.finalize(verbose=verbose)

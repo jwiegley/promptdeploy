@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from promptdeploy.config import Config, TargetConfig
-from promptdeploy.deploy import deploy, parse_item_selector
+from promptdeploy.deploy import deploy, parse_item_selector, resolve_item_selectors
 from promptdeploy.manifest import (
     MANIFEST_FILENAME,
     ManifestItem,
@@ -17,6 +17,16 @@ from promptdeploy.manifest import (
     load_manifest,
     save_manifest,
 )
+from promptdeploy.source import SourceItem
+
+
+def test_selector_resolver_rejects_ambiguous_input_catalog(tmp_path: Path) -> None:
+    items = [
+        SourceItem("agent", "same", tmp_path / "one.md", None, b"one"),
+        SourceItem("agent", "same", tmp_path / "two.md", None, b"two"),
+    ]
+    with pytest.raises(ValueError, match="Ambiguous source item selector"):
+        resolve_item_selectors(items, [("agent", "same")])
 
 
 def _source(tmp_path: Path) -> Path:
@@ -210,7 +220,7 @@ def test_duplicate_exact_selector_fails_before_target_creation(
         raise AssertionError("target construction must not occur")
 
     monkeypatch.setattr("promptdeploy.deploy.create_target", forbidden)
-    with pytest.raises(ValueError, match="Ambiguous source item selector"):
+    with pytest.raises(ValueError, match="duplicate source identity mcp:alpha"):
         deploy(config, item_selectors=[("mcp", "alpha")])
     assert not config.targets["local"].path.exists()
 

@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from promptdeploy import cli
-from promptdeploy.config import Config, TargetConfig, load_config
+from promptdeploy.config import Config, TargetConfig, load_config, remap_targets_to_root
 from promptdeploy.deploy import deploy
 from promptdeploy.manifest import MANIFEST_FILENAME, load_manifest, save_manifest
 from promptdeploy.targets import create_target
@@ -182,19 +182,17 @@ def test_verify_does_not_inspect_unselected_secret_sibling(tmp_path: Path) -> No
 
 def test_verify_unprovable_item_fails_closed(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    agents = config.source_root / "agents"
-    agents.mkdir()
-    (agents / "helper.md").write_bytes(b"---\nname: helper\n---\nBody.\n")
-    deploy(config, item_selectors=[("agent", "helper")])
+    (config.source_root / "settings.yaml").write_text("base: {}\n")
+    deploy(config, item_selectors=[("settings", "settings")])
 
     failures = verify_items(
         config,
         target_ids=["local"],
-        item_selectors=[("agent", "helper")],
+        item_selectors=[("settings", "settings")],
     )
 
     assert [(failure.name, failure.reason) for failure in failures] == [
-        ("helper", "unprovable")
+        ("settings", "unprovable")
     ]
 
 
@@ -619,6 +617,81 @@ def test_run_verify_cli_success_and_secret_free_failure(
     captured = capsys.readouterr()
     assert "mismatch" in captured.err
     assert "secret-sentinel" not in captured.err
+
+
+def test_run_verify_target_root_remaps_after_target_selection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = _config(tmp_path)
+    original_path = config.targets["local"].path
+    preview = tmp_path / "preview"
+    observed: list[Config] = []
+    monkeypatch.setattr("promptdeploy.cli.load_config", lambda: config)
+
+    def fake_verify(remapped: Config, **_kwargs: object) -> list[object]:
+        observed.append(remapped)
+        return []
+
+    monkeypatch.setattr("promptdeploy.verify.verify_items", fake_verify)
+    cli._run_verify(
+        argparse.Namespace(
+            target=None,
+            local_only=False,
+            only_item=["mcp:anvil"],
+            target_root=preview,
+        )
+    )
+
+    assert observed[0].targets["local"].path == preview.resolve() / "local"
+    assert observed[0].targets["local"].preview
+    assert config.targets["local"].path == original_path
+    assert "Verified 1 exact item selector" in capsys.readouterr().out
+
+
+def test_preview_verify_keeps_claude_mcp_secret_out_of_bytes_and_hash(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    mcp = source / "mcp"
+    mcp.mkdir(parents=True)
+    (mcp / "anvil.yaml").write_bytes(
+        b"name: anvil\n"
+        b"url: https://example.invalid/mcp?token=$"
+        b"{PREVIEW_SECRET}\n"
+        b"headers:\n  Authorization: Bearer $"
+        b"{PREVIEW_SECRET}\n"
+    )
+    original = Config(
+        source_root=source,
+        targets={
+            "local": TargetConfig("local", "claude", tmp_path / "original"),
+        },
+        groups={},
+    )
+    preview = remap_targets_to_root(original, tmp_path / "preview")
+    monkeypatch.setenv("PREVIEW_SECRET", "first-sensitive-value")
+
+    deploy(preview, item_selectors=[("mcp", "anvil")])
+    target_path = preview.targets["local"].path
+    manifest_path = target_path / MANIFEST_FILENAME
+    manifest_before = manifest_path.read_bytes()
+    deployed = (target_path / ".claude.json").read_bytes()
+    assert b"first-sensitive-value" not in deployed
+    assert b"${PREVIEW_SECRET}" in deployed
+
+    monkeypatch.setenv("PREVIEW_SECRET", "rotated-sensitive-value")
+    assert (
+        verify_items(
+            preview,
+            target_ids=["local"],
+            item_selectors=[("mcp", "anvil")],
+        )
+        == []
+    )
+    assert manifest_path.read_bytes() == manifest_before
 
 
 def test_run_verify_cli_reports_setup_error(

@@ -349,3 +349,32 @@ def test_selection_rejects_unknown_request_and_does_not_leak_dependency(
             target_id="gptel",
             config=config,
         )
+
+
+def test_selection_orders_requirements_before_dependents(
+    tmp_path: Path,
+) -> None:
+    support = _item("bundle", "support", target_types=frozenset({"codex"}))
+    first = _item("skill", "first", target_types=frozenset({"codex"}))
+    dependent = _item(
+        "skill",
+        "dependent",
+        target_types=frozenset({"codex"}),
+        requires=(("bundle", "support"),),
+    )
+    config = _config(tmp_path, codex="codex")
+    target, _spy = _target()
+
+    selection = catalog.select_catalog_for_target(
+        (dependent, first, support),
+        {("skill", "dependent"), ("skill", "first")},
+        target=target,
+        target_id="codex",
+        config=config,
+    )
+
+    assert [(item.item_type, item.name) for item in selection.items] == [
+        ("bundle", "support"),
+        ("skill", "dependent"),
+        ("skill", "first"),
+    ]

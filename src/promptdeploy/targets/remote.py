@@ -81,6 +81,27 @@ class RemoteTarget(Target):
     def mcp_hash_includes_env(self) -> bool:
         return self._remote_mcp or self._inner.mcp_hash_includes_env
 
+    @property
+    def models_hash_includes_env(self) -> bool:
+        return self._inner.models_hash_includes_env
+
+    def effective_hash_input(
+        self,
+        item_type: str,
+        name: str,
+        metadata: dict[str, Any],
+    ) -> Any:
+        if item_type == "mcp" and self._remote_mcp:
+            if not metadata.get("enabled", True):
+                return None
+            entry = ClaudeTarget._claude_mcp_entry(
+                metadata,
+                name=name,
+                expand_secrets=False,
+            )
+            return self._expand_entry_secrets(name, entry)
+        return self._inner.effective_hash_input(item_type, name, metadata)
+
     def prepare(self, *, verbose: bool = False) -> None:
         ssh_pull(
             self._host,

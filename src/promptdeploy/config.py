@@ -1,5 +1,7 @@
 import os
+import re
 import socket
+import stat
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +17,8 @@ from .bundles import (
     resolve_bundle_configs,
 )
 from .yamlutil import load_unique_yaml
+
+_TARGET_ROOT_ID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 
 
 def current_host() -> str:
@@ -253,12 +257,66 @@ def remap_targets_to_root(config: Config, root: Path) -> Config:
         new_cfg = remap_targets_to_root(config, Path("/tmp/preview"))
         # config.targets["claude-personal"].path == Path("/tmp/preview/claude-personal")
     """
+    try:
+        expanded_root = root.expanduser()
+    except RuntimeError as exc:
+        raise ValueError("Target root contains an unknown home directory") from exc
+    if expanded_root.is_symlink():
+        raise ValueError(f"Target root must not be a symlink: {expanded_root}")
+    resolved_root = expanded_root.resolve()
+    if resolved_root.exists() and not resolved_root.is_dir():
+        raise ValueError(f"Target root is not a directory: {resolved_root}")
+
+    def safe_target_path(target_id: str) -> Path:
+        if not isinstance(target_id, str):
+            raise ValueError("Target IDs used with --target-root must be strings")
+        if _TARGET_ROOT_ID.fullmatch(target_id) is None:
+            raise ValueError(
+                f"Unsafe target ID for --target-root: {target_id!r}; "
+                "expected one lowercase ASCII path component"
+            )
+        target_path = resolved_root / target_id
+        if target_path.is_symlink():
+            raise ValueError(f"Unsafe preview target path is a symlink: {target_path}")
+        if target_path.exists() and not target_path.is_dir():
+            raise ValueError(
+                f"Unsafe preview target path is not a directory: {target_path}"
+            )
+        if target_path.exists():
+            pending = [target_path]
+            while pending:
+                directory = pending.pop()
+                with os.scandir(directory) as entries:
+                    for entry in entries:
+                        entry_stat = entry.stat(follow_symlinks=False)
+                        entry_path = Path(entry.path)
+                        if stat.S_ISLNK(entry_stat.st_mode):
+                            raise ValueError(
+                                "Unsafe preview target tree contains a symlink: "
+                                f"{entry_path}"
+                            )
+                        if stat.S_ISDIR(entry_stat.st_mode):
+                            pending.append(entry_path)
+                        elif stat.S_ISREG(entry_stat.st_mode):
+                            if entry_stat.st_nlink != 1:
+                                raise ValueError(
+                                    "Unsafe preview target tree contains a hard-linked "
+                                    f"file: {entry_path}"
+                                )
+                        else:
+                            raise ValueError(
+                                "Unsafe preview target tree contains a non-regular "
+                                f"file: {entry_path}"
+                            )
+        return target_path
+
     new_targets = {}
     for tid, tc in config.targets.items():
+        target_path = safe_target_path(tid)
         new_targets[tid] = TargetConfig(
             id=tc.id,
             type=tc.type,
-            path=root / tid,
+            path=target_path,
             host=None,
             labels=list(tc.labels),
             model=tc.model,

@@ -5,16 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, cast
 
+from .catalog import discover_operation_catalog, select_catalog_for_target
 from .config import Config, load_anthropic_default_model
 from .deploy import (
     _TYPE_TO_CATEGORY,
     ItemSelector,
     compute_item_hash,
-    item_selected,
     resolve_item_selectors,
+    target_item_matches_source,
 )
-from .manifest import has_changed, load_manifest_strict
-from .source import SourceDiscovery, SourceItem
+from .manifest import has_item_changed, load_manifest_strict
 from .targets import create_target
 
 VerificationReason = Literal[
@@ -36,13 +36,6 @@ class VerificationFailure:
     reason: VerificationReason
 
 
-def _selected_items(
-    items: list[SourceItem],
-    selectors: set[ItemSelector],
-) -> list[SourceItem]:
-    return [item for item in items if (item.item_type, item.name) in selectors]
-
-
 def verify_items(
     config: Config,
     *,
@@ -53,12 +46,12 @@ def verify_items(
     """Strictly prove every selected, applicable item on fresh target readers."""
     if not item_selectors:
         raise ValueError("verification requires at least one exact item selector")
-    items = list(SourceDiscovery(config.source_root).discover_all())
+    items = list(discover_operation_catalog(config))
     selectors = cast(
         set[ItemSelector],
         resolve_item_selectors(items, item_selectors),
     )
-    selected_items = _selected_items(items, selectors)
+    requested = frozenset(selectors)
     applicable: set[ItemSelector] = set()
     failures: list[VerificationFailure] = []
     global_model = load_anthropic_default_model(config.source_root / "models.yaml")
@@ -70,42 +63,45 @@ def verify_items(
             local_host=local_host,
         )
         try:
+            selection = select_catalog_for_target(
+                items,
+                requested,
+                target=target,
+                target_id=target_id,
+                config=config,
+            )
+            applicable.update(selection.applicable_requested)
+            if not selection.items:
+                continue
             try:
                 target.prepare()
                 manifest = load_manifest_strict(target.manifest_path())
             except (OSError, ValueError):
-                for item in selected_items:
-                    if item_selected(item, target, target_id, config):
-                        selector = (item.item_type, item.name)
-                        applicable.add(selector)
-                        failures.append(
-                            VerificationFailure(
-                                item.item_type,
-                                item.name,
-                                target_id,
-                                "unreadable",
-                            )
+                for item in selection.items:
+                    failures.append(
+                        VerificationFailure(
+                            item.item_type,
+                            item.name,
+                            target_id,
+                            "unreadable",
                         )
+                    )
                 continue
 
-            for item in selected_items:
-                if not item_selected(item, target, target_id, config):
-                    continue
-                selector = (item.item_type, item.name)
-                applicable.add(selector)
+            for item in selection.items:
                 try:
                     category = _TYPE_TO_CATEGORY[item.item_type]
                     source_hash = compute_item_hash(item, target, config)
-                    if has_changed(manifest, category, item.name, source_hash):
+                    if has_item_changed(
+                        manifest,
+                        category,
+                        item.name,
+                        source_hash,
+                        item.provenance.source,
+                    ):
                         reason: VerificationReason = "manifest-mismatch"
                     else:
-                        match = target.item_matches_source(
-                            item.item_type,
-                            item.name,
-                            item.content,
-                            item.metadata,
-                            source_path=item.path,
-                        )
+                        match = target_item_matches_source(target, item)
                         if match is True:
                             continue
                         reason = "mismatch" if match is False else "unprovable"

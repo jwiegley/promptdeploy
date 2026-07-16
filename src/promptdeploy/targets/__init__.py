@@ -64,9 +64,21 @@ def create_target(
             # verbatim there instead of strict-expanding at deploy time.
             expand_secrets=not tc.preview,
         ),
-        "codex": lambda tc, p: CodexTarget(tc.id, p),
-        "droid": lambda tc, p: DroidTarget(tc.id, p),
-        "opencode": lambda tc, p: OpenCodeTarget(tc.id, p),
+        "codex": lambda tc, p: CodexTarget(
+            tc.id,
+            p,
+            expand_secrets=not tc.preview,
+        ),
+        "droid": lambda tc, p: DroidTarget(
+            tc.id,
+            p,
+            expand_secrets=not tc.preview,
+        ),
+        "opencode": lambda tc, p: OpenCodeTarget(
+            tc.id,
+            p,
+            expand_secrets=not tc.preview,
+        ),
         "gptel": lambda tc, p: GptelTarget(tc.id, p),
     }
     factory = factories.get(target_config.type)

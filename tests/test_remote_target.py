@@ -26,6 +26,7 @@ def mock_inner() -> MagicMock:
     inner.rsync_includes.return_value = _MOCK_INCLUDES
     inner.rsync_push_includes.return_value = _MOCK_PUSH_INCLUDES
     inner.mcp_hash_includes_env = False
+    inner.models_hash_includes_env = False
     return inner
 
 
@@ -653,11 +654,26 @@ class TestRemoteMcpHashProperty:
     ) -> None:
         assert remote_target.remote_mcp_hash is False
         assert remote_target.mcp_hash_includes_env is False
+        assert remote_target.models_hash_includes_env is False
 
     def test_base_target_remote_mcp_hash_default_false(self, tmp_path: Path) -> None:
         target = ClaudeTarget("c", tmp_path)
         assert target.remote_mcp_hash is False
         assert target.mcp_hash_includes_env is True
+
+    def test_effective_hash_input_delegates_for_non_remote_mcp(
+        self, remote_target: RemoteTarget, mock_inner: MagicMock
+    ) -> None:
+        expected = {"rendered": True}
+        mock_inner.effective_hash_input.return_value = expected
+
+        assert (
+            remote_target.effective_hash_input("models", "models", {"raw": True})
+            is expected
+        )
+        mock_inner.effective_hash_input.assert_called_once_with(
+            "models", "models", {"raw": True}
+        )
 
 
 class TestRemoteMcpFlush:
@@ -784,7 +800,7 @@ class TestRemoteMcpGuardrails:
         assert isinstance(target, ClaudeTarget)
         assert not isinstance(target, RemoteTarget)
         assert target.remote_mcp_hash is False
-        assert target.mcp_hash_includes_env is True
+        assert target.mcp_hash_includes_env is False
         monkeypatch.setenv("TOK", "value")
         # No ssh_stdin, and ${VAR} stays VERBATIM: a preview must never bake
         # expanded secrets into the user-chosen preview directory (this is

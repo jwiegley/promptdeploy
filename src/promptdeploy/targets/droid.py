@@ -46,9 +46,16 @@ _MCP_STRIP_KEYS = frozenset(
 class DroidTarget(Target):
     """Deploy prompts and MCP servers into a Droid configuration directory."""
 
-    def __init__(self, target_id: str, config_path: Path) -> None:
+    def __init__(
+        self,
+        target_id: str,
+        config_path: Path,
+        *,
+        expand_secrets: bool = True,
+    ) -> None:
         self._id = target_id
         self._config_path = config_path.expanduser().resolve()
+        self._expand_secrets = expand_secrets
         # Warnings collected during the most recent deploy_prompt calls;
         # drained via consume_warnings() by the deploy loop.
         self._warnings: list[tuple[str, list[str]]] = []
@@ -101,6 +108,24 @@ class DroidTarget(Target):
             # v2: Claude, Codex, and OpenCode override metadata are stripped.
             return "droid-mcp-v2"
         return None
+
+    def effective_hash_input(
+        self,
+        item_type: str,
+        name: str,
+        metadata: dict[str, Any],
+    ) -> Any:
+        if item_type == "mcp":
+            if not metadata.get("enabled", True):
+                return None
+            return self._droid_mcp_entry(metadata)
+        if item_type == "models":
+            return self._custom_models(metadata)
+        return super().effective_hash_input(item_type, name, metadata)
+
+    @property
+    def models_hash_includes_env(self) -> bool:
+        return self._expand_secrets
 
     # ------------------------------------------------------------------
     # Deploy
@@ -168,18 +193,26 @@ class DroidTarget(Target):
         pass
 
     def deploy_models(self, config: dict[str, Any]) -> None:
-        from ..envsubst import expand_env_vars
-
         settings_path = self._config_path / "settings.json"
         data = self._load_json(settings_path)
+        data["customModels"] = self._custom_models(config)
+        self._save_json(settings_path, data)
 
-        custom_models = []
+    def _custom_models(self, config: dict[str, Any]) -> list[dict[str, Any]]:
+        from ..envsubst import expand_env_vars
+
+        custom_models: list[dict[str, Any]] = []
         index = 0
 
         for prov_key, prov in config.get("providers", {}).items():
             display_prefix = prov.get("display_name", prov_key)
             base_url = prov.get("base_url", "")
-            api_key = expand_env_vars(prov.get("api_key", ""))
+            raw_api_key = prov.get("api_key", "")
+            api_key = (
+                expand_env_vars(raw_api_key)
+                if self.models_hash_includes_env
+                else raw_api_key
+            )
             droid_cfg = prov.get("droid", {})
             provider_type = droid_cfg.get(
                 "provider_type", "generic-chat-completion-api"
@@ -215,9 +248,7 @@ class DroidTarget(Target):
 
                 custom_models.append(entry)
                 index += 1
-
-        data["customModels"] = custom_models
-        self._save_json(settings_path, data)
+        return custom_models
 
     def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:
         mcp_path = self._mcp_path()

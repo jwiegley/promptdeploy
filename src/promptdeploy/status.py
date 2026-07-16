@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .catalog import discover_operation_catalog, select_catalog_for_target
 from .config import Config, load_anthropic_default_model
-from .deploy import _TYPE_TO_CATEGORY, compute_item_hash, item_selected
-from .manifest import has_changed, load_manifest
+from .deploy import (
+    _TYPE_TO_CATEGORY,
+    compute_item_hash,
+    target_item_matches_source,
+)
+from .manifest import has_item_changed, load_manifest
 from .names import require_canonical_item_name
-from .source import SourceDiscovery
 from .targets import create_target
 
 
@@ -39,10 +43,10 @@ def get_status(
         target_ids = list(config.targets.keys())
 
     entries: list[StatusEntry] = []
-    discovery = SourceDiscovery(config.source_root)
-    items = list(discovery.discover_all())
+    items = list(discover_operation_catalog(config))
     for item in items:
         require_canonical_item_name(item.item_type, item.name)
+    requested = frozenset((item.item_type, item.name) for item in items)
 
     # Resolve the Anthropic default model exactly as deploy() does so that
     # claude targets report the same content fingerprint (injected model
@@ -53,19 +57,29 @@ def get_status(
         target_config = config.targets[target_id]
         target = create_target(target_config, global_model=global_model)
         try:
+            selection = select_catalog_for_target(
+                items,
+                requested,
+                target=target,
+                target_id=target_id,
+                config=config,
+            )
             target.prepare()
             manifest = load_manifest(target.manifest_path())
 
             deployed_names: set[tuple[str, str]] = set()
-            for item in items:
-                if not item_selected(item, target, target_id, config):
-                    continue
-
+            for item in selection.items:
                 category = _TYPE_TO_CATEGORY[item.item_type]
                 current_hash = compute_item_hash(item, target, config)
                 deployed_names.add((category, item.name))
 
-                if has_changed(manifest, category, item.name, current_hash):
+                if has_item_changed(
+                    manifest,
+                    category,
+                    item.name,
+                    current_hash,
+                    item.provenance.source,
+                ):
                     if (
                         category in manifest.items
                         and item.name in manifest.items[category]
@@ -74,13 +88,7 @@ def get_status(
                     else:
                         state = "new"
                 else:
-                    source_match = target.item_matches_source(
-                        item.item_type,
-                        item.name,
-                        item.content,
-                        item.metadata,
-                        source_path=item.path,
-                    )
+                    source_match = target_item_matches_source(target, item)
                     state = "changed" if source_match is False else "current"
 
                 entries.append(StatusEntry(item.item_type, item.name, target_id, state))

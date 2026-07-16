@@ -116,6 +116,14 @@ class TestGetStatusWithManifest:
         # env values, effective env values. Use the shared helper so status
         # and deploy stay in lockstep.
         target = create_target(config.targets["local"])
+        target.deploy_agent(
+            "alpha",
+            (source_root / "agents" / "alpha.md").read_bytes(),
+        )
+        target.deploy_command(
+            "deploy",
+            (source_root / "commands" / "deploy.md").read_bytes(),
+        )
         server_item = next(
             item
             for item in SourceDiscovery(source_root).discover_all()
@@ -621,9 +629,11 @@ class TestStatusRemoteMcp:
         deploy_actions = deploy(config)
         assert [a.action for a in deploy_actions if a.name == "srv"] == ["remove"]
 
-    def test_status_remote_mcp_secret_unset_reports_changed(
+    def test_status_remote_mcp_secret_unset_fails_closed(
         self, tmp_path: Path, monkeypatch
     ):
+        from promptdeploy.envsubst import EnvVarError
+
         config = self._remote_config(
             tmp_path, mcp_yaml=b'name: srv\nurl: https://x\nenv:\n  K: "${TOK}"\n'
         )
@@ -632,5 +642,5 @@ class TestStatusRemoteMcp:
         # Now status runs WITHOUT TOK exported.
         monkeypatch.delenv("TOK", raising=False)
         self._patch(monkeypatch, seed={"srv": baked})
-        entries = get_status(config)
-        assert [e.state for e in entries if e.item_type == "mcp"] == ["changed"]
+        with pytest.raises(EnvVarError, match="TOK"):
+            get_status(config)

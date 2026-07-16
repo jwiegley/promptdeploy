@@ -81,7 +81,13 @@ class CodexConfigError(ValueError):
 class CodexTarget(Target):
     """Deploy promptdeploy content into an OpenAI Codex local configuration."""
 
-    def __init__(self, target_id: str, config_path: Path) -> None:
+    def __init__(
+        self,
+        target_id: str,
+        config_path: Path,
+        *,
+        expand_secrets: bool = True,
+    ) -> None:
         self._id = target_id
         raw_path = config_path.expanduser().resolve()
         if raw_path.name == ".codex":
@@ -91,6 +97,7 @@ class CodexTarget(Target):
             self._home_path = raw_path
             self._codex_path = raw_path / ".codex"
         self._skills_path = self._home_path / ".agents" / "skills"
+        self._expand_secrets = expand_secrets
         self._warnings: list[tuple[str, list[str]]] = []
 
     @property
@@ -166,9 +173,38 @@ class CodexTarget(Target):
             return "codex-command-skill-v3"
         return None
 
+    def effective_hash_input(
+        self,
+        item_type: str,
+        name: str,
+        metadata: dict[str, Any],
+    ) -> Any:
+        if item_type == "mcp":
+            if not metadata.get("enabled", True):
+                return None
+            return self._codex_mcp_entry(name, metadata)
+        if item_type == "models":
+            providers = metadata.get("providers")
+            if not isinstance(providers, dict):
+                return {}
+            return {
+                str(provider_id): self._codex_model_provider_entry(
+                    str(provider_id), provider
+                )
+                for provider_id, provider in providers.items()
+                if isinstance(provider, dict)
+                and isinstance(provider.get("codex"), dict)
+            }
+        return super().effective_hash_input(item_type, name, metadata)
+
     @property
     def mcp_hash_includes_env(self) -> bool:
-        return True
+        return self._expand_secrets
+
+    @property
+    def models_hash_includes_env(self) -> bool:
+        # Codex stores only the referenced environment variable name.
+        return False
 
     def prepare_force_deploy(
         self, item_type: str, name: str, metadata: dict[str, Any]
@@ -553,7 +589,11 @@ class CodexTarget(Target):
             if key == "env" and isinstance(value, dict):
                 env: dict[str, Any] = {}
                 for env_key, env_value in value.items():
-                    if isinstance(env_value, str) and "${" in env_value:
+                    if (
+                        self.mcp_hash_includes_env
+                        and isinstance(env_value, str)
+                        and "${" in env_value
+                    ):
                         env[env_key] = expand_env_vars_strict(
                             env_value,
                             context=f"mcp.{name}.env.{env_key}",
@@ -565,9 +605,14 @@ class CodexTarget(Target):
                 continue
             if key == "url" and isinstance(value, str):
                 # Codex performs no env expansion anywhere in config.toml --
-                # a url is used literally -- so a URL-borne secret must be
-                # baked at deploy time, matching the env values above.
-                entry[key] = expand_env_vars_strict(value, context=f"mcp.{name}.url")
+                # a URL is used literally -- so normal deploys bake a
+                # URL-borne secret, matching the env values above.  Preview
+                # deploys deliberately preserve the reference verbatim.
+                entry[key] = (
+                    expand_env_vars_strict(value, context=f"mcp.{name}.url")
+                    if self.mcp_hash_includes_env
+                    else value
+                )
                 continue
             if key != "env_vars":
                 entry[key] = value

@@ -35,6 +35,23 @@ class TestCreateTarget:
         target = create_target(tc)
         assert isinstance(target, CodexTarget)
 
+    @pytest.mark.parametrize("target_type", ["claude", "codex", "droid", "opencode"])
+    def test_effective_hash_input_falls_back_for_other_items(
+        self, target_type: str, tmp_path: Path
+    ) -> None:
+        target = create_target(TargetConfig("t", target_type, tmp_path / target_type))
+        metadata = {"literal": "value"}
+
+        assert target.effective_hash_input("other", "item", metadata) is metadata
+
+    def test_codex_model_hash_input_without_provider_mapping(
+        self, tmp_path: Path
+    ) -> None:
+        target = CodexTarget("codex", tmp_path)
+
+        assert target.effective_hash_input("models", "models", {}) == {}
+        assert target.models_hash_includes_env is False
+
     def test_unknown_target_type_raises(self, tmp_path: Path) -> None:
         tc = TargetConfig(id="t", type="unknown_tool", path=tmp_path)
         with pytest.raises(ValueError, match="Unknown target type: unknown_tool"):
@@ -160,6 +177,9 @@ class TestCreateTarget:
         tc = TargetConfig(id="t", type="gptel", path=tmp_path)
         target = create_target(tc)
         assert target.mcp_hash_includes_env is False
+        assert target.models_hash_includes_env is True
+        metadata = {"value": "literal"}
+        assert target.effective_hash_input("other", "item", metadata) is metadata
 
     def test_base_target_consume_warnings_default_empty(self, tmp_path: Path) -> None:
         tc = TargetConfig(id="t", type="claude", path=tmp_path)

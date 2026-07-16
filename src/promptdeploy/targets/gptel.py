@@ -115,7 +115,17 @@ class GptelTarget(Target):
     def deployed_artifact_path(self, item_type: str, name: str) -> Path | None:
         if item_type != "prompt":
             return None
-        return self._last_deployed.get(name)
+        deployed = self._last_deployed.get(name)
+        if deployed is not None:
+            return deployed
+        # Exact-match checks establish the artifact implied by the source
+        # extension before a prompt is silently adopted or skipped. Persist
+        # that exact path too, so later stale removal never falls back to
+        # deleting every recognized same-stem extension.
+        expected = self._expected_artifact.get(name)
+        if expected is None:
+            return None
+        return Path(expected)
 
     def consume_warnings(self) -> list[tuple[str, list[str]]]:
         warnings = self._warnings

@@ -221,8 +221,10 @@ class TestBundleOverrides:
             parse_bundle_source_overrides(["ponytail=relative"])
 
     def test_override_must_resolve(self, tmp_path: Path) -> None:
-        with pytest.raises(BundleBindingError, match="not safely readable"):
-            parse_bundle_source_overrides([f"ponytail={tmp_path / 'missing'}"])
+        missing = tmp_path / "private-missing-source"
+        with pytest.raises(BundleBindingError, match="not safely readable") as caught:
+            parse_bundle_source_overrides([f"ponytail={missing}"])
+        assert str(missing) not in str(caught.value)
 
     def test_override_must_be_directory(self, tmp_path: Path) -> None:
         path = tmp_path / "file"
@@ -397,6 +399,18 @@ class TestBindingDescriptor:
         _write_bindings(path, root, mutable=True, revision=None, nar_hash=None)
         with pytest.raises(BundleBindingError, match=message):
             load_bundle_bindings_file(path)
+
+    def test_missing_descriptor_binding_hides_physical_root(
+        self, tmp_path: Path
+    ) -> None:
+        root = tmp_path / "private-missing-source"
+        path = tmp_path / "bindings.json"
+        _write_bindings(path, root, mutable=True, revision=None, nar_hash=None)
+
+        with pytest.raises(BundleBindingError, match="not safely readable") as caught:
+            load_bundle_bindings_file(path)
+
+        assert str(root) not in str(caught.value)
 
     def test_mutable_field_is_boolean(self, tmp_path: Path) -> None:
         path = tmp_path / "bindings.json"

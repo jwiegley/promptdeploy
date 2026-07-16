@@ -23,10 +23,25 @@ def _load_source_dotenv(path: Path) -> None:
             os.environ.pop(key, None)
 
 
-def _load_config_or_exit() -> Config:
+def _load_config_or_exit(args: argparse.Namespace | None = None) -> Config:
     """Load deploy.yaml, exiting with a clean error if it is invalid."""
     try:
-        return load_config()
+        bundle_bindings_file = getattr(args, "bundle_bindings_file", None)
+        bundle_source_overrides = tuple(getattr(args, "bundle_source", None) or ())
+        require_immutable_bundles = bool(
+            getattr(args, "require_immutable_bundles", False)
+        )
+        if (
+            bundle_bindings_file is None
+            and not bundle_source_overrides
+            and not require_immutable_bundles
+        ):
+            return load_config()
+        return load_config(
+            bundle_bindings_file=bundle_bindings_file,
+            bundle_source_overrides=bundle_source_overrides,
+            require_immutable_bundles=require_immutable_bundles,
+        )
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -58,12 +73,29 @@ def _select_operation_targets(
     return target_ids, runtime_host
 
 
-def main() -> None:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="promptdeploy",
         description=(
             "Deploy prompts, agents, skills, and MCP servers to multiple tools."
         ),
+    )
+    parser.add_argument(
+        "--bundle-bindings-file",
+        type=Path,
+        metavar="FILE",
+        help="Read immutable bundle source bindings from FILE",
+    )
+    parser.add_argument(
+        "--bundle-source",
+        action="append",
+        metavar="NAME=ABSOLUTE_PATH",
+        help="Bind one bundle to a deliberately mutable development checkout",
+    )
+    parser.add_argument(
+        "--require-immutable-bundles",
+        action="store_true",
+        help="Reject mutable or non-store bundle bindings",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -141,6 +173,12 @@ def main() -> None:
         metavar="TYPE:NAME",
         help="Verify exactly one named item; may be repeated",
     )
+    verify_parser.add_argument(
+        "--target-root",
+        type=Path,
+        metavar="DIR",
+        help=("Redirect verification under DIR (using target IDs as subdirectories)"),
+    )
 
     # validate subcommand
     subparsers.add_parser("validate", help="Validate source items and configuration")
@@ -200,14 +238,18 @@ def main() -> None:
         "--apply", action="store_true", help="Write drift into overrides"
     )
 
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = _build_parser().parse_args()
 
     if args.command == "deploy":
         _run_deploy(args)
     elif args.command == "verify":
         _run_verify(args)
     elif args.command == "validate":
-        _run_validate()
+        _run_validate(args)
     elif args.command == "status":
         _run_status(args)
     elif args.command == "list":
@@ -236,7 +278,7 @@ def _run_deploy(args: argparse.Namespace) -> None:
     out = Output(verbosity)
     out.start_timer()
 
-    config = _load_config_or_exit()
+    config = _load_config_or_exit(args)
 
     # Capture host identity before the source-controlled dotenv is loaded.
     # An explicitly exported PROMPTDEPLOY_HOST remains honored by current_host,
@@ -256,15 +298,14 @@ def _run_deploy(args: argparse.Namespace) -> None:
             if raw_selectors is not None
             else None
         )
-    except ValueError as exc:
+        target_root = getattr(args, "target_root", None)
+        if target_root:
+            from .config import remap_targets_to_root
+
+            config = remap_targets_to_root(config, target_root)
+    except (OSError, ValueError) as exc:
         out.error(str(exc))
         sys.exit(1)
-
-    target_root = getattr(args, "target_root", None)
-    if target_root:
-        from .config import remap_targets_to_root
-
-        config = remap_targets_to_root(config, target_root.resolve())
 
     from .envsubst import EnvVarError
     from .frontmatter import FrontmatterError
@@ -335,7 +376,7 @@ def _run_verify(args: argparse.Namespace) -> None:
     from .ssh import SSHError
     from .verify import verify_items
 
-    config = _load_config_or_exit()
+    config = _load_config_or_exit(args)
     selected_runtime_host = current_host()
     _load_source_dotenv(config.source_root / ".env")
     try:
@@ -343,6 +384,11 @@ def _run_verify(args: argparse.Namespace) -> None:
             config, args, runtime_host=selected_runtime_host
         )
         selectors = [parse_item_selector(raw) for raw in getattr(args, "only_item", [])]
+        target_root = getattr(args, "target_root", None)
+        if target_root:
+            from .config import remap_targets_to_root
+
+            config = remap_targets_to_root(config, target_root)
         failures = verify_items(
             config,
             target_ids=target_ids,
@@ -367,10 +413,10 @@ def _run_verify(args: argparse.Namespace) -> None:
     print(f"Verified {len(selectors)} exact item selector(s).")
 
 
-def _run_validate() -> None:
+def _run_validate(args: argparse.Namespace | None = None) -> None:
     from .validate import validate_all
 
-    config = _load_config_or_exit()
+    config = _load_config_or_exit(args)
     issues = validate_all(config)
     if not issues:
         print("All items valid.")
@@ -390,22 +436,28 @@ def _run_validate() -> None:
 
 
 def _run_status(args: argparse.Namespace) -> None:
+    from .envsubst import EnvVarError
+    from .filters import FilterError
     from .frontmatter import FrontmatterError
+    from .ssh import SSHError
     from .status import get_status
 
-    config = _load_config_or_exit()
-    if args.target_root:
-        from .config import remap_targets_to_root
-
-        config = remap_targets_to_root(config, args.target_root.resolve())
+    config = _load_config_or_exit(args)
     try:
         target_ids = expand_target_arg(args.target, config)
-    except ValueError as exc:
+        if args.target_root:
+            from .config import remap_targets_to_root
+
+            config = remap_targets_to_root(config, args.target_root)
+    except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
     try:
         entries = get_status(config, target_ids)
-    except FrontmatterError as exc:
+    except SSHError:
+        print("ERROR: remote status failed", file=sys.stderr)
+        sys.exit(1)
+    except (EnvVarError, FilterError, FrontmatterError, OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
     if not entries:
@@ -425,14 +477,14 @@ def _run_list(args: argparse.Namespace) -> None:
     from .manifest import load_manifest
     from .targets import create_target
 
-    config = _load_config_or_exit()
-    if args.target_root:
-        from .config import remap_targets_to_root
-
-        config = remap_targets_to_root(config, args.target_root.resolve())
+    config = _load_config_or_exit(args)
     try:
         target_ids = expand_target_arg(args.target, config)
-    except ValueError as exc:
+        if args.target_root:
+            from .config import remap_targets_to_root
+
+            config = remap_targets_to_root(config, args.target_root)
+    except (OSError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
 
@@ -492,7 +544,7 @@ def _run_list(args: argparse.Namespace) -> None:
 def _run_settings_init(args: argparse.Namespace) -> None:
     from .settings_sync import init_settings
 
-    config = _load_config_or_exit()
+    config = _load_config_or_exit(args)
     out_path = config.source_root / "settings.yaml"
     try:
         target_ids = expand_target_arg(args.target, config)
@@ -512,7 +564,7 @@ def _run_settings_init(args: argparse.Namespace) -> None:
 def _run_settings_reconcile(args: argparse.Namespace) -> None:
     from .settings_sync import reconcile_settings
 
-    config = _load_config_or_exit()
+    config = _load_config_or_exit(args)
     settings_path = config.source_root / "settings.yaml"
     try:
         target_ids = expand_target_arg(args.target, config)

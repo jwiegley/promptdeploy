@@ -4,9 +4,27 @@ from pathlib import Path
 
 import pytest
 
+from promptdeploy.bundles import BundleConfig, BundleSourceBinding
 from promptdeploy.config import Config, TargetConfig
-from promptdeploy.source import SourceItem
+from promptdeploy.manifest import ManifestSource
+from promptdeploy.source import SourceItem, SourceProvenance
 from promptdeploy.validate import ValidationIssue, validate_all, validate_item
+
+
+def _validation_bundle(tmp_path: Path) -> BundleConfig:
+    return BundleConfig(
+        "ponytail",
+        tmp_path / "ponytail.yaml",
+        BundleSourceBinding(
+            "ponytail",
+            tmp_path,
+            True,
+            None,
+            None,
+            None,
+            "cli",
+        ),
+    )
 
 
 @pytest.fixture
@@ -2009,3 +2027,192 @@ class TestValidateEnvExampleRefs:
         )
         issues = validate_all(self._config(tmp_path))
         assert issues == []
+
+
+def test_bundle_validation_failure_is_lenient_and_logically_labeled(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    agents = source / "agents"
+    agents.mkdir(parents=True)
+    (agents / "bad.md").write_bytes(b"---\nname: ../bad\n---\nbody\n")
+    config = Config(
+        source_root=source,
+        targets={
+            "claude": TargetConfig("claude", "claude", tmp_path / "target"),
+        },
+        groups={},
+        bundles=(_validation_bundle(tmp_path),),
+    )
+    monkeypatch.setattr(
+        "promptdeploy.validate.discover_bundle_items",
+        lambda _bundle: (_ for _ in ()).throw(ValueError("broken adapter")),
+    )
+
+    issues = validate_all(config)
+
+    assert any("Unsafe agent name" in issue.message for issue in issues)
+    bundle_issue = next(
+        issue for issue in issues if "Bundle discovery failed" in issue.message
+    )
+    assert str(bundle_issue.file_path) == "ponytail:ponytail.yaml"
+    assert str(tmp_path) not in str(bundle_issue.file_path)
+
+
+def test_imported_validation_uses_logical_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    provenance = SourceProvenance.imported(
+        ManifestSource(
+            "ponytail",
+            "skills/ponytail",
+            "4.8.4",
+            None,
+            None,
+            True,
+            None,
+            "MIT",
+        )
+    )
+    imported = SourceItem(
+        "skill",
+        "ponytail",
+        tmp_path / "private-binding" / "skills" / "ponytail" / "SKILL.md",
+        {"name": "ponytail"},
+        b"---\nname: ponytail\n---\nbody\n",
+        provenance=provenance,
+    )
+    config = Config(
+        source_root=source,
+        targets={
+            "claude": TargetConfig("claude", "claude", tmp_path / "target"),
+        },
+        groups={},
+        bundles=(_validation_bundle(tmp_path),),
+    )
+    monkeypatch.setattr(
+        "promptdeploy.validate.discover_bundle_items",
+        lambda _bundle: (imported,),
+    )
+
+    issue = next(
+        item
+        for item in validate_all(config)
+        if item.message == "Skill 'description' is required"
+    )
+
+    assert str(issue.file_path) == "ponytail:skills/ponytail/SKILL.md"
+    assert "private-binding" not in str(issue.file_path)
+
+
+def test_imported_effective_slash_collision_is_an_error_not_a_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    commands = source / "commands"
+    commands.mkdir(parents=True)
+    (commands / "ponytail.md").write_text("primary command\n")
+    imported = SourceItem(
+        "skill",
+        "ponytail",
+        tmp_path / "private-binding" / "skills" / "ponytail" / "SKILL.md",
+        {"name": "ponytail", "description": "Imported skill."},
+        (b"---\nname: ponytail\ndescription: Imported skill.\n---\nbody\n"),
+        provenance=SourceProvenance.imported(
+            ManifestSource(
+                "ponytail",
+                "skills/ponytail",
+                "4.8.4",
+                None,
+                None,
+                True,
+                None,
+                "MIT",
+            )
+        ),
+        target_types=frozenset({"claude"}),
+    )
+    config = Config(
+        source_root=source,
+        targets={
+            "claude": TargetConfig("claude", "claude", tmp_path / "target"),
+        },
+        groups={},
+        bundles=(_validation_bundle(tmp_path),),
+    )
+    monkeypatch.setattr(
+        "promptdeploy.validate.discover_bundle_items",
+        lambda _bundle: (imported,),
+    )
+
+    issues = validate_all(config)
+
+    assert any(
+        issue.level == "error"
+        and "imported slash-name collision 'ponytail'" in issue.message
+        for issue in issues
+    )
+    assert not any(
+        issue.level == "warning" and "slash-command namespace" in issue.message
+        for issue in issues
+    )
+
+
+def test_invalid_imported_filter_does_not_abort_collision_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source"
+    commands = source / "commands"
+    commands.mkdir(parents=True)
+    (commands / "ponytail.md").write_text("primary command\n")
+    imported = SourceItem(
+        "skill",
+        "ponytail",
+        tmp_path / "private-binding" / "SKILL.md",
+        {
+            "name": "ponytail",
+            "description": "Imported skill.",
+            "only": ["missing-target"],
+        },
+        (
+            b"---\nname: ponytail\ndescription: Imported skill.\n"
+            b"only: [missing-target]\n---\nbody\n"
+        ),
+        provenance=SourceProvenance.imported(
+            ManifestSource(
+                "ponytail",
+                "skills/ponytail",
+                "4.8.4",
+                None,
+                None,
+                True,
+                None,
+                "MIT",
+            )
+        ),
+        target_types=frozenset({"claude"}),
+    )
+    config = Config(
+        source_root=source,
+        targets={
+            "claude": TargetConfig("claude", "claude", tmp_path / "target"),
+        },
+        groups={},
+        bundles=(_validation_bundle(tmp_path),),
+    )
+    monkeypatch.setattr(
+        "promptdeploy.validate.discover_bundle_items",
+        lambda _bundle: (imported,),
+    )
+
+    issues = validate_all(config)
+
+    assert any(
+        issue.level == "error" and "missing-target" in issue.message for issue in issues
+    )

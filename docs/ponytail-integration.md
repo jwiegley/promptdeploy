@@ -319,6 +319,12 @@ path or a registration pointing at partial content.
   untrusted” is a visible incomplete capability, not success.
 - Preserve existing unmanaged artifacts through the normal adoption/force
   rules and remove only manifest-owned paths.
+- Preview roots accept only lowercase ASCII target IDs and ordinary,
+  single-link files/directories; symlinks, hard links, and special files are
+  rejected before target access. Required support is revalidated before each
+  dependent and again before manifest commit. A same-user filesystem change
+  after that final check is ordinary post-deploy drift and must fail the next
+  strict verification.
 - Keep user mode/default files on ordinary uninstall; document a separate
   explicit state purge.
 - Quote generated paths safely and never interpolate a mutable checkout path
