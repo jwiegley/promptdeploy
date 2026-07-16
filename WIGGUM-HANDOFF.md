@@ -612,12 +612,58 @@ warnings and a canceled pinentry. The exact staged tree had already passed all
 pre-commit gates; the commit was therefore created locally with
 `--no-gpg-sign` without changing repository signing configuration.
 
+Commit `153e87c` (`Add strict Ponytail manifest receipts`) adds the dormant
+manifest-v3 ownership schema. Strict readers accept exact v1/v2/v3 objects;
+saves migrate to v3 without inventing ownership; and the optional closed
+`BundleManifestReceipt` is legal only on `bundles:ponytail`. Its eleven exact
+Claude fields bind the reviewed payload/root/ABIs/owner, three lowercase
+digests, the `claude-hooks` registration kind, and the confined
+content-addressed runtime path. The item `target_path` must equal that path,
+whose final component must equal the rendered-tree digest. Complete or
+malformed future-version receipts are never interpreted or reserialized as v3
+ownership.
+
+The currentness and save boundaries require exact manifest-item/receipt objects,
+snapshot security-relevant values once, validate category/name/path ownership
+before equality or changed-hash shortcuts, and propagate recognizable unsafe
+runtime paths before recoverable schema errors. Exact and `--only-type`
+deployments preserve out-of-scope receipts wholesale. Selected-bundle
+receipt production, update, removal, status, and verify remain deliberately
+inactive and are the next transaction's activation blocker.
+
+The manifest implementation and adversarial reviews are:
+
+- `/var/tmp/wg-ponytail-20260715/manifest-v3-implementation-review/report.md`
+  (SHA-256
+  `c31de4867be6a4c9a107dcaa849ec5d3d6c1871e01a8f76b4a284346dde9cac8`);
+- `/var/tmp/wg-ponytail-20260715/manifest-v3-adversarial-review/report.md`
+  (SHA-256
+  `0143be7363159a8f03822818ef15cecf7c7ead280430185e60eefd784485776b`).
+
+The required fess audit is
+`/var/tmp/wg-ponytail-20260715/manifest-v3-fess/report.md` (SHA-256
+`53fbc04a7802c7b80e07b802c8af853a9d54272a6fb25347132637805c7c0337`).
+It reproduced and the commit fixes stateful `ManifestItem` receipt swapping,
+forged receipt/string equality, incomplete currentness ownership, changed-hash
+short-circuiting, and unsafe-path masking behind semantic or shape errors. The
+exhaustive matrix covers every receipt field, constant, digest, migration, and
+future-version rule.
+
+The final authoritative hook passes 2,808 tests over 8,689 statements and
+3,478 branches at 100%, strict mypy over 91 source files, Ruff, package build,
+Home Manager module/activation, and all seven flake checks. Two pre-existing
+test timing assumptions surfaced before that green run: missing-node
+`Get-Command` module auto-discovery exceeded the sandbox limit, and a detached
+child's fixed 300 ms readiness sleep raced sandbox scheduling. The real
+PowerShell branch now disables irrelevant module auto-loading in its isolated
+missing-node harness, and the detached-child proof uses a bounded readiness
+poll while retaining the same escape and cleanup assertions.
+
 Next:
 
-1. add manifest v3 and the local Claude managed-runtime transaction as one
-   atomic ownership boundary, including payload provenance, health probes,
-   collision detection, rollback, baseline compare-and-swap, and fault
-   injection;
+1. add the local Claude managed-runtime transaction, including exact rendered
+   receipt threading, installed-path health, collision detection, rollback,
+   baseline compare-and-swap, journal recovery, removal, and fault injection;
 2. add local Codex activation, stable unsynced `PLUGIN_DATA`, and the remote
    two-phase preseed/health/baseline-CAS switch using rendered live host paths;
 3. add native OpenCode registration and its remote transport/health contract;
@@ -706,6 +752,15 @@ Next:
   covers 681 statements and 238 branches at 100%; the 2,727-test authoritative
   gate covers 8,597 statements and 3,430 branches at 100%, with strict mypy,
   Ruff, package, Home Manager, commit hooks, and all seven flake checks green.
+- Dormant manifest-v3 slice: adversarial and fess signatures changed across
+  receipt subclasses, overloaded strings, multi-read swapping, incomplete
+  ownership, hash short-circuiting, and unsafe-path priority; every changed
+  signature was fixed and the final focused 241-test manifest gate is 100%.
+  The first full hook then exposed two different pre-existing test timing
+  assumptions (PowerShell module discovery and detached-child readiness), both
+  replaced with bounded deterministic harness behavior. The final 2,808-test
+  coverage derivation, strict 91-file mypy derivation, Ruff, package, Home
+  Manager, commit hooks, and all seven flake checks are green.
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature
