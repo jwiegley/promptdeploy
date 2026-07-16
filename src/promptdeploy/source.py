@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import re
 import stat
+import unicodedata
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -12,6 +15,8 @@ import yaml
 
 from promptdeploy.filetags import parse_filetags
 from promptdeploy.frontmatter import FrontmatterError, parse_frontmatter
+from promptdeploy.imported_tree import ImportedTreeSnapshot
+from promptdeploy.manifest import ManifestSource, validate_manifest_source
 from promptdeploy.poet import (
     PLAIN_EXTENSIONS,
     POET_EXTENSIONS,
@@ -20,6 +25,72 @@ from promptdeploy.poet import (
 from promptdeploy.skilltree import scan_skill_source
 
 PROMPT_EXTENSIONS = POET_EXTENSIONS | PLAIN_EXTENSIONS | {".json"}
+_SHA256 = re.compile(r"sha256:[0-9a-f]{64}\Z")
+
+ItemIdentity = tuple[str, str]
+
+
+def _validate_primary_path(value: str) -> str:
+    path = Path(value)
+    if (
+        not value
+        or path.is_absolute()
+        or "\\" in value
+        or path.as_posix() != value
+        or any(part in {"", ".", ".."} for part in path.parts)
+        or value != unicodedata.normalize("NFC", value)
+        or any(unicodedata.category(character) in {"Cc", "Cf"} for character in value)
+    ):
+        raise ValueError(
+            "Primary source provenance path must be canonical and relative"
+        )
+    return value
+
+
+@dataclass(frozen=True)
+class SourceProvenance:
+    """Primary diagnostic path or checked imported manifest provenance."""
+
+    primary_path: str | None = None
+    source: ManifestSource | None = None
+    input_sha256: str | None = None
+    tree_sha256: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.source is None:
+            if self.primary_path is not None:
+                _validate_primary_path(self.primary_path)
+            if self.input_sha256 is not None or self.tree_sha256 is not None:
+                raise ValueError("Primary provenance cannot claim imported digests")
+            return
+        if self.primary_path is not None:
+            raise ValueError("Imported provenance cannot claim a primary path")
+        validate_manifest_source(self.source)
+        for digest in (self.input_sha256, self.tree_sha256):
+            if digest is not None and _SHA256.fullmatch(digest) is None:
+                raise ValueError("Imported provenance digest must be lowercase SHA-256")
+
+    @classmethod
+    def primary(cls, relative_path: str | None = None) -> SourceProvenance:
+        return cls(primary_path=relative_path)
+
+    @classmethod
+    def imported(
+        cls,
+        source: ManifestSource,
+        *,
+        input_sha256: str | None = None,
+        tree_sha256: str | None = None,
+    ) -> SourceProvenance:
+        return cls(
+            source=source,
+            input_sha256=input_sha256,
+            tree_sha256=tree_sha256,
+        )
+
+    @property
+    def logical_path(self) -> str | None:
+        return self.source.path if self.source is not None else self.primary_path
 
 
 @dataclass
@@ -34,6 +105,10 @@ class SourceItem:
     metadata: dict[str, Any] | None
     content: bytes
     filetags: list[str] = field(default_factory=list)
+    provenance: SourceProvenance = field(default_factory=SourceProvenance.primary)
+    target_types: frozenset[str] | None = None
+    requires: tuple[ItemIdentity, ...] = ()
+    imported_tree: ImportedTreeSnapshot | None = None
 
 
 @dataclass
@@ -62,6 +137,17 @@ class SourceDiscovery:
 
     def __init__(self, source_root: Path) -> None:
         self.source_root = source_root
+
+    def _primary_provenance(self, path: Path) -> SourceProvenance:
+        root = Path(os.path.abspath(self.source_root))
+        candidate = Path(os.path.abspath(path))
+        try:
+            relative = candidate.relative_to(root).as_posix()
+        except ValueError as exc:
+            raise ValueError(
+                "Primary source path leaves the source repository"
+            ) from exc
+        return SourceProvenance.primary(relative)
 
     def _source_directory(self, name: str) -> Path | None:
         """Return a source-confined category directory before enumerating it."""
@@ -140,6 +226,7 @@ class SourceDiscovery:
                 metadata=metadata or None,
                 content=content,
                 filetags=tags,
+                provenance=self._primary_provenance(path),
             )
 
     def discover_agents(
@@ -234,6 +321,7 @@ class SourceDiscovery:
                 metadata=metadata,
                 content=content,
                 filetags=tags,
+                provenance=self._primary_provenance(skill_md),
             )
 
     def broken_skill_symlinks(self) -> list[Path]:
@@ -277,6 +365,7 @@ class SourceDiscovery:
                 metadata=metadata,
                 content=content,
                 filetags=tags,
+                provenance=self._primary_provenance(path),
             )
 
     def discover_marketplaces(self) -> Iterator[SourceItem]:
@@ -303,6 +392,7 @@ class SourceDiscovery:
                 metadata=metadata,
                 content=content,
                 filetags=tags,
+                provenance=self._primary_provenance(path),
             )
 
     def discover_models(self) -> Iterator[SourceItem]:
@@ -323,6 +413,7 @@ class SourceDiscovery:
             path=models_path,
             metadata=metadata,
             content=content,
+            provenance=self._primary_provenance(models_path),
         )
 
     def discover_settings(self) -> Iterator[SourceItem]:
@@ -343,6 +434,7 @@ class SourceDiscovery:
             path=settings_path,
             metadata=metadata,
             content=content,
+            provenance=self._primary_provenance(settings_path),
         )
 
     def discover_hooks(self) -> Iterator[SourceItem]:
@@ -369,6 +461,7 @@ class SourceDiscovery:
                 metadata=metadata,
                 content=content,
                 filetags=tags,
+                provenance=self._primary_provenance(path),
             )
 
     def _load_markdown_item(self, item_type: str, path: Path) -> SourceItem:
@@ -390,4 +483,5 @@ class SourceDiscovery:
             metadata=metadata,
             content=content,
             filetags=tags,
+            provenance=self._primary_provenance(path),
         )

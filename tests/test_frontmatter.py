@@ -41,6 +41,20 @@ class TestParseFrontmatter:
         assert metadata["tags"] == ["one", "two"]
         assert body == b"Body.\n"
 
+    def test_yaml_merge_allows_explicit_frontmatter_override(self):
+        content = (
+            b"---\n"
+            b"defaults: &defaults {tone: terse, depth: full}\n"
+            b"settings:\n"
+            b"  <<: *defaults\n"
+            b"  tone: detailed\n"
+            b"---\nBody.\n"
+        )
+        metadata, body = parse_frontmatter(content)
+        assert metadata is not None
+        assert metadata["settings"] == {"tone": "detailed", "depth": "full"}
+        assert body == b"Body.\n"
+
     def test_unicode_content(self):
         content = (
             "---\ntitle: \u6d4b\u8bd5\nauthor: \u00e9l\u00e8ve\n---\n"
@@ -54,6 +68,18 @@ class TestParseFrontmatter:
 
     def test_invalid_yaml_raises_error(self):
         content = b"---\ninvalid: yaml: content: [broken\n---\nBody.\n"
+        with pytest.raises(FrontmatterError, match="Invalid YAML"):
+            parse_frontmatter(content)
+
+    @pytest.mark.parametrize(
+        "yaml_text",
+        [
+            "name: first\nname: second",
+            "outer:\n  nested: first\n  nested: second",
+        ],
+    )
+    def test_duplicate_yaml_keys_raise_error(self, yaml_text):
+        content = f"---\n{yaml_text}\n---\nBody.\n".encode()
         with pytest.raises(FrontmatterError, match="Invalid YAML"):
             parse_frontmatter(content)
 

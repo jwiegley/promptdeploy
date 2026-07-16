@@ -315,16 +315,7 @@ def _manifest_source_from_mapping(
 
 
 def _source_to_mapping(source: ManifestSource) -> dict[str, object]:
-    checked = _validate_manifest_source_values(
-        bundle=source.bundle,
-        path=source.path,
-        version=source.version,
-        revision=source.revision,
-        nar_hash=source.nar_hash,
-        mutable=source.mutable,
-        transform=source.transform,
-        license_name=source.license,
-    )
+    checked = validate_manifest_source(source)
     return {
         "bundle": checked.bundle,
         "path": checked.path,
@@ -335,6 +326,20 @@ def _source_to_mapping(source: ManifestSource) -> dict[str, object]:
         "transform": checked.transform,
         "license": checked.license,
     }
+
+
+def validate_manifest_source(source: ManifestSource) -> ManifestSource:
+    """Return checked logical provenance without serializing it."""
+    return _validate_manifest_source_values(
+        bundle=source.bundle,
+        path=source.path,
+        version=source.version,
+        revision=source.revision,
+        nar_hash=source.nar_hash,
+        mutable=source.mutable,
+        transform=source.transform,
+        license_name=source.license,
+    )
 
 
 def _manifest_version(data: dict[str, object]) -> int:

@@ -8,6 +8,10 @@
       url = "github:nix-community/home-manager/9a40ec3b78fc688d0908485887d355caa5666d18";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    ponytail = {
+      url = "github:DietrichGebert/ponytail/16f29800fd2681bdf24f3eb4ccffe38be3baec6b";
+      flake = false;
+    };
   };
 
   outputs =
@@ -16,6 +20,7 @@
       nixpkgs,
       flake-utils,
       home-manager,
+      ponytail,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -126,6 +131,7 @@
           pytest =
             pkgs.runCommand "pytest"
               {
+                PONYTAIL_TEST_SOURCE = ponytail;
                 nativeBuildInputs = [
                   pythonWithDeps
                   pkgs.rsync

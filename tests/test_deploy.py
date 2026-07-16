@@ -1640,6 +1640,59 @@ class TestCacheInvalidation:
 class TestDeployItemDispatch:
     """_deploy_item dispatches on item type and rejects anything else."""
 
+    def test_imported_item_cannot_reach_legacy_live_path(self, tmp_path: Path) -> None:
+        from promptdeploy.imported_tree import (
+            ImportedTreeEntry,
+            ImportedTreeSnapshot,
+            framed_tree_sha256,
+        )
+        from promptdeploy.manifest import ManifestSource
+        from promptdeploy.source import SourceItem, SourceProvenance
+        from promptdeploy.targets.claude import ClaudeTarget
+
+        source_dir = tmp_path / "mutable" / "demo"
+        source_dir.mkdir(parents=True)
+        skill_md = source_dir / "SKILL.md"
+        skill_md.write_bytes(b"accepted\n")
+        entries = (
+            ImportedTreeEntry("directory", ".", 0o755),
+            ImportedTreeEntry("file", "SKILL.md", 0o644, b"accepted\n"),
+        )
+        snapshot = ImportedTreeSnapshot(
+            "skills/demo", entries, framed_tree_sha256(entries)
+        )
+        provenance = SourceProvenance.imported(
+            ManifestSource(
+                "ponytail",
+                "skills/demo",
+                "4.8.4",
+                None,
+                None,
+                True,
+                None,
+                "MIT",
+            ),
+            tree_sha256=snapshot.tree_sha256,
+        )
+        item = SourceItem(
+            "skill",
+            "demo",
+            skill_md,
+            {"name": "demo"},
+            b"accepted\n",
+            provenance=provenance,
+            imported_tree=snapshot,
+        )
+        target = ClaudeTarget("t", tmp_path / "target")
+
+        skill_md.write_bytes(b"mutated\n")
+        with pytest.raises(RuntimeError, match="snapshot-aware hashing"):
+            compute_item_hash(item, target)
+        skill_md.unlink()
+        with pytest.raises(RuntimeError, match="snapshot-aware materialization"):
+            _deploy_item(target, item)
+        assert not (tmp_path / "target" / "skills" / "demo").exists()
+
     def test_settings_item_type_rejected(self, tmp_path: Path):
         # settings items are dispatched through Target.deploy_settings in
         # deploy(), never through _deploy_item; reaching it with one (or any

@@ -146,6 +146,41 @@ class TestLoadConfigRobustness:
         with pytest.raises(ValueError, match="must be a mapping"):
             load_config(config_path)
 
+    def test_yaml_merge_allows_explicit_target_override(self, tmp_path: Path) -> None:
+        config_path = tmp_path / "deploy.yaml"
+        config_path.write_text(
+            "source_root: .\n"
+            "targets:\n"
+            "  local:\n"
+            "    <<: &defaults {type: claude, path: /default}\n"
+            f"    path: {tmp_path / 'selected'}\n",
+            encoding="utf-8",
+        )
+        config = load_config(config_path)
+        assert config.targets["local"].path == tmp_path / "selected"
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "targets: {}\ntargets: {}\n",
+            (
+                "targets:\n"
+                "  local:\n"
+                "    type: claude\n"
+                "    type: codex\n"
+                "    path: /tmp/local\n"
+            ),
+            "bundles:\n  ponytail: {manifest: one}\n  ponytail: {manifest: two}\n",
+        ],
+    )
+    def test_duplicate_yaml_keys_are_rejected(
+        self, tmp_path: Path, content: str
+    ) -> None:
+        config_path = tmp_path / "deploy.yaml"
+        config_path.write_text(content, encoding="utf-8")
+        with pytest.raises(ValueError, match="duplicate key"):
+            load_config(config_path)
+
 
 class TestGroupMemberValidation:
     def test_unknown_group_member_raises(self, tmp_path: Path) -> None:

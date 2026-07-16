@@ -254,7 +254,14 @@ def compute_item_hash(
     and models hash the filtered config with current env values folded in
     (so group edits and rotated API keys trigger a redeploy). Without
     ``config`` these items fall back to hashing source bytes.
+
+    Imported items fail closed here until the composite pipeline supplies
+    snapshot-aware hashing; their diagnostic ``path`` is never live authority.
     """
+    if item.provenance.source is not None:
+        raise RuntimeError(
+            "imported items require snapshot-aware hashing before deployment"
+        )
     if config is not None and item.item_type == "settings":
         rendered = render_settings(item.metadata or {}, target.id, config)
         return compute_file_hash(
@@ -299,6 +306,10 @@ def _deploy_item(
     filtered_models_config: dict[str, Any] | None = None,
 ) -> None:
     """Deploy a single source item to a target."""
+    if item.provenance.source is not None:
+        raise RuntimeError(
+            "imported items require snapshot-aware materialization before deployment"
+        )
     if item.item_type == "agent":
         target.deploy_agent(item.name, item.content)
     elif item.item_type == "command":

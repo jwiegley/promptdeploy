@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from promptdeploy.source import DiscoveryError, SourceDiscovery, SourceItem
+from promptdeploy.manifest import ManifestSource
+from promptdeploy.source import (
+    DiscoveryError,
+    SourceDiscovery,
+    SourceItem,
+    SourceProvenance,
+)
 
 # Test against the actual repo at the project root
 REPO_ROOT = Path(__file__).parent.parent
@@ -35,6 +41,64 @@ class TestSourceItem:
         item = SourceItem("agent", "test", Path("/tmp/x"), None, b"")
         assert item.metadata is None
 
+    def test_primary_provenance_defaults_are_compatible(self):
+        item = SourceItem("agent", "test", Path("/tmp/x"), None, b"")
+        assert item.provenance == SourceProvenance.primary()
+        assert item.target_types is None
+        assert item.requires == ()
+        assert item.imported_tree is None
+
+    def test_checked_imported_provenance(self):
+        source = ManifestSource(
+            bundle="ponytail",
+            path="skills/ponytail",
+            version="4.8.4",
+            revision=None,
+            nar_hash=None,
+            mutable=True,
+            transform=None,
+            license="MIT",
+        )
+        provenance = SourceProvenance.imported(
+            source,
+            input_sha256="sha256:" + "a" * 64,
+            tree_sha256="sha256:" + "b" * 64,
+        )
+        assert provenance.logical_path == "skills/ponytail"
+
+    @pytest.mark.parametrize(
+        "value",
+        ["", "/absolute", "a/../b", "a\\b", "bad\nname", "e\u0301"],
+    )
+    def test_primary_provenance_path_is_canonical(self, value):
+        with pytest.raises(ValueError, match="canonical"):
+            SourceProvenance.primary(value)
+
+    def test_primary_provenance_cannot_claim_imported_digest(self):
+        with pytest.raises(ValueError, match="cannot claim"):
+            SourceProvenance(input_sha256="sha256:" + "a" * 64)
+
+    def test_imported_provenance_cannot_claim_primary_path(self):
+        source = ManifestSource(
+            "ponytail", "LICENSE", "4.8.4", None, None, True, None, "MIT"
+        )
+        with pytest.raises(ValueError, match="primary path"):
+            SourceProvenance(primary_path="LICENSE", source=source)
+
+    def test_imported_digest_is_checked(self):
+        source = ManifestSource(
+            "ponytail", "LICENSE", "4.8.4", None, None, True, None, "MIT"
+        )
+        with pytest.raises(ValueError, match="lowercase SHA-256"):
+            SourceProvenance.imported(source, input_sha256="bad")
+
+    def test_primary_provenance_rejects_path_outside_source_root(
+        self, tmp_path: Path
+    ) -> None:
+        discovery = SourceDiscovery(tmp_path / "source")
+        with pytest.raises(ValueError, match="leaves the source repository"):
+            discovery._primary_provenance(tmp_path / "outside.md")
+
 
 class TestDiscoverAgents:
     def test_discovers_agents(self, discovery):
@@ -53,6 +117,10 @@ class TestDiscoverAgents:
             assert agent.path.parent.name == "agents"
             assert len(agent.content) > 0
             assert not agent.path.name.startswith(".")
+            assert (
+                agent.provenance.primary_path
+                == agent.path.relative_to(REPO_ROOT).as_posix()
+            )
 
     def test_agents_have_frontmatter(self, discovery):
         agents = list(discovery.discover_agents())

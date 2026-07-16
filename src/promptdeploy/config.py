@@ -14,6 +14,7 @@ from .bundles import (
     parse_bundle_source_overrides,
     resolve_bundle_configs,
 )
+from .yamlutil import load_unique_yaml
 
 
 def current_host() -> str:
@@ -103,7 +104,10 @@ def load_config(
     if config_path is None:
         config_path = find_config_file()
     with open(config_path, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
+        try:
+            data = load_unique_yaml(f.read()) or {}
+        except yaml.YAMLError as exc:
+            raise ValueError(f"Invalid YAML in {config_path}: {exc}") from exc
     if not isinstance(data, dict):
         raise ValueError(
             f"Top level of {config_path} must be a mapping, got {type(data).__name__}"

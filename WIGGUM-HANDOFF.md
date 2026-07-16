@@ -158,15 +158,61 @@ coverage, strict mypy passes 69 source files, and the full seven-check flake
 gate is green. This is a fess-fix-only unit and therefore does not receive a
 recursive audit.
 
-After committing and auditing the manifest slice:
+The third Phase-1 source-catalog slice is implemented and verified in the
+current work unit:
 
-1. add the strict adapter manifest, provenance-bearing composite discovery,
-   six selected skill trees, support bundle, and audited
-   `gptel-preset-v1` projections;
-2. integrate the composed catalog with deploy/status/validate/verify and add
-   `verify --target-root`;
-3. run focused and full gates, commit the next unit, and dispatch its fess
-   audit.
+- `flake.lock` and `flake.nix` pin Ponytail as a non-flake input at
+  `16f29800fd2681bdf24f3eb4ccffe38be3baec6b`; the Nix test derivation uses
+  that store source rather than silently skipping when the Desktop checkout
+  is absent;
+- `bundles/ponytail.yaml` is a closed, reviewed manifest for version 4.8.4,
+  the MIT notice, six complete skill trees, and six named
+  `gptel-preset-v1` projections;
+- descriptor-held imported-tree capture freezes node kind, canonical path,
+  normalized mode, empty directories, link identity, and bytes before the
+  checkout can change; all six pinned tree and `SKILL.md` digests match both
+  the Desktop checkout and Nix source;
+- source items now carry logical provenance, applicability, dependencies,
+  and an immutable tree snapshot. Composition rejects ambiguous identities,
+  dependency cycles/gaps, applicability gaps, and effective target-specific
+  slash-name collisions;
+- all six GPTel transforms are byte-, heading-, frontmatter-, and
+  substitution-guarded. They preserve the reviewed task semantics while
+  making one-invocation scope and absent lifecycle/update capabilities
+  explicit;
+- the legacy path-based deployment functions reject imported items before
+  hashing or materialization. The next unit will replace that temporary
+  fail-closed boundary with successful snapshot-only deployment; the retained
+  checkout path is diagnostic and cannot currently become deployment
+  authority.
+
+The pre-commit reviews are
+`/var/tmp/wg-ponytail-20260715/catalog-slice-api-review/report.md` and
+`/var/tmp/wg-ponytail-20260715/catalog-slice-security-review/report.md`; the
+remediation verification is
+`/var/tmp/wg-ponytail-20260715/catalog-fix-review/report.md`. Their findings are
+resolved in this work unit: tree-backed hashing is item-type independent;
+composition cannot omit collision preflight; literal duplicate YAML keys,
+including keys inside inline and sequence merge sources, remain rejected
+without breaking standard merge precedence; source directory enumeration is
+bounded before allocation; Windows device/alias paths are rejected; link
+metadata is audited before and after capture; and filesystem tests set modes
+explicitly instead of depending on process umask.
+
+The final source-slice gates pass: 2,210 tests at 100% branch coverage, strict
+mypy over 78 source files, Ruff format/lint, package build, Home Manager module
+and activation checks, and the complete seven-check `nix flake check`.
+
+Next:
+
+1. commit this coherent source-catalog unit and dispatch its independent fess
+   audit;
+2. integrate the composed catalog with deploy/status/validate/verify using
+   snapshot-only imported-tree hashing and materialization, target-specific
+   dependency closure, manifest provenance, and `verify --target-root`;
+3. prove first deploy, no-op convergence, pin drift, source mutation/deletion,
+   exact removal, and rollback in isolated target roots before enabling the
+   root declaration.
 
 ## Gate attempt counts
 
@@ -181,6 +227,14 @@ After committing and auditing the manifest slice:
 - Manifest-slice pytest/mypy gates: passed after one mypy-only test-fixture
   correction; failure signature changed and the count reset.
 - Manifest-slice full `nix flake check`: passed on attempt 1 (all 7 checks).
+- Source-catalog pre-review pytest/mypy and full-flake gates: passed on attempt
+  1; the review remediation then changed the implementation and reset the
+  count.
+- Source-catalog remediation: a direct host pytest attempt was inapplicable
+  because that interpreter lacks project dependencies; the Nix pytest gate
+  first exposed only new coverage branches, then passed on the next changed
+  test signature. The final 2,210-test, mypy, and full seven-check flake gates
+  are green.
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature

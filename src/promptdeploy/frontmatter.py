@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from .yamlutil import load_unique_yaml
+
 # The closing delimiter accepts end-of-file as well as a newline so a file
 # whose final line is the bare ``---`` (no trailing newline) still parses.
 FRONTMATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
@@ -35,12 +37,14 @@ def parse_frontmatter(content: bytes) -> tuple[dict[str, Any] | None, bytes]:
 
     yaml_text = match.group(1)
     try:
-        metadata = yaml.safe_load(yaml_text)
+        metadata = load_unique_yaml(yaml_text)
     except yaml.YAMLError as exc:
         raise FrontmatterError(f"Invalid YAML frontmatter: {exc}") from exc
 
     if metadata is None:
         metadata = {}
+    if not isinstance(metadata, dict):
+        raise FrontmatterError("YAML frontmatter must contain a mapping")
 
     body = text[match.end() :]
     return metadata, body.encode("utf-8")
