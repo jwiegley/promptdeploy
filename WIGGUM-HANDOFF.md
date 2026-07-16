@@ -133,9 +133,25 @@ receive a recursive audit.
 
 After committing this remediation:
 
+The second Phase-1 slice is implemented and focused gates are green:
+
+- deployment manifests now write schema v2 while strict-reading both legacy
+  v1 and v2;
+- imported entries store only closed logical provenance (bundle, path,
+  version, revision/NAR or mutable status, transform, and license), never a
+  source-root path;
+- unsafe names/paths remain fail-closed in both strict and rebuildable-cache
+  readers, exact partial deployment preserves unselected provenance, and v1
+  primary hash semantics remain current;
+- 1,963 tests pass at 100% branch coverage and strict mypy passes 69 source
+  files.
+
+After committing and auditing the manifest slice:
+
 1. add the strict adapter manifest, provenance-bearing composite discovery,
-   six selected skill trees, and the audited `gptel-preset-v1` projections;
-2. integrate the catalog with deploy/status/validate/verify and add
+   six selected skill trees, support bundle, and audited
+   `gptel-preset-v1` projections;
+2. integrate the composed catalog with deploy/status/validate/verify and add
    `verify --target-root`;
 3. run focused and full gates, commit the next unit, and dispatch its fess
    audit.
@@ -150,6 +166,9 @@ After committing this remediation:
 - Binding-slice pytest/mypy gates: passed on attempt 1; failure count reset.
 - Binding slice and audit remediation full `nix flake check`: each passed on
   attempt 1 (all 7 checks); failure count reset.
+- Manifest-slice pytest/mypy gates: passed after one mypy-only test-fixture
+  correction; failure signature changed and the count reset.
+- Manifest-slice full `nix flake check`: passed on attempt 1 (all 7 checks).
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature

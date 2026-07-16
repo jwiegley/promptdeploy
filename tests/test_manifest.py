@@ -211,6 +211,7 @@ class TestLoadManifestRobustness:
             "control\nfile",
             "control\x85file",
             "bidi\u202efile",
+            "decomposed-e\u0301.md",
         ],
     )
     def test_unsafe_recorded_path_fails_closed(

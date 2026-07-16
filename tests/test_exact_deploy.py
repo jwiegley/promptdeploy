@@ -13,6 +13,7 @@ from promptdeploy.deploy import deploy, parse_item_selector
 from promptdeploy.manifest import (
     MANIFEST_FILENAME,
     ManifestItem,
+    ManifestSource,
     load_manifest,
     save_manifest,
 )
@@ -90,6 +91,16 @@ def test_exact_item_preserves_same_category_siblings_and_manifest_metadata(
         source_hash=manifest.items["mcp_servers"]["beta"].source_hash,
         target_path="kept/path",
         managed_keys=["kept-key"],
+        source=ManifestSource(
+            bundle="ponytail",
+            path="LICENSE",
+            version="4.8.4",
+            revision=None,
+            nar_hash=None,
+            mutable=True,
+            transform=None,
+            license="MIT",
+        ),
     )
     manifest.items["future"] = {
         "opaque": ManifestItem(
@@ -305,7 +316,7 @@ def test_unsafe_stale_manifest_name_fails_before_any_target_mutation(
 @pytest.mark.parametrize(
     "mutation",
     [
-        {"version": 2},
+        {"version": 3},
         {"future_top_level": True},
         {"item_field": True},
         {"source_hash": ["not", "a", "string"]},
