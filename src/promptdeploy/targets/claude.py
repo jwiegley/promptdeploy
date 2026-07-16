@@ -11,10 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from ..frontmatter import transform_for_target
+from ..imported_tree import ImportedTreeSnapshot
 from ..manifest import MANIFEST_FILENAME
 from .base import (
     ANVIL_MCP_NAMES,
     MANAGED_BUNDLE_RSYNC_INCLUDES,
+    SkillTreeSource,
     Target,
     install_skill_tree_atomically,
     transformed_skill_tree_matches,
@@ -124,7 +126,7 @@ class ClaudeTarget(Target):
         self._warnings = []
         return warnings
 
-    def deploy_skill(self, name: str, source_dir: Path) -> None:
+    def deploy_skill(self, name: str, source_dir: SkillTreeSource) -> None:
         install_skill_tree_atomically(
             source_dir,
             self._config_path / "skills" / name,
@@ -500,12 +502,16 @@ class ClaudeTarget(Target):
         content: bytes,
         metadata: dict[str, Any] | None,
         source_path: Path | None = None,
+        imported_tree: ImportedTreeSnapshot | None = None,
     ) -> bool | None:
         if item_type == "skill":
-            if source_path is None:
+            source: SkillTreeSource | None = imported_tree
+            if source is None and source_path is not None:
+                source = source_path.parent
+            if source is None:
                 return None
             return transformed_skill_tree_matches(
-                source_path.parent,
+                source,
                 self._config_path / "skills" / name,
                 lambda contents: transform_for_target(contents, inject=self._injected),
             )

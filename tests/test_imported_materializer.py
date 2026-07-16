@@ -12,6 +12,11 @@ import pytest
 
 from promptdeploy import imported_tree as tree
 from promptdeploy.targets import base
+from promptdeploy.targets.claude import ClaudeTarget
+from promptdeploy.targets.codex import CodexTarget
+from promptdeploy.targets.droid import DroidTarget
+from promptdeploy.targets.opencode import OpenCodeTarget
+from promptdeploy.targets.remote import RemoteTarget
 
 
 def _snapshot(*entries: tree.ImportedTreeEntry) -> tree.ImportedTreeSnapshot:
@@ -100,6 +105,66 @@ def test_linked_skill_markdown_is_transformed_and_materialized_as_regular_file(
     base.materialize_skill_tree(snapshot, destination, bytes.upper)
     assert (destination / "SKILL.md").read_bytes() == b"BODY"
     assert not (destination / "SKILL.md").is_symlink()
+
+
+@pytest.mark.parametrize(
+    "target_factory",
+    [
+        lambda path: ClaudeTarget("local", path),
+        lambda path: CodexTarget("local", path),
+        lambda path: DroidTarget("local", path),
+        lambda path: OpenCodeTarget("local", path),
+    ],
+)
+def test_local_target_skill_interfaces_use_the_accepted_snapshot(
+    target_factory: Callable[[Path], base.Target],
+    tmp_path: Path,
+) -> None:
+    snapshot = _complete_snapshot()
+    target = target_factory(tmp_path / "target")
+    unavailable_diagnostic_path = tmp_path / "deleted-source" / "SKILL.md"
+
+    target.deploy_skill("demo", snapshot)
+
+    assert target.item_matches_source(
+        "skill",
+        "demo",
+        b"skill\n",
+        None,
+        source_path=unavailable_diagnostic_path,
+        imported_tree=snapshot,
+    )
+    assert (
+        target.item_matches_source(
+            "skill",
+            "demo",
+            b"skill\n",
+            None,
+        )
+        is None
+    )
+
+
+def test_remote_target_forwards_snapshot_skill_interfaces(tmp_path: Path) -> None:
+    snapshot = _complete_snapshot()
+    inner = ClaudeTarget("remote", tmp_path / "staging")
+    target = RemoteTarget(
+        inner,
+        "example.invalid",
+        Path("/remote/config"),
+        tmp_path / "staging",
+    )
+
+    target.deploy_skill("demo", snapshot)
+
+    assert target.item_matches_source(
+        "skill",
+        "demo",
+        b"skill\n",
+        None,
+        source_path=tmp_path / "deleted-source" / "SKILL.md",
+        imported_tree=snapshot,
+    )
 
 
 @pytest.mark.parametrize(

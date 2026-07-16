@@ -255,7 +255,8 @@ drift coverage`) now uses an unequal same-length payload, so byte equality is
 proved independently of the size guard. Per protocol, that narrow remediation
 does not receive a recursive fess audit.
 
-The target-owned static support slice is implemented in the current work unit:
+The target-owned static support slice was committed as `1bc7ef6` (`Add
+target-owned bundle support`):
 
 - every target owns an exact mode-stable support-v1 `LICENSE` tree beneath
   `.promptdeploy/bundles/ponytail`, with Codex correctly using the home-level
@@ -275,14 +276,50 @@ verdict is clean. Final gates pass: 2,294 tests at 100% branch coverage, strict
 mypy over 80 source files, Ruff format/lint, package build, Home Manager module
 and activation checks, and the complete seven-check `nix flake check`.
 
+Its required independent audit is
+`/var/tmp/wg-ponytail-20260715/fess-1bc7ef6/report.md`. Production received a
+clean verdict; the sole low finding was that two `Path.mkdir` test doubles
+used broad argument types and silenced the resulting checker errors.
+Fess-fix-only commit `85cb966` (`Use exact Path.mkdir test doubles`) gives
+both doubles the real signature and removes the suppressions. The 45 focused
+cases and strict typing pass; per protocol, this narrow remediation does not
+receive a recursive fess audit.
+
+The dormant operation-catalog and imported-skill interface slice is implemented
+in the current work unit:
+
+- `src/promptdeploy/catalog.py` strictly composes one immutable catalog,
+  preflights every configured target namespace, uses logical provenance labels,
+  and keeps requested, applicable-requested, dependency-closed, and ordered
+  selections distinct;
+- target-type applicability is checked before filters or target behavior,
+  dependency requirements bypass request filters without leaking support for a
+  wrong-tier selector, and requested target predicates are memoized;
+- Claude, Codex, Droid, OpenCode, GPTel, and Remote preserve the existing
+  `deploy_skill(source_dir=...)` API while accepting either a primary path or
+  an accepted `ImportedTreeSnapshot`;
+- skill comparison prefers the accepted snapshot over the diagnostic source
+  path and Remote forwards the same snapshot authority unchanged;
+- `deploy`, `status`, `validate`, and `verify` remain on primary
+  discovery, and both imported hashing/materialization guards remain
+  fail-closed, so this seam does not activate bundle deployment.
+
+The independent interface review and clean diff audit are
+`/var/tmp/wg-ponytail-20260715/catalog-interface-review/report.md` and
+`/var/tmp/wg-ponytail-20260715/catalog-diff-audit/report.md`. Their minor
+observations are resolved by exactly-once requested predicates, explicit
+Claude closure coverage, explicit OpenCode support-only full-selection
+coverage, no-authority target coverage, and preserving the public keyword
+name. Final gates pass: 2,312 tests at 100% branch coverage, strict mypy over
+82 source files, Ruff format/lint, package build, Home Manager module and
+activation checks, and the complete seven-check `nix flake check`.
+
 Next:
 
-1. add target/remote imported-skill interfaces and the pure operation-catalog
-   selection layer while retaining the imported-item deploy guards;
-2. atomically activate the composed catalog in deploy/status/validate/verify
+1. atomically activate the composed catalog in deploy/status/validate/verify
    with target-specific dependency closure, manifest provenance, global bundle
    bindings, and `verify --target-root`;
-3. prove first deploy, no-op convergence, pin drift, source mutation/deletion,
+2. prove first deploy, no-op convergence, pin drift, source mutation/deletion,
    exact removal, and rollback in isolated target roots before enabling the
    root declaration.
 
@@ -310,6 +347,9 @@ Next:
 - Snapshot materializer and support-target slices: coverage-only and review
   findings changed on each attempt; both final 100%-branch pytest gates, strict
   mypy gates, and seven-check flake gates are green.
+- Dormant catalog/interface slice: the first Nix mypy attempt found only a
+  test-factory annotation mismatch; the corrected 82-file strict mypy gate,
+  2,312-test 100%-branch pytest gate, and full seven-check flake gate are green.
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature

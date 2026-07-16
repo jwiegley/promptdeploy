@@ -782,7 +782,9 @@ class Target(ABC):
     def deploy_command(self, name: str, content: bytes) -> None: ...
 
     @abstractmethod
-    def deploy_skill(self, name: str, source_dir: Path) -> None: ...
+    def deploy_skill(self, name: str, source_dir: SkillTreeSource) -> None:
+        """Deploy a primary skill directory or accepted imported snapshot."""
+        ...
 
     @abstractmethod
     def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None: ...
@@ -863,6 +865,7 @@ class Target(ABC):
         content: bytes,
         metadata: dict[str, Any] | None,
         source_path: Path | None = None,
+        imported_tree: ImportedTreeSnapshot | None = None,
     ) -> bool | None:
         """Compare one deployed item with the canonical source rendering.
 
@@ -871,8 +874,10 @@ class Target(ABC):
         semantic comparison is unsupported; the deploy loop then falls back
         to the single-file byte comparison methods below.
 
-        Merged configuration targets use this hook for named MCP entries so a
-        matching manifest hash cannot hide a stale or missing registration.
+        For imported skills, ``imported_tree`` is the already accepted,
+        path-independent source authority. Merged configuration targets use
+        this hook for named MCP entries so a matching manifest hash cannot
+        hide a stale or missing registration.
         """
 
         return None

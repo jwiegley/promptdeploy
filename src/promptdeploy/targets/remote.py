@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from ..imported_tree import ImportedTreeSnapshot
 from ..ssh import (
     build_claude_merge_script,
     mcp_entry_fingerprint,
@@ -15,7 +16,7 @@ from ..ssh import (
     ssh_remote_mcp_fingerprint,
     ssh_stdin,
 )
-from .base import ANVIL_MCP_NAMES, Target
+from .base import ANVIL_MCP_NAMES, SkillTreeSource, Target
 from .claude import ClaudeTarget
 
 
@@ -165,7 +166,7 @@ class RemoteTarget(Target):
     def deploy_command(self, name: str, content: bytes) -> None:
         self._inner.deploy_command(name, content)
 
-    def deploy_skill(self, name: str, source_dir: Path) -> None:
+    def deploy_skill(self, name: str, source_dir: SkillTreeSource) -> None:
         self._inner.deploy_skill(name, source_dir)
 
     def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:
@@ -278,6 +279,7 @@ class RemoteTarget(Target):
         content: bytes,
         metadata: dict[str, Any] | None,
         source_path: Path | None = None,
+        imported_tree: ImportedTreeSnapshot | None = None,
     ) -> bool | None:
         if self._remote_mcp and item_type == "mcp":
             if name not in ANVIL_MCP_NAMES or metadata is None:
@@ -298,7 +300,12 @@ class RemoteTarget(Target):
             expected = self._expand_entry_secrets(name, expected)
             return actual == mcp_entry_fingerprint(expected)
         return self._inner.item_matches_source(
-            item_type, name, content, metadata, source_path
+            item_type,
+            name,
+            content,
+            metadata,
+            source_path,
+            imported_tree=imported_tree,
         )
 
     def _remote_mcp_manifest_names(self) -> set[str]:

@@ -22,7 +22,7 @@ from typing import Any
 from ..manifest import MANIFEST_FILENAME
 from ..names import require_canonical_item_name
 from ..poet import POET_EXTENSIONS, parse_poet, render_for_gptel
-from .base import MANAGED_BUNDLE_RSYNC_INCLUDES, Target
+from .base import MANAGED_BUNDLE_RSYNC_INCLUDES, SkillTreeSource, Target
 
 _GPTEL_EXTENSIONS = (".poet", ".json", ".txt", ".md", ".org")
 _RENDERED_POET_EXTENSIONS = POET_EXTENSIONS - {".poet"}
@@ -128,7 +128,7 @@ class GptelTarget(Target):
     def deploy_command(self, name: str, content: bytes) -> None:
         pass
 
-    def deploy_skill(self, name: str, source_dir: Path) -> None:
+    def deploy_skill(self, name: str, source_dir: SkillTreeSource) -> None:
         pass
 
     def deploy_mcp_server(self, name: str, config: dict[str, Any]) -> None:

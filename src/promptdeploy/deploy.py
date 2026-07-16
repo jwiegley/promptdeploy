@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from .catalog import item_selected as item_selected
 from .config import Config, load_anthropic_default_model
 from .envsubst import _ENV_PATTERN
 from .filters import should_deploy_to
@@ -192,31 +193,6 @@ def _filter_models_config(
             filtered_prov["models"] = filtered_models
             filtered_providers[prov_key] = filtered_prov
     return {"providers": filtered_providers}
-
-
-def item_selected(
-    item: SourceItem, target: Target, target_id: str, config: Config
-) -> bool:
-    """Decide whether an item applies to a target at all.
-
-    Single source of truth shared by :func:`deploy` and
-    :func:`promptdeploy.status.get_status`: an item is selected when it
-    passes the environment filters (frontmatter ``only``/``except`` plus
-    filename filetags) AND the target would not no-op the deploy via
-    :meth:`Target.should_skip`. Keeping both callers on this predicate
-    guarantees ``status`` cannot drift from what ``deploy`` would do.
-    """
-    if not should_deploy_to(
-        target_id,
-        item.metadata,
-        config,
-        str(item.path),
-        filetags=item.filetags,
-    ):
-        return False
-    return not target.should_skip(
-        item.item_type, item.name, item.content, item.metadata
-    )
 
 
 def _expand_env_for_hash(value: object) -> object:
