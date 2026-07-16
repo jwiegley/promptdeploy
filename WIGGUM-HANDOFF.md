@@ -439,7 +439,8 @@ complete flake gate and commit hooks pass 2,470 tests at 100% statement and
 branch coverage; per protocol, this narrow remediation does not receive a
 recursive fess audit.
 
-The next dormant managed-runtime seam is implemented but not yet committed:
+The dormant pure-renderer seam was committed as `f5a91c8` (`Add pure Ponytail
+bundle rendering`):
 
 - `bundle_projection.py` selects the exact five-target payload matrix,
   projects retained snapshots into link-free installed trees, derives
@@ -510,18 +511,40 @@ All remediation and final narrow reviews are clean:
 - `/var/tmp/wg-ponytail-20260715/renderer-test-review/remediation.md` and
   `remediation-final.md`.
 
-The final focused gate passes 162 cases over 817 statements and 350 branches
+Its required fess audit is
+`/var/tmp/wg-ponytail-20260715/fess-f5a91c8/report.md` (SHA-256
+`adde8aab00783bc3f44f792ffd176ba7f80148cd5c1d3f79e57983eb5c3b63d7`).
+It found an open Python subclass/dynamic-dispatch boundary in the nominally
+immutable rendered plan and a fail-open PowerShell branch when `node` is
+absent. Fess-fix-only commit `d12ec3f` (`Fix Ponytail renderer audit findings`)
+now deeply exact-checks and non-virtually revalidates every projected plan
+object, tuple, scalar, imported/installed entry, manifest source, descriptor,
+receipt, and hook value before hashing or equality. The generated PowerShell
+command throws when `node` is unavailable, and the authoritative Nix pytest
+derivation executes both missing- and available-Node branches under real
+PowerShell with isolated writable HOME/XDG state and bounded subprocesses.
+
+Final remediation verification is
+`/var/tmp/wg-ponytail-20260715/fess-f5a91c8/remediation-final.md` (SHA-256
+`554177664bfda03ae6334fdbac8bdcd1203f2419d18f014b7c84131384320ca6`).
+The independent deep-value and PowerShell reviews are
+`/var/tmp/wg-ponytail-20260715/plan-subclass-fix-review/deep-remediation-final.md`,
+`/var/tmp/wg-ponytail-20260715/closed-bundle-review/report.md`, and
+`/var/tmp/wg-ponytail-20260715/powershell-remediation-review/report.md`; all
+are clean. Per protocol, this fess-fix-only commit does not receive a recursive
+fess audit.
+
+The final focused gate passes 168 cases over 912 statements and 398 branches
 at 100%; strict typing and pinned Ruff are clean. The complete seven-check Nix
-gate passes 2,632 tests at 100%, strict mypy over 88 source files, all 96-file
-Ruff checks, package build, Home Manager module evaluation, and Home Manager
-activation. The renderer remains absent from active deploy/status/verify and
-target imports; manifest v2 and the existing LICENSE-only bundle path remain
-authoritative. The commit and its required fess audit remain part of this work
-unit.
+gate passes 2,638 tests over 7,916 statements and 3,192 branches at 100%,
+strict mypy over 88 source files, all 96-file Ruff checks, package build, Home
+Manager module evaluation, and Home Manager activation. The renderer remains
+absent from active deploy/status/verify and target imports; manifest v2 and the
+existing LICENSE-only bundle path remain authoritative.
 
 Next:
 
-1. finish and audit the pure renderer, then add the pure Node health harness;
+1. add the dormant pure Node health harness over validated rendered plans;
 2. add manifest v3 and the local Claude managed-runtime transaction as one
    atomic ownership boundary, including payload provenance, health probes,
    collision detection, rollback, baseline compare-and-swap, and fault
@@ -588,10 +611,21 @@ Next:
   independent audits plus a PowerShell syntax audit then exposed distinct
   registration, receipt, emitted-path, hash-authority, alias, and evidence
   findings. Each changed signature was repaired before the final clean
-  remediation reviews. The final focused 162-test gate covers 817 statements
-  and 350 branches at 100%; the complete 2,632-test coverage derivation,
-  strict 88-file mypy derivation, Ruff, package, Home Manager, and all seven
-  flake checks are green.
+  remediation reviews. The pre-fess focused 162-test gate covered 817
+  statements and 350 branches at 100%; the complete 2,632-test coverage
+  derivation, strict 88-file mypy derivation, Ruff, package, Home Manager, and
+  all seven flake checks were green.
+- Pure-renderer fess remediation: the audit and two follow-up type reviews
+  successively exposed deeper subclass-controlled equality edges; each changed
+  signature was closed across the complete projected object graph. The first
+  Nix PowerShell attempt exposed an unwritable sandbox HOME, and a later
+  concurrent cold start exceeded the original process-start bound; isolated
+  writable HOME/XDG/cache state, disabled update checks, and the widened bounded
+  startup allowance resolve both. The final focused 168-test gate covers 912
+  statements and 398 branches at 100%; the authoritative 2,638-test Nix
+  derivation covers 7,916 statements and 3,192 branches at 100%, and strict
+  mypy, Ruff, package, Home Manager, commit hooks, and all seven flake checks
+  are green.
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature
