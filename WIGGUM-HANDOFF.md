@@ -17,6 +17,9 @@ scope to copying one skill or configuring one client.
 - Audit-remediation commit: `3328e2b` (`Resolve Ponytail design audit
   findings`). Per the Wiggum protocol, this fess-fix-only commit does not need
   a recursive audit.
+- Installed-tree primitive commit: `2079a90` (`Add Ponytail installed-tree
+  primitives`). It is dormant transaction substrate and does not activate a
+  target or mutate live configuration.
 - Working tree was clean before these durable-state files were added.
 - Reference checkout is clean on `main` at
   `16f29800fd2681bdf24f3eb4ccffe38be3baec6b` (`package.json` version 4.8.4).
@@ -659,11 +662,57 @@ PowerShell branch now disables irrelevant module auto-loading in its isolated
 missing-node harness, and the detached-child proof uses a bounded readiness
 poll while retaining the same escape and cleanup assertions.
 
+Commit `2079a90` (`Add Ponytail installed-tree primitives`) adds the first
+local-transaction substrate. `validate_closed_installed_tree` is now a public
+closed boundary that returns the exact validated tuple and translates imported
+topology failures into the bundle-projection error domain. The target layer can
+materialize one renderer projection into an absent leaf of a private staging
+parent and compare it through bounded no-follow descriptors. Materialization
+restores directory modes after even an extreme umask, handles Linux and Darwin
+`chmod` capabilities explicitly, verifies every new directory through an
+`O_DIRECTORY|O_NOFOLLOW` descriptor, and never chmods file inodes during
+failure cleanup. Exact files require one link.
+
+Projected matching returns `False` only for absence, a non-directory root, or
+a proven semantic mismatch. Operational stat/read/open/close failures remain
+visible, including a close failure coincident with mismatch. One shared close
+boundary preserves primary and cleanup errors for materialized files and
+directories, installed files and directories, tree roots, and cleanup-parent
+descriptors. Private cleanup is descriptor-relative and refuses a platform
+whose `shutil.rmtree` is not symlink-attack-safe.
+
+The draft public exact-removal API was deliberately deleted during audit. It
+could compare one inode and later delete an unrelated replacement by path, and
+it could not safely serve stale-manifest GC because manifest v3 retains the old
+digest/path but not the old tree bytes. The transaction must instead capture a
+bounded, link-free installed old tree, verify its digest/path against the
+manifest or recovery journal, and quarantine/remove it under the target lock.
+Do not substitute the current desired projection for that old-tree authority.
+
+The primitive design, final review, and required fess evidence are:
+
+- `/var/tmp/wg-ponytail-20260715/installed-tree-slice/report.md` (SHA-256
+  `5ab545cf49b300832fa8d7a31fc8992aaad99c9946d5d5c4cb596ca4c2053477`);
+- `/var/tmp/wg-ponytail-20260715/installed-tree-final-review/report.md`
+  (SHA-256
+  `dd2f50ff656c287da56160b7fcffe1b5eb00710a314241a74150e175a2edcfcc`);
+- `/var/tmp/wg-ponytail-20260715/installed-tree-fess/report.md` (SHA-256
+  `71e56db2b9ebce9e8ea5f97078e6eba144e11d666856d31a05c48b8636beac08`).
+
+The final hook passes 2,832 tests over 8,760 statements and 3,496 branches at
+100%, strict mypy over 91 source files, all 99-file Ruff checks, package build,
+Home Manager module/activation, and all seven flake checks. Host-independent
+capability tests exercise both Linux's portable `chmod` bootstrap and the
+advertised no-follow form regardless of the current runner.
+
 Next:
 
-1. add the local Claude managed-runtime transaction, including exact rendered
-   receipt threading, installed-path health, collision detection, rollback,
-   baseline compare-and-swap, journal recovery, removal, and fault injection;
+1. implement the strict local-Claude settings snapshot/render/CAS boundary from
+   `/var/tmp/wg-ponytail-20260715/strict-settings-slice/report.md`, then add the
+   managed-runtime transaction: exact rendered receipt threading,
+   content-addressed no-replace publication, installed-path health, collision
+   detection, rollback, journal recovery, receipt-bound old-tree capture and
+   removal, and fault injection;
 2. add local Codex activation, stable unsynced `PLUGIN_DATA`, and the remote
    two-phase preseed/health/baseline-CAS switch using rendered live host paths;
 3. add native OpenCode registration and its remote transport/health contract;
@@ -761,6 +810,14 @@ Next:
   replaced with bounded deterministic harness behavior. The final 2,808-test
   coverage derivation, strict 91-file mypy derivation, Ruff, package, Home
   Manager, commit hooks, and all seven flake checks are green.
+- Installed-tree primitive slice: initial materialize/match coverage was green,
+  then independent design, test, correctness, and fess reviews exposed
+  hard-link acceptance, swallowed close failures, Linux-incompatible chmod,
+  extreme-umask cleanup, an unsafe verify/delete TOCTOU, and an old-manifest
+  authority mismatch. Every changed signature was repaired or the premature
+  removal API was deleted. The authoritative hook passes 2,832 tests over
+  8,760 statements and 3,496 branches at 100%, strict 91-file mypy, Ruff,
+  package, Home Manager, and all seven flake checks.
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature
