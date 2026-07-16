@@ -264,9 +264,10 @@ the two immutable payload snapshots are retained on `bundle:ponytail`, but
 deploy/status/verify still materialize and compare only the existing LICENSE
 support tree. Native runtime installation and registration begin only after
 the target transaction and remote live-path slice lands. The pure renderer is
-also present, but its receipts and target-effective candidate hashes are not
-yet persisted in deployment manifest v2 or substituted for the current bundle
-hash.
+also present. Deployment manifest v3 now has a closed, optional local-Claude
+runtime receipt, while v1/v2 entries migrate with no invented receipt. Active
+deploy/status/verify paths do not emit that receipt or substitute the
+target-effective candidate hash until the transaction boundary lands.
 
 Every include path must be canonical and relative. Discovery must reject
 absolute paths, `.`/`..`, broken or external links, directory links, special
@@ -381,8 +382,10 @@ target must recompute the complete render immediately before mutation and use
 an atomic transaction that preseeds and probes the runtime, compares the
 registration baseline, switches registration as the activation barrier,
 commits manifest ownership, and only then garbage-collects unreferenced
-content. Until that layer lands, manifest v2, the existing LICENSE-only bundle
-hash, and deploy/status/verify semantics remain authoritative.
+content. Until that layer lands, the manifest-v3 receipt remains absent; the
+existing LICENSE-only bundle hash and deploy/status/verify semantics remain
+authoritative. A future-version receipt is never interpreted as current
+ownership by the v3 reader.
 
 Remote adapters receive both a local staging path and a distinct emitted live
 host path; generated commands may use only the latter. Remote updates are a

@@ -778,7 +778,7 @@ def test_run_verify_cli_reports_missing_env_without_value(
 @pytest.mark.parametrize(
     "manifest_mutation",
     [
-        lambda data: data.update({"version": 3}),
+        lambda data: data.update({"version": 4}),
         lambda data: data.update({"unknown": True}),
     ],
 )

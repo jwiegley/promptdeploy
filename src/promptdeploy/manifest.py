@@ -1,4 +1,4 @@
-"""Manifest tracking with v1 migration and logical bundle provenance."""
+"""Manifest tracking with v1/v2 migration and bundle runtime receipts."""
 
 from __future__ import annotations
 
@@ -18,19 +18,27 @@ from typing import cast
 from .names import require_canonical_item_name
 from .skilltree import scan_skill_source
 
-MANIFEST_VERSION = 2
+MANIFEST_VERSION = 3
 LEGACY_MANIFEST_VERSION = 1
+PROVENANCE_MANIFEST_VERSION = 2
 MANIFEST_FILENAME = ".prompt-deploy-manifest.json"
 
-_SUPPORTED_MANIFEST_VERSIONS = frozenset({LEGACY_MANIFEST_VERSION, MANIFEST_VERSION})
+_SUPPORTED_MANIFEST_VERSIONS = frozenset(
+    {LEGACY_MANIFEST_VERSION, PROVENANCE_MANIFEST_VERSION, MANIFEST_VERSION}
+)
 _BUNDLE_NAME = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*\Z")
 _GIT_REVISION = re.compile(r"[0-9a-f]{40}\Z")
 _SRI_SHA256 = re.compile(r"sha256-[A-Za-z0-9+/]{43}=\Z")
+_SHA256 = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _TRANSFORM_ID = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*\Z")
+_CLAUDE_RUNTIME_PATH = re.compile(
+    r"\.promptdeploy/bundles/ponytail/runtimes/([0-9a-f]{64})\Z"
+)
 
 _TOP_LEVEL_FIELDS = frozenset({"version", "deployed_at", "items"})
 _V1_ITEM_FIELDS = frozenset({"source_hash", "target_path", "managed_keys"})
 _V2_ITEM_FIELDS = _V1_ITEM_FIELDS | {"source"}
+_V3_ITEM_FIELDS = _V2_ITEM_FIELDS | {"bundle_receipt"}
 _SOURCE_FIELDS = frozenset(
     {
         "bundle",
@@ -41,6 +49,21 @@ _SOURCE_FIELDS = frozenset(
         "mutable",
         "transform",
         "license",
+    }
+)
+_BUNDLE_RECEIPT_FIELDS = frozenset(
+    {
+        "payload_name",
+        "target_type",
+        "logical_root",
+        "payload_tree_sha256",
+        "rendered_tree_sha256",
+        "adapter_abi",
+        "runtime_path",
+        "registration_kind",
+        "registration_abi",
+        "registration_owner",
+        "registration_sha256",
     }
 )
 
@@ -77,6 +100,23 @@ class ManifestSource:
     license: str
 
 
+@dataclass(frozen=True, slots=True)
+class BundleManifestReceipt:
+    """Closed persisted witness for one active local Claude Ponytail runtime."""
+
+    payload_name: str
+    target_type: str
+    logical_root: str
+    payload_tree_sha256: str
+    rendered_tree_sha256: str
+    adapter_abi: str
+    runtime_path: str
+    registration_kind: str
+    registration_owner: str
+    registration_abi: str
+    registration_sha256: str
+
+
 @dataclass
 class ManifestItem:
     """Tracks a single deployed item."""
@@ -85,6 +125,7 @@ class ManifestItem:
     target_path: str | None = None
     managed_keys: list[str] | None = None
     source: ManifestSource | None = None
+    bundle_receipt: BundleManifestReceipt | None = None
 
 
 @dataclass
@@ -342,6 +383,145 @@ def validate_manifest_source(source: ManifestSource) -> ManifestSource:
     )
 
 
+def _bundle_receipt_from_mapping(value: object) -> BundleManifestReceipt:
+    if not isinstance(value, dict) or not all(isinstance(key, str) for key in value):
+        raise ValueError("Manifest bundle_receipt must be an object")
+    receipt = cast(dict[str, object], value)
+    if "runtime_path" in receipt:
+        _validate_bundle_runtime_path(receipt["runtime_path"])
+    if set(receipt) != _BUNDLE_RECEIPT_FIELDS:
+        raise ValueError(
+            "Exact deployment requires all and only known bundle receipt fields"
+        )
+    return validate_bundle_manifest_receipt(
+        BundleManifestReceipt(
+            payload_name=cast(str, receipt["payload_name"]),
+            target_type=cast(str, receipt["target_type"]),
+            logical_root=cast(str, receipt["logical_root"]),
+            payload_tree_sha256=cast(str, receipt["payload_tree_sha256"]),
+            rendered_tree_sha256=cast(str, receipt["rendered_tree_sha256"]),
+            adapter_abi=cast(str, receipt["adapter_abi"]),
+            runtime_path=cast(str, receipt["runtime_path"]),
+            registration_kind=cast(str, receipt["registration_kind"]),
+            registration_owner=cast(str, receipt["registration_owner"]),
+            registration_abi=cast(str, receipt["registration_abi"]),
+            registration_sha256=cast(str, receipt["registration_sha256"]),
+        )
+    )
+
+
+def _validate_bundle_runtime_path(value: object) -> re.Match[str]:
+    if type(value) is not str:
+        raise ValueError("Manifest bundle_receipt fields must be exact strings")
+    runtime_match = _CLAUDE_RUNTIME_PATH.fullmatch(value)
+    if runtime_match is None:
+        raise UnsafeManifestError(
+            "Manifest bundle receipt runtime path is outside the owned namespace"
+        )
+    return runtime_match
+
+
+def validate_bundle_manifest_receipt(
+    receipt: BundleManifestReceipt,
+) -> BundleManifestReceipt:
+    """Return one exact, fully validated local-Claude runtime witness."""
+    if type(receipt) is not BundleManifestReceipt:
+        raise ValueError(
+            "Manifest bundle_receipt must be an exact BundleManifestReceipt"
+        )
+    runtime_match = _validate_bundle_runtime_path(receipt.runtime_path)
+    fields = (
+        receipt.payload_name,
+        receipt.target_type,
+        receipt.logical_root,
+        receipt.payload_tree_sha256,
+        receipt.rendered_tree_sha256,
+        receipt.adapter_abi,
+        receipt.runtime_path,
+        receipt.registration_kind,
+        receipt.registration_owner,
+        receipt.registration_abi,
+        receipt.registration_sha256,
+    )
+    if any(type(value) is not str for value in fields):
+        raise ValueError("Manifest bundle_receipt fields must be exact strings")
+    expected_values = (
+        (receipt.payload_name, "claude-codex-runtime-v1", "payload name"),
+        (receipt.target_type, "claude", "target type"),
+        (receipt.logical_root, "runtime/claude-codex", "logical root"),
+        (receipt.adapter_abi, "ponytail-claude-runtime-v1", "adapter ABI"),
+        (receipt.registration_kind, "claude-hooks", "registration kind"),
+        (receipt.registration_owner, "bundle:ponytail", "registration owner"),
+        (
+            receipt.registration_abi,
+            "claude-settings-hooks-v1",
+            "registration ABI",
+        ),
+    )
+    for value, expected, field_name in expected_values:
+        if value != expected:
+            raise ValueError(
+                f"Manifest bundle receipt {field_name} must be {expected!r}"
+            )
+    for value, field_name in (
+        (receipt.payload_tree_sha256, "payload digest"),
+        (receipt.rendered_tree_sha256, "rendered tree digest"),
+        (receipt.registration_sha256, "registration digest"),
+    ):
+        if _SHA256.fullmatch(value) is None:
+            raise ValueError(
+                f"Manifest bundle receipt {field_name} must be lowercase SHA-256"
+            )
+    if runtime_match.group(1) != receipt.rendered_tree_sha256.removeprefix("sha256:"):
+        raise ValueError(
+            "Manifest bundle receipt runtime path disagrees with rendered digest"
+        )
+    return receipt
+
+
+def _bundle_receipt_to_mapping(
+    receipt: BundleManifestReceipt,
+) -> dict[str, object]:
+    checked = validate_bundle_manifest_receipt(receipt)
+    return {
+        "payload_name": checked.payload_name,
+        "target_type": checked.target_type,
+        "logical_root": checked.logical_root,
+        "payload_tree_sha256": checked.payload_tree_sha256,
+        "rendered_tree_sha256": checked.rendered_tree_sha256,
+        "adapter_abi": checked.adapter_abi,
+        "runtime_path": checked.runtime_path,
+        "registration_kind": checked.registration_kind,
+        "registration_owner": checked.registration_owner,
+        "registration_abi": checked.registration_abi,
+        "registration_sha256": checked.registration_sha256,
+    }
+
+
+def _validate_bundle_receipt_ownership(
+    *,
+    category: str,
+    name: str,
+    target_path: str | None,
+    receipt: BundleManifestReceipt | None,
+) -> None:
+    if receipt is None:
+        return
+    validate_bundle_manifest_receipt(receipt)
+    if type(category) is not str or type(name) is not str:
+        raise ValueError(
+            "Manifest receipt ownership requires exact category and item strings"
+        )
+    if target_path is not None and type(target_path) is not str:
+        raise ValueError("Manifest receipt ownership requires an exact target_path")
+    if category != "bundles" or name != "ponytail":
+        raise ValueError("Manifest bundle_receipt is allowed only on bundles:ponytail")
+    if target_path != receipt.runtime_path:
+        raise ValueError(
+            "Manifest bundle receipt runtime path disagrees with target_path"
+        )
+
+
 def _manifest_version(data: dict[str, object]) -> int:
     version = data.get("version", LEGACY_MANIFEST_VERSION)
     if type(version) is not int:
@@ -368,6 +548,8 @@ def _manifest_from_mapping(
             target_path = values.get("target_path")
             managed_keys = values.get("managed_keys")
             source_value = values.get("source")
+            receipt_present = "bundle_receipt" in values
+            receipt_value = values.get("bundle_receipt")
             if not isinstance(source_hash, str):
                 raise ValueError("Manifest source_hash must be a string")
             if strict or target_path is not None:
@@ -380,11 +562,23 @@ def _manifest_from_mapping(
                     "Manifest managed_keys must be a list of strings or null"
                 )
             source = _manifest_source_from_mapping(source_value, strict=strict)
+            bundle_receipt = (
+                _bundle_receipt_from_mapping(receipt_value)
+                if version == MANIFEST_VERSION and receipt_present
+                else None
+            )
+            _validate_bundle_receipt_ownership(
+                category=category,
+                name=name,
+                target_path=target_path,
+                receipt=bundle_receipt,
+            )
             converted[name] = ManifestItem(
                 source_hash=source_hash,
                 target_path=target_path,
                 managed_keys=managed_keys,
                 source=source,
+                bundle_receipt=bundle_receipt,
             )
         items[category] = converted
     deployed_at = data.get("deployed_at", "")
@@ -394,7 +588,7 @@ def _manifest_from_mapping(
 
 
 def load_manifest_strict(manifest_path: Path) -> Manifest:
-    """Load a strict known v1/v2 manifest for exact deployment or verify."""
+    """Load a strict known v1/v2/v3 manifest for exact deployment or verify."""
     if not manifest_path.exists():
         return Manifest()
     try:
@@ -424,9 +618,12 @@ def load_manifest_strict(manifest_path: Path) -> Manifest:
     raw_items = raw["items"]
     if not isinstance(raw_items, dict):
         raise ValueError("Exact deployment requires object manifest items")
-    allowed_item_fields = (
-        _V1_ITEM_FIELDS if version == LEGACY_MANIFEST_VERSION else _V2_ITEM_FIELDS
-    )
+    if version == LEGACY_MANIFEST_VERSION:
+        allowed_item_fields = _V1_ITEM_FIELDS
+    elif version == PROVENANCE_MANIFEST_VERSION:
+        allowed_item_fields = _V2_ITEM_FIELDS
+    else:
+        allowed_item_fields = _V3_ITEM_FIELDS
     for category, entries in raw_items.items():
         if not isinstance(category, str) or not isinstance(entries, dict):
             raise ValueError("Exact deployment requires object manifest categories")
@@ -440,6 +637,12 @@ def load_manifest_strict(manifest_path: Path) -> Manifest:
             if set(values) - allowed_item_fields:
                 raise ValueError(
                     "Exact deployment refuses unknown manifest item fields"
+                )
+            if "bundle_receipt" in values and (
+                category != "bundles" or name != "ponytail"
+            ):
+                raise ValueError(
+                    "Exact deployment permits bundle_receipt only on bundles:ponytail"
                 )
     return _manifest_from_mapping(raw, version=version, strict=True)
 
@@ -484,7 +687,7 @@ def load_manifest(manifest_path: Path) -> Manifest:
 
 
 def save_manifest(manifest: Manifest, manifest_path: Path) -> None:
-    """Atomically write a version-2 manifest, migrating loaded v1 entries."""
+    """Atomically write a version-3 manifest, migrating loaded v1/v2 entries."""
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
 
     serialized: dict[str, dict[str, dict[str, object]]] = {}
@@ -493,7 +696,7 @@ def save_manifest(manifest: Manifest, manifest_path: Path) -> None:
             raise ValueError("Manifest categories must be objects")
         serialized[category] = {}
         for name, item in entries.items():
-            if not isinstance(name, str) or not isinstance(item, ManifestItem):
+            if not isinstance(name, str) or type(item) is not ManifestItem:
                 raise ValueError("Manifest entries must be named ManifestItem objects")
             _validate_manifest_item_name(category, name)
             if not isinstance(item.source_hash, str):
@@ -513,6 +716,15 @@ def save_manifest(manifest: Manifest, manifest_path: Path) -> None:
                 entry["managed_keys"] = item.managed_keys
             if item.source is not None:
                 entry["source"] = _source_to_mapping(item.source)
+            receipt = item.bundle_receipt
+            _validate_bundle_receipt_ownership(
+                category=category,
+                name=name,
+                target_path=target_path,
+                receipt=receipt,
+            )
+            if receipt is not None:
+                entry["bundle_receipt"] = _bundle_receipt_to_mapping(receipt)
             serialized[category][name] = entry
 
     if not isinstance(manifest.deployed_at, str):
@@ -554,14 +766,40 @@ def has_item_changed(
     name: str,
     current_hash: str,
     expected_source: ManifestSource | None,
+    expected_receipt: BundleManifestReceipt | None = None,
 ) -> bool:
-    """Compare the effective hash and expected logical provenance.
+    """Compare the effective hash, logical provenance, and bundle receipt.
 
     A v1 entry's missing source is an implicit match only for a primary item
     (``expected_source is None``).  An import always requires exact source
     provenance even when its content hash happens to match.
     """
-    if has_changed(manifest, category, name, current_hash):
+    checked_expected: BundleManifestReceipt | None = None
+    if expected_receipt is not None:
+        checked_expected = validate_bundle_manifest_receipt(expected_receipt)
+        _validate_bundle_receipt_ownership(
+            category=category,
+            name=name,
+            target_path=checked_expected.runtime_path,
+            receipt=checked_expected,
+        )
+    category_items = manifest.items.get(category)
+    if category_items is None:
         return True
-    item = manifest.items[category][name]
-    return item.source != expected_source
+    item = category_items.get(name)
+    if item is None:
+        return True
+    if type(item) is not ManifestItem:
+        raise ValueError("Manifest currentness requires an exact ManifestItem")
+    receipt = item.bundle_receipt
+    _validate_bundle_receipt_ownership(
+        category=category,
+        name=name,
+        target_path=item.target_path,
+        receipt=receipt,
+    )
+    return (
+        item.source_hash != current_hash
+        or item.source != expected_source
+        or receipt != checked_expected
+    )

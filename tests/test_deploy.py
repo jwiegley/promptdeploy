@@ -16,6 +16,7 @@ from promptdeploy.deploy import (
 )
 from promptdeploy.manifest import (
     MANIFEST_FILENAME,
+    BundleManifestReceipt,
     Manifest,
     ManifestItem,
     compute_file_hash,
@@ -395,15 +396,40 @@ class TestOnlyType:
 
         # Deploy everything first
         deploy(config)
+        manifest_path = tc.path / MANIFEST_FILENAME
+        manifest = load_manifest(manifest_path)
+        runtime_path = ".promptdeploy/bundles/ponytail/runtimes/" + "a" * 64
+        receipt = BundleManifestReceipt(
+            payload_name="claude-codex-runtime-v1",
+            target_type="claude",
+            logical_root="runtime/claude-codex",
+            payload_tree_sha256="sha256:" + "c" * 64,
+            rendered_tree_sha256="sha256:" + "a" * 64,
+            adapter_abi="ponytail-claude-runtime-v1",
+            runtime_path=runtime_path,
+            registration_kind="claude-hooks",
+            registration_owner="bundle:ponytail",
+            registration_abi="claude-settings-hooks-v1",
+            registration_sha256="sha256:" + "d" * 64,
+        )
+        manifest.items["bundles"] = {
+            "ponytail": ManifestItem(
+                "sha256:" + "b" * 64,
+                target_path=runtime_path,
+                bundle_receipt=receipt,
+            )
+        }
+        save_manifest(manifest, manifest_path)
         # Now deploy only agents
         deploy(config, item_types=["agents"])
 
-        manifest = load_manifest(tc.path / MANIFEST_FILENAME)
+        manifest = load_manifest(manifest_path)
         # Agent should still be in manifest
         assert "helper" in manifest.items["agents"]
         # Other types should be preserved (not removed)
         assert "fix" in manifest.items["commands"]
         assert "my-skill" in manifest.items["skills"]
+        assert manifest.items["bundles"]["ponytail"].bundle_receipt == receipt
 
     def test_only_type_removes_stale_items_of_matching_type(self, tmp_path: Path):
         """--only-type still removes stale items of the selected type."""

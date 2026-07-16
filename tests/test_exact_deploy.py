@@ -12,6 +12,7 @@ from promptdeploy.config import Config, TargetConfig
 from promptdeploy.deploy import deploy, parse_item_selector, resolve_item_selectors
 from promptdeploy.manifest import (
     MANIFEST_FILENAME,
+    BundleManifestReceipt,
     ManifestItem,
     ManifestSource,
     load_manifest,
@@ -119,12 +120,34 @@ def test_exact_item_preserves_same_category_siblings_and_manifest_metadata(
             managed_keys=["future-key"],
         )
     }
+    runtime_digest = "sha256:" + "a" * 64
+    runtime_path = ".promptdeploy/bundles/ponytail/runtimes/" + "a" * 64
+    manifest.items["bundles"] = {
+        "ponytail": ManifestItem(
+            source_hash="sha256:" + "b" * 64,
+            target_path=runtime_path,
+            bundle_receipt=BundleManifestReceipt(
+                payload_name="claude-codex-runtime-v1",
+                target_type="claude",
+                logical_root="runtime/claude-codex",
+                payload_tree_sha256="sha256:" + "c" * 64,
+                rendered_tree_sha256=runtime_digest,
+                adapter_abi="ponytail-claude-runtime-v1",
+                runtime_path=runtime_path,
+                registration_kind="claude-hooks",
+                registration_owner="bundle:ponytail",
+                registration_abi="claude-settings-hooks-v1",
+                registration_sha256="sha256:" + "d" * 64,
+            ),
+        )
+    }
     save_manifest(manifest, manifest_path)
 
     before_config = json.loads((target_path / ".claude.json").read_text())
     before_beta = before_config["mcpServers"]["beta"]
     before_manifest_beta = load_manifest(manifest_path).items["mcp_servers"]["beta"]
     before_future = load_manifest(manifest_path).items["future"]["opaque"]
+    before_bundle = load_manifest(manifest_path).items["bundles"]["ponytail"]
 
     (config.source_root / "mcp" / "file-name-is-not-selector.yaml").write_text(
         "name: alpha\ncommand: alpha-v2\n"
@@ -138,6 +161,7 @@ def test_exact_item_preserves_same_category_siblings_and_manifest_metadata(
     after_manifest = load_manifest(manifest_path)
     assert after_manifest.items["mcp_servers"]["beta"] == before_manifest_beta
     assert after_manifest.items["future"]["opaque"] == before_future
+    assert after_manifest.items["bundles"]["ponytail"] == before_bundle
     assert "helper" in after_manifest.items["agents"]
 
 
@@ -326,7 +350,7 @@ def test_unsafe_stale_manifest_name_fails_before_any_target_mutation(
 @pytest.mark.parametrize(
     "mutation",
     [
-        {"version": 3},
+        {"version": 4},
         {"future_top_level": True},
         {"item_field": True},
         {"source_hash": ["not", "a", "string"]},

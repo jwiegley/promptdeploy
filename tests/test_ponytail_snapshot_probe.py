@@ -559,8 +559,17 @@ def test_deliberately_detached_descendant_is_outside_probe_contract(
     assert result.returncode == 0
     child = int(identity_path.read_text())
     try:
-        time.sleep(0.3)
-        assert sentinel.read_text() == "survived"
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                observed = sentinel.read_text()
+            except FileNotFoundError:
+                if time.monotonic() >= deadline:
+                    pytest.fail("detached test child did not reach its ready marker")
+                time.sleep(0.01)
+                continue
+            assert observed == "survived"
+            break
         assert "not an OS sandbox" in (probe_module.__doc__ or "")
     finally:
         with contextlib.suppress(ProcessLookupError):

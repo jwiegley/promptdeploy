@@ -723,7 +723,10 @@ def test_windows_hook_executes_with_node_and_fails_closed_without_it(
             "XDG_DATA_HOME": str(powershell_home / ".local" / "share"),
         }
     )
+    # A missing application otherwise makes Get-Command scan auto-loadable
+    # modules, which is unrelated to this branch and can exceed sandbox limits.
     missing_command = (
+        "$PSModuleAutoLoadingPreference='None'; "
         "$promptdeployOriginalPath=$env:PATH; try { "
         f"$env:PATH={render_module._powershell_literal(str(empty_bin))}; {command} "
         "} finally { $env:PATH=$promptdeployOriginalPath }"

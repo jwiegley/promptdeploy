@@ -1,4 +1,4 @@
-"""Manifest-v2 provenance, migration, and safety regressions."""
+"""Manifest provenance, migration, and safety regressions."""
 
 from __future__ import annotations
 
@@ -112,14 +112,14 @@ def test_v2_imported_source_round_trip(tmp_path: Path) -> None:
     raw = json.loads(path.read_text(encoding="utf-8"))
     loaded = m.load_manifest_strict(path)
 
-    assert raw["version"] == 2
+    assert raw["version"] == m.MANIFEST_VERSION
     assert "source" not in raw["items"]["agents"]["primary"]
     assert loaded.items["prompts"]["ponytail"].source == mutable
     assert loaded.items["skills"]["ponytail-review"].source == immutable
     assert loaded.items["agents"]["primary"].source is None
 
 
-def test_strict_v1_is_accepted_and_saves_as_v2(tmp_path: Path) -> None:
+def test_strict_v1_is_accepted_and_saves_as_current(tmp_path: Path) -> None:
     path = tmp_path / m.MANIFEST_FILENAME
     legacy_entry = {
         "source_hash": "sha256:legacy",
@@ -141,7 +141,7 @@ def test_strict_v1_is_accepted_and_saves_as_v2(tmp_path: Path) -> None:
 
     m.save_manifest(loaded, path)
     migrated = json.loads(path.read_text(encoding="utf-8"))
-    assert migrated["version"] == 2
+    assert migrated["version"] == m.MANIFEST_VERSION
     assert migrated["items"]["agents"]["helper"] == legacy_entry
 
 
@@ -168,7 +168,7 @@ def test_strict_rejects_existing_manifest_without_items(
         m.load_manifest_strict(path)
 
 
-@pytest.mark.parametrize("version", [1, 2])
+@pytest.mark.parametrize("version", [1, 2, 3])
 def test_strict_rejects_item_without_source_hash(version: int, tmp_path: Path) -> None:
     path = tmp_path / m.MANIFEST_FILENAME
     _write(
@@ -217,13 +217,13 @@ def test_normal_loader_falls_back_on_duplicate_json_keys(
     assert "duplicate manifest key" in capsys.readouterr().err
 
 
-def test_strict_nonexistent_returns_empty_v2(tmp_path: Path) -> None:
+def test_strict_nonexistent_returns_empty_current_manifest(tmp_path: Path) -> None:
     manifest = m.load_manifest_strict(tmp_path / "missing.json")
-    assert manifest.version == 2
+    assert manifest.version == m.MANIFEST_VERSION
     assert manifest.items == {}
 
 
-@pytest.mark.parametrize("version", [0, 3, True, "2"])
+@pytest.mark.parametrize("version", [0, 4, True, "3"])
 def test_strict_rejects_unsupported_or_noninteger_version(
     version: object, tmp_path: Path
 ) -> None:
@@ -247,7 +247,7 @@ def test_strict_v2_rejects_unknown_item_and_source_fields(
 ) -> None:
     source = _source_json()
     entry = _entry(source=source)
-    payload = _payload(entry=entry)
+    payload = _payload(version=2, entry=entry)
     if mutation == "top":
         payload["future"] = True
     elif mutation == "item":
@@ -379,12 +379,12 @@ def test_normal_future_version_keeps_safe_known_provenance(
     path = tmp_path / m.MANIFEST_FILENAME
     entry = _entry(source={**_source_json(), "future": {"ignored": True}})
     entry["other_future"] = True
-    payload = _payload(version=3, entry=entry)
+    payload = _payload(version=4, entry=entry)
     payload["top_future"] = True
     _write(path, payload)
 
     loaded = m.load_manifest(path)
-    assert loaded.version == 3
+    assert loaded.version == 4
     assert loaded.items["prompts"]["ponytail"].source == _source()
     assert "version" in capsys.readouterr().err
 
@@ -420,7 +420,7 @@ def test_exact_partial_preserves_unselected_legacy_and_v2_source(
     legacy = m.load_manifest_strict(v1_path).items["agents"]["legacy"]
 
     v2_path = tmp_path / "v2.json"
-    _write(v2_path, _payload(entry=_entry(source=_source_json())))
+    _write(v2_path, _payload(version=2, entry=_entry(source=_source_json())))
     imported = m.load_manifest_strict(v2_path).items["prompts"]["ponytail"]
 
     partial = m.Manifest(
@@ -434,7 +434,7 @@ def test_exact_partial_preserves_unselected_legacy_and_v2_source(
     m.save_manifest(partial, output)
     raw = json.loads(output.read_text(encoding="utf-8"))
 
-    assert raw["version"] == 2
+    assert raw["version"] == m.MANIFEST_VERSION
     assert raw["items"]["agents"]["legacy"] == {
         "source_hash": "sha256:legacy",
         "target_path": "agents/legacy.md",
