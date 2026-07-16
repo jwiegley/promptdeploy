@@ -73,6 +73,214 @@ def test_snapshot_invariants_and_hash_are_deterministic() -> None:
     assert snapshot == _snapshot()
 
 
+def test_shallow_directory_snapshot_invariants() -> None:
+    snapshot = tree.ImportedDirectorySnapshot(
+        "hooks",
+        0o755,
+        (("config.js", "file"), ("plugins", "directory")),
+    )
+    assert snapshot.children == (("config.js", "file"), ("plugins", "directory"))
+
+    invalid = (
+        ("../hooks", 0o755, ()),
+        ("hooks", 0o644, ()),
+        ("hooks", 0o755, (("z", "file"), ("a", "file"))),
+        ("hooks", 0o755, (("same", "file"), ("same", "file"))),
+        ("hooks", 0o755, (("Name", "file"), ("name", "file"))),
+        ("hooks", 0o755, (("bad/name", "file"),)),
+        ("hooks", 0o755, (("node", "other"),)),
+    )
+    for arguments in invalid:
+        with pytest.raises(tree.ImportedSourceError):
+            tree.ImportedDirectorySnapshot(*arguments)
+
+
+def test_virtual_snapshot_validation_rejects_casefold_collision() -> None:
+    entries = (
+        _root_entry(),
+        _file_entry("Name", b"one"),
+        _file_entry("name", b"two"),
+    )
+    snapshot = tree.ImportedTreeSnapshot(
+        "runtime/demo",
+        entries,
+        tree.framed_tree_sha256(entries),
+    )
+    with pytest.raises(tree.ImportedSourceError, match="case-fold collision"):
+        tree.validate_imported_tree_snapshot(snapshot)
+
+
+def test_shallow_directory_capture_is_sorted_typed_and_descriptor_held(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path.resolve()
+    selected = root / "adapter"
+    selected.mkdir()
+    selected.chmod(0o755)
+    (selected / "z-file").write_text("z")
+    (selected / "a-directory").mkdir()
+    (selected / "m-link").symlink_to("z-file")
+
+    with tree.BundleSnapshotSession(root) as session:
+        snapshot = session.scan_directory_shallow("adapter")
+
+    assert snapshot.relative_path == "adapter"
+    assert snapshot.normalized_mode == 0o755
+    assert snapshot.children == (
+        ("a-directory", "directory"),
+        ("m-link", "link"),
+        ("z-file", "file"),
+    )
+    assert snapshot.identity
+
+
+def test_shallow_directory_rejects_special_node_and_entry_overflow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected = tmp_path / "adapter"
+    selected.mkdir()
+    os.mkfifo(selected / "pipe")
+    with (
+        tree.BundleSnapshotSession(tmp_path.resolve()) as session,
+        pytest.raises(tree.ImportedSourceError, match="special filesystem"),
+    ):
+        session.scan_directory_shallow("adapter")
+
+    (selected / "pipe").unlink()
+    (selected / "one").write_text("1")
+    (selected / "two").write_text("2")
+    monkeypatch.setattr(tree, "MAX_TREE_ENTRIES", 1)
+    with (
+        tree.BundleSnapshotSession(tmp_path.resolve()) as session,
+        pytest.raises(tree.ImportedSourceError, match="entry limit"),
+    ):
+        session.scan_directory_shallow("adapter")
+
+
+def test_shallow_directory_rejects_casefold_collision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected = tmp_path / "adapter"
+    selected.mkdir()
+    (selected / "STRASSE").write_text("one")
+    original_names = tree._bounded_directory_names
+
+    def colliding_names(
+        descriptor: int, *, limit: int, overflow_message: str
+    ) -> list[str]:
+        names = original_names(
+            descriptor,
+            limit=limit,
+            overflow_message=overflow_message,
+        )
+        return ["STRASSE", "Straße"] if names == ["STRASSE"] else names
+
+    monkeypatch.setattr(tree, "_bounded_directory_names", colliding_names)
+    with (
+        tree.BundleSnapshotSession(tmp_path.resolve()) as session,
+        pytest.raises(tree.ImportedSourceError, match="case-fold collision"),
+    ):
+        session.scan_directory_shallow("adapter")
+
+
+@pytest.mark.parametrize(
+    ("fstat_call", "raise_error"),
+    [(2, True), (3, True), (3, False), (5, True), (5, False)],
+)
+def test_shallow_directory_fstat_faults_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fstat_call: int,
+    raise_error: bool,
+) -> None:
+    selected = tmp_path / "adapter"
+    selected.mkdir()
+    (selected / "child").write_text("value")
+    with tree.BundleSnapshotSession(tmp_path.resolve()) as session:
+        original_fstat = os.fstat
+        calls = 0
+
+        def fault(fd: int) -> object:
+            nonlocal calls
+            calls += 1
+            value = original_fstat(fd)
+            if calls != fstat_call:
+                return value
+            if raise_error:
+                raise OSError("injected fstat failure")
+            return _fake_stat(value, st_ctime_ns=value.st_ctime_ns + 1)
+
+        monkeypatch.setattr(os, "fstat", fault)
+        with pytest.raises(tree.ImportedSourceError, match="inventory directory"):
+            session.scan_directory_shallow("adapter")
+
+
+@pytest.mark.parametrize(
+    ("stat_call", "raise_error"),
+    [(1, True), (2, True), (2, False)],
+)
+def test_shallow_directory_child_stat_faults_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stat_call: int,
+    raise_error: bool,
+) -> None:
+    selected = tmp_path / "adapter"
+    selected.mkdir()
+    (selected / "child").write_text("value")
+    with tree.BundleSnapshotSession(tmp_path.resolve()) as session:
+        original_stat = os.stat
+        calls = 0
+
+        def fault(path: os.PathLike[str] | str, *args: Any, **kwargs: Any) -> object:
+            nonlocal calls
+            value = original_stat(path, *args, **kwargs)
+            if path != "child":
+                return value
+            calls += 1
+            if calls != stat_call:
+                return value
+            if raise_error:
+                raise OSError("injected stat failure")
+            return _fake_stat(value, st_ctime_ns=value.st_ctime_ns + 1)
+
+        monkeypatch.setattr(os, "stat", fault)
+        with pytest.raises(tree.ImportedSourceError, match="inventory"):
+            session.scan_directory_shallow("adapter")
+
+
+def test_shallow_directory_detects_name_change(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected = tmp_path / "adapter"
+    selected.mkdir()
+    (selected / "child").write_text("value")
+    original_names = tree._bounded_directory_names
+    calls = 0
+
+    def changing_names(
+        descriptor: int, *, limit: int, overflow_message: str
+    ) -> list[str]:
+        nonlocal calls
+        calls += 1
+        names = original_names(
+            descriptor,
+            limit=limit,
+            overflow_message=overflow_message,
+        )
+        return [] if calls == 2 else names
+
+    monkeypatch.setattr(tree, "_bounded_directory_names", changing_names)
+    with (
+        tree.BundleSnapshotSession(tmp_path.resolve()) as session,
+        pytest.raises(tree.ImportedSourceError, match="changed during capture"),
+    ):
+        session.scan_directory_shallow("adapter")
+
+
 @pytest.mark.parametrize(
     "entry",
     [

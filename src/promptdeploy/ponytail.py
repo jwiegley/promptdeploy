@@ -19,3 +19,7 @@ PONYTAIL_SKILL_TARGET_TYPES = frozenset({"claude", "codex", "droid"})
 PONYTAIL_PROMPT_TARGET_TYPES = frozenset({"gptel"})
 PONYTAIL_ALL_TARGET_TYPES = frozenset({"claude", "codex", "droid", "opencode", "gptel"})
 GPTEL_PRESET_TRANSFORM = "gptel-preset-v1"
+STRICT_CANONICAL_INSTRUCTIONS_TRANSFORM = "strict-canonical-instructions-v1"
+ONE_SHOT_REVIEW_TRANSFORM = "one-shot-review-v1"
+CLAUDE_CODEX_RUNTIME_PAYLOAD = "claude-codex-runtime-v1"
+OPENCODE_PLUGIN_PAYLOAD = "opencode-plugin-v1"

@@ -276,6 +276,29 @@ def test_strict_verify_selected_skill_checks_required_support(
     ] == [("bundle", "ponytail", "claude", "mismatch")]
 
 
+@pytest.mark.parametrize("target_type", ["claude", "codex", "opencode"])
+def test_dormant_runtime_payload_does_not_register_or_materialize(
+    target_type: str,
+    tmp_path: Path,
+    ponytail_root: Path,
+) -> None:
+    config = _config(tmp_path, ponytail_root, target_type)
+
+    deploy(config, item_selectors=[("bundle", "ponytail")])
+
+    support_root = _support_path(config, target_type).parent
+    assert [
+        path.relative_to(support_root).as_posix() for path in support_root.rglob("*")
+    ] == ["LICENSE"]
+    target_root = config.targets[target_type].path
+    if target_type == "claude":
+        assert not (target_root / "settings.json").exists()
+    elif target_type == "codex":
+        assert not (target_root / ".codex" / "hooks.json").exists()
+    else:
+        assert not (target_root / "opencode.json").exists()
+
+
 def test_only_type_skills_keeps_the_required_support_bundle(
     tmp_path: Path,
     ponytail_root: Path,
@@ -514,8 +537,11 @@ def _selected_source_copy(source: Path, destination: Path) -> Path:
     shutil.copy2(source / "package.json", destination / "package.json")
     shutil.copy2(source / "LICENSE", destination / "LICENSE")
     (destination / "skills").mkdir()
+    (destination / "skills").chmod((source / "skills").stat().st_mode | 0o700)
     for name in PONYTAIL_NAMES:
         shutil.copytree(source / "skills" / name, destination / "skills" / name)
+    shutil.copytree(source / "hooks", destination / "hooks")
+    shutil.copytree(source / ".opencode", destination / ".opencode")
     for path in (destination, *destination.rglob("*")):
         mode = path.stat().st_mode
         path.chmod(mode | (0o700 if path.is_dir() else 0o600))

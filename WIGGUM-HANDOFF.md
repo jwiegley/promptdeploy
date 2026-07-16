@@ -379,17 +379,65 @@ leniency and Codex secret indirection, and narrows the preflight claim above.
 The complete flake gate and commit hooks are green; per protocol, this narrow
 remediation does not receive a recursive fess audit.
 
+The dormant managed-runtime source slice is implemented in the current work
+unit without crossing the target-activation boundary:
+
+- `bundles/ponytail.yaml` is now closed schema 2. It records exact shallow
+  inventories for the reviewed hooks, OpenCode command/plugin directories,
+  and six skill roots, plus the complete include lists and transformed tree
+  digests for `claude-codex-runtime-v1`
+  (`sha256:a2f4bbac93ba0359f7325621b1a7c7fb049c5b1244c21d9c0c37a89b47bc9894`)
+  and `opencode-plugin-v1`
+  (`sha256:70becde0867bbe3f293b28a56744e60950c62b8758cf837dfeb82f780d29a15b`);
+- descriptor-held shallow scans freeze exact child names, kinds, modes, and
+  stable identities before and after payload capture. Runtime adapter
+  directories are never recursively imported; the six already-accepted skill
+  snapshots are reused whole, with modes, empty directories, auxiliary files,
+  and confined links preserved and rebased;
+- `strict-canonical-instructions-v1` removes the embedded fallback, while
+  `one-shot-review-v1` emits review instructions without persisting review.
+  Both transforms bind bundle/version/revision/path/length/digest, normalize
+  invalid UTF-8 to the bundle error contract, reject BOM/CR/missing-final-LF
+  envelopes, require exact source structure, and match pinned output digests;
+- the two immutable payloads live only on the accepted `bundle:ponytail`
+  `SourceItem`; deleting the source after discovery cannot change any retained
+  bytes. Node semantic goldens prove canonical skill loading, missing-skill
+  failure, ordinary mode persistence, and one-shot review preservation for
+  absent, `lite`, `full`, `ultra`, and `off` state;
+- this slice remains deliberately dormant. The catalog still contains 13
+  items, the support source hash remains
+  `sha256:6cc78d369c83391cb9aee7a4f58fc626831782915bf1e0d01677a820863bdbb4`,
+  and deploy/status/verify still materialize and compare only `LICENSE`. No
+  hook file, runtime tree, OpenCode registration, or runtime capability claim
+  is emitted yet.
+
+The independent reviews are
+`/var/tmp/wg-ponytail-20260715/runtime-snapshot-correctness-review/report.md`,
+`/var/tmp/wg-ponytail-20260715/runtime-snapshot-security-review/report.md`, and
+`/var/tmp/wg-ponytail-20260715/runtime-snapshot-test-review/report.md`. Their
+final verdicts are clean. The test review's medium text-envelope finding and
+low complete-tree evidence gap are resolved by the transform and synthetic
+snapshot regressions described above; the security remediation review found
+no regression. Before activation, payload name, target applicability, logical
+root, and tree digest must enter first-class bundle provenance/hashing and be
+revalidated immediately before target writes.
+
+Final gates pass: 2,469 tests at 100% statement and branch coverage, strict
+mypy over 84 source files, Ruff format/lint, package build, Home Manager module
+and activation checks, and the complete seven-check `nix flake check`.
+
 Next:
 
-1. add the managed runtime and native OpenCode plugin adapters, including
-   live-path rendering, collision detection, transactional registration, and
-   rollback/fault-injection coverage;
-2. bind the pinned flake source through the package and Home Manager activation
-   path, prove immutable metadata parity, and only then enable the root bundle
-   declaration;
-3. finish operator/update documentation, reference parity, observation drain,
-   restack, final audits, and final fess before any separately authorized live
-   rollout.
+1. add the pure target bundle renderer/receipt contract and the local Claude
+   managed-runtime transaction, including first-class payload provenance,
+   health probes, collision detection, rollback, and fault injection;
+2. add local Codex activation, stable unsynced `PLUGIN_DATA`, and the remote
+   two-phase preseed/health/baseline-CAS switch using rendered live host paths;
+3. add native OpenCode registration and its remote transport/health contract;
+4. bind the pinned flake source through the package and Home Manager activation
+   path, enable the root declaration, finish operator/update documentation and
+   reference parity, drain observations, restack, and complete final audits and
+   final fess before any separately authorized live rollout.
 
 ## Gate attempt counts
 
@@ -427,6 +475,16 @@ Next:
   missing-parent coverage branch; after adding that regression, the final
   2,401-test 100%-branch derivation, strict mypy, Ruff, package, Home Manager,
   and seven-check flake gates are green.
+- Dormant runtime-source slice: the pre-review exact local gate passed 2,460
+  tests at 100% statement and branch coverage. Review then added explicit
+  persisted-`off`, malformed text-envelope, and complete synthetic skill-tree
+  cases; each changed failure signature was resolved and its focused gate is
+  green. The first two full-flake attempts exposed the same read-only Nix-store
+  mode assumption at two separate temporary-copy helpers before reaching
+  production code; both helpers now make their construction directory
+  owner-writable, and five focused cases against the actual store source pass.
+  The final 2,469-test coverage derivation, strict 84-file mypy derivation,
+  Ruff, package, Home Manager, and complete seven-check flake gate are green.
 - Rebase/restack gate: 0 consecutive failures.
 
 Reset a gate count when it passes or when its underlying failure signature

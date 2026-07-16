@@ -134,6 +134,7 @@
                 PONYTAIL_TEST_SOURCE = ponytail;
                 nativeBuildInputs = [
                   pythonWithDeps
+                  pkgs.nodejs
                   pkgs.rsync
                   pkgs.openssh
                 ];
@@ -159,6 +160,7 @@
             pythonWithDeps
             pkgs.ruff
             pkgs.lefthook
+            pkgs.nodejs
             # GNU rsync (not macOS openrsync) for remote deploys run from
             # the dev shell.
             pkgs.rsync

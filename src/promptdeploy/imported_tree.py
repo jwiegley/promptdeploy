@@ -7,7 +7,7 @@ import os
 import stat
 import unicodedata
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Literal, Protocol
 
@@ -116,6 +116,41 @@ class ImportedFileSnapshot:
     relative_path: str
     normalized_mode: int
     content: bytes
+
+
+DirectoryChildKind = Literal["directory", "file", "link"]
+
+
+@dataclass(frozen=True, slots=True)
+class ImportedDirectorySnapshot:
+    """One descriptor-checked shallow source-directory inventory."""
+
+    relative_path: str
+    normalized_mode: int
+    children: tuple[tuple[str, DirectoryChildKind], ...]
+    identity: tuple[int, ...] = field(default=(), repr=False)
+
+    def __post_init__(self) -> None:
+        _canonical_relative_path(self.relative_path, what="inventory path")
+        if (
+            _normalize_mode(self.normalized_mode, directory=True)
+            != self.normalized_mode
+        ):
+            raise ImportedSourceError("inventory directory mode is not normalized")
+        names = [name for name, _kind in self.children]
+        if names != sorted(names) or len(names) != len(set(names)):
+            raise ImportedSourceError("inventory children must be unique and sorted")
+        folded: dict[str, str] = {}
+        for name, kind in self.children:
+            _canonical_component(name, what="inventory child")
+            previous = folded.get(name.casefold())
+            if previous is not None and previous != name:
+                raise ImportedSourceError(
+                    f"inventory has a case-fold collision: {previous!r} and {name!r}"
+                )
+            folded[name.casefold()] = name
+            if kind not in {"directory", "file", "link"}:
+                raise ImportedSourceError(f"unsupported inventory node kind {kind!r}")
 
 
 @dataclass(slots=True)
@@ -634,8 +669,17 @@ def validate_imported_tree_snapshot(snapshot: ImportedTreeSnapshot) -> None:
         raise ImportedSourceError("snapshot exceeds the entry limit")
 
     entries = {entry.relative_path: entry for entry in snapshot.entries}
+    portable_paths: dict[str, str] = {}
     total_bytes = 0
     for entry in snapshot.entries:
+        folded = entry.relative_path.casefold()
+        previous = portable_paths.get(folded)
+        if previous is not None and previous != entry.relative_path:
+            raise ImportedSourceError(
+                f"snapshot has a case-fold collision: {previous!r} and "
+                f"{entry.relative_path!r}"
+            )
+        portable_paths[folded] = entry.relative_path
         if entry.content is not None:
             if len(entry.content) > MAX_FILE_BYTES:
                 raise ImportedSourceError("snapshot file exceeds the size limit")
@@ -801,6 +845,102 @@ class BundleSnapshotSession:
         ordered = tuple(sorted(entries, key=lambda entry: entry.relative_path))
         digest = framed_tree_sha256(ordered)
         return ImportedTreeSnapshot(relative_path, ordered, digest)
+
+    def scan_directory_shallow(self, relative_path: str) -> ImportedDirectorySnapshot:
+        """Capture names and node kinds without reading child file contents."""
+        self._require_open()
+        parts = _canonical_relative_path(relative_path, what="inventory path")
+        selected = _open_directory_path(self._root, parts)
+        try:
+            try:
+                before = os.fstat(selected)
+            except OSError as exc:
+                raise ImportedSourceError(
+                    "inventory directory could not be listed safely"
+                ) from exc
+            names = _bounded_directory_names(
+                selected,
+                limit=MAX_TREE_ENTRIES,
+                overflow_message="inventory directory exceeds the entry limit",
+            )
+            children: list[tuple[str, DirectoryChildKind]] = []
+            child_stats: dict[str, tuple[int, ...]] = {}
+            folded: dict[str, str] = {}
+            for name in names:
+                _canonical_component(name, what="inventory child")
+                previous = folded.get(name.casefold())
+                if previous is not None and previous != name:
+                    raise ImportedSourceError(
+                        f"inventory has a case-fold collision: {previous!r} and "
+                        f"{name!r}"
+                    )
+                folded[name.casefold()] = name
+                try:
+                    child = os.stat(name, dir_fd=selected, follow_symlinks=False)
+                except OSError as exc:
+                    raise ImportedSourceError(
+                        "inventory child is not safely readable"
+                    ) from exc
+                if stat.S_ISDIR(child.st_mode):
+                    kind: DirectoryChildKind = "directory"
+                elif stat.S_ISREG(child.st_mode):
+                    kind = "file"
+                elif stat.S_ISLNK(child.st_mode):
+                    kind = "link"
+                else:
+                    raise ImportedSourceError(
+                        "inventory contains a special filesystem node"
+                    )
+                children.append((name, kind))
+                child_stats[name] = _stable_stat_key(child)
+
+            after_names = _bounded_directory_names(
+                selected,
+                limit=len(names),
+                overflow_message="inventory directory changed during capture",
+            )
+            try:
+                after = os.fstat(selected)
+            except OSError as exc:
+                raise ImportedSourceError(
+                    "inventory directory changed during capture"
+                ) from exc
+            if names != after_names or _stable_stat_key(before) != _stable_stat_key(
+                after
+            ):
+                raise ImportedSourceError("inventory directory changed during capture")
+            for name in names:
+                try:
+                    after_child = os.stat(name, dir_fd=selected, follow_symlinks=False)
+                except OSError as exc:
+                    raise ImportedSourceError(
+                        "inventory directory changed during capture"
+                    ) from exc
+                if child_stats[name] != _stable_stat_key(after_child):
+                    raise ImportedSourceError(
+                        "inventory directory changed during capture"
+                    )
+        finally:
+            os.close(selected)
+        replacement = _open_directory_path(self._root, parts)
+        try:
+            try:
+                replacement_stat = os.fstat(replacement)
+            except OSError as exc:
+                raise ImportedSourceError(
+                    "inventory directory changed during capture"
+                ) from exc
+            if _stable_stat_key(before) != _stable_stat_key(replacement_stat):
+                raise ImportedSourceError("inventory directory changed during capture")
+        finally:
+            os.close(replacement)
+        self._audit_root()
+        return ImportedDirectorySnapshot(
+            relative_path,
+            _normalize_mode(before.st_mode, directory=True),
+            tuple(children),
+            _stable_stat_key(before),
+        )
 
     def close(self, *, audit: bool = True) -> None:
         if self._closed:

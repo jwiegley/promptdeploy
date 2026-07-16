@@ -1,4 +1,4 @@
-schema: 1
+schema: 2
 name: ponytail
 revision: 16f29800fd2681bdf24f3eb4ccffe38be3baec6b
 version:
@@ -76,3 +76,77 @@ exports:
         name: ponytail-help
         target_types: [gptel]
         transform: gptel-preset-v1
+runtime:
+  inventory:
+    hooks:
+      - claude-codex-hooks.json
+      - copilot-hooks.json
+      - ponytail-activate.js
+      - ponytail-config.js
+      - ponytail-instructions.js
+      - ponytail-mode-tracker.js
+      - ponytail-runtime.js
+      - ponytail-statusline.ps1
+      - ponytail-statusline.sh
+      - ponytail-subagent.js
+      - qoder-hooks.json
+    .opencode:
+      - command
+      - plugins
+    .opencode/command:
+      - ponytail-audit.md
+      - ponytail-debt.md
+      - ponytail-gain.md
+      - ponytail-help.md
+      - ponytail-review.md
+      - ponytail.md
+    .opencode/plugins:
+      - ponytail-frontmatter.cjs
+      - ponytail.mjs
+    skills:
+      - ponytail
+      - ponytail-audit
+      - ponytail-debt
+      - ponytail-gain
+      - ponytail-help
+      - ponytail-review
+  payloads:
+    - name: claude-codex-runtime-v1
+      target_types: [claude, codex]
+      include:
+        - hooks/claude-codex-hooks.json
+        - hooks/ponytail-activate.js
+        - hooks/ponytail-config.js
+        - hooks/ponytail-instructions.js
+        - hooks/ponytail-mode-tracker.js
+        - hooks/ponytail-runtime.js
+        - hooks/ponytail-statusline.sh
+        - hooks/ponytail-statusline.ps1
+        - hooks/ponytail-subagent.js
+        - skills/ponytail/SKILL.md
+      transforms:
+        hooks/ponytail-instructions.js: strict-canonical-instructions-v1
+        hooks/ponytail-mode-tracker.js: one-shot-review-v1
+      tree_sha256: sha256:a2f4bbac93ba0359f7325621b1a7c7fb049c5b1244c21d9c0c37a89b47bc9894
+    - name: opencode-plugin-v1
+      target_types: [opencode]
+      include:
+        - .opencode/command/ponytail.md
+        - .opencode/command/ponytail-review.md
+        - .opencode/command/ponytail-audit.md
+        - .opencode/command/ponytail-debt.md
+        - .opencode/command/ponytail-gain.md
+        - .opencode/command/ponytail-help.md
+        - .opencode/plugins/ponytail.mjs
+        - .opencode/plugins/ponytail-frontmatter.cjs
+        - hooks/ponytail-config.js
+        - hooks/ponytail-instructions.js
+        - skills/ponytail
+        - skills/ponytail-review
+        - skills/ponytail-audit
+        - skills/ponytail-debt
+        - skills/ponytail-gain
+        - skills/ponytail-help
+      transforms:
+        hooks/ponytail-instructions.js: strict-canonical-instructions-v1
+      tree_sha256: sha256:70becde0867bbe3f293b28a56744e60950c62b8758cf837dfeb82f780d29a15b

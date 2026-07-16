@@ -93,6 +93,15 @@ class SourceProvenance:
         return self.source.path if self.source is not None else self.primary_path
 
 
+@dataclass(frozen=True, slots=True)
+class BundlePayload:
+    """One accepted target-specific payload retained without source authority."""
+
+    name: str
+    target_types: frozenset[str]
+    imported_tree: ImportedTreeSnapshot
+
+
 @dataclass
 class SourceItem:
     """A discovered source item ready for deployment."""
@@ -109,6 +118,7 @@ class SourceItem:
     target_types: frozenset[str] | None = None
     requires: tuple[ItemIdentity, ...] = ()
     imported_tree: ImportedTreeSnapshot | None = None
+    bundle_payloads: tuple[BundlePayload, ...] = ()
 
 
 @dataclass

@@ -168,69 +168,96 @@ acceptance rule.
 
 ## Bundle model
 
-The committed manifest will name only logical source paths and selected
-exports. The exact schema may evolve during implementation, but it must retain
-these semantics:
+The committed `bundles/ponytail.yaml` manifest is a closed schema 2 document.
+It names only logical source paths, exact directory inventories, selected
+exports, and transformed payload digests. Its abridged shape is:
 
 ```yaml
-schema: 1
+schema: 2
 name: ponytail
-version: 4.8.4
 revision: 16f29800fd2681bdf24f3eb4ccffe38be3baec6b
-version_file: package.json
-license: LICENSE
+version: {value: "4.8.4", file: package.json, key: version}
+license:
+  spdx: MIT
+  file: LICENSE
+  sha256: sha256:fb1bc6909ac3ef82d5c22106e32ef682b0cff66788fa915fb9b53b15c9d2f3ab
 
 exports:
-  skills:
-    - skills/ponytail
-    - skills/ponytail-review
-    - skills/ponytail-audit
-    - skills/ponytail-debt
-    - skills/ponytail-gain
-    - skills/ponytail-help
-  gptel_prompts:
-    from_skills: true
-    transform: gptel-preset-v1
-  support_bundle:
+  - type: skill
     name: ponytail
-    include:
-      - LICENSE
-  claude_codex_runtime:
-    transforms:
-      hooks/ponytail-instructions.js: strict-canonical-instructions-v1
-      hooks/ponytail-mode-tracker.js: one-shot-review-v1
-    include:
-      - hooks/claude-codex-hooks.json
-      - hooks/ponytail-activate.js
-      - hooks/ponytail-config.js
-      - hooks/ponytail-instructions.js
-      - hooks/ponytail-mode-tracker.js
-      - hooks/ponytail-runtime.js
-      - hooks/ponytail-statusline.sh
-      - hooks/ponytail-statusline.ps1
-      - hooks/ponytail-subagent.js
-      - skills/ponytail/SKILL.md
-  opencode_plugin:
-    transforms:
-      hooks/ponytail-instructions.js: strict-canonical-instructions-v1
-    include:
-      - .opencode/command/ponytail.md
-      - .opencode/command/ponytail-review.md
-      - .opencode/command/ponytail-audit.md
-      - .opencode/command/ponytail-debt.md
-      - .opencode/command/ponytail-gain.md
-      - .opencode/command/ponytail-help.md
-      - .opencode/plugins/ponytail.mjs
-      - .opencode/plugins/ponytail-frontmatter.cjs
-      - hooks/ponytail-config.js
-      - hooks/ponytail-instructions.js
-      - skills/ponytail
-      - skills/ponytail-review
-      - skills/ponytail-audit
-      - skills/ponytail-debt
-      - skills/ponytail-gain
-      - skills/ponytail-help
+    path: skills/ponytail
+    tree_sha256: sha256:c8a4e819082fc6fe7eed764e8114e7cbc2b259dba7293b63e53e1aaa7f0682e6
+    skill_md_sha256: sha256:1316a2f3f95741d2300b116fe0c2d81ce4a9568656ed0a62643f54aaf09957f2
+    target_types: [claude, codex, droid]
+    projections:
+      - {type: prompt, name: ponytail, target_types: [gptel], transform: gptel-preset-v1}
+  # Five more exact skill/projection rows, in canonical Ponytail order.
+
+runtime:
+  inventory:
+    hooks:
+      - claude-codex-hooks.json
+      - copilot-hooks.json
+      - ponytail-activate.js
+      - ponytail-config.js
+      - ponytail-instructions.js
+      - ponytail-mode-tracker.js
+      - ponytail-runtime.js
+      - ponytail-statusline.ps1
+      - ponytail-statusline.sh
+      - ponytail-subagent.js
+      - qoder-hooks.json
+    .opencode: [command, plugins]
+    .opencode/command: [ponytail-audit.md, ponytail-debt.md, ponytail-gain.md, ponytail-help.md, ponytail-review.md, ponytail.md]
+    .opencode/plugins: [ponytail-frontmatter.cjs, ponytail.mjs]
+    skills: [ponytail, ponytail-audit, ponytail-debt, ponytail-gain, ponytail-help, ponytail-review]
+  payloads:
+    - name: claude-codex-runtime-v1
+      target_types: [claude, codex]
+      tree_sha256: sha256:a2f4bbac93ba0359f7325621b1a7c7fb049c5b1244c21d9c0c37a89b47bc9894
+      transforms:
+        hooks/ponytail-instructions.js: strict-canonical-instructions-v1
+        hooks/ponytail-mode-tracker.js: one-shot-review-v1
+      include:
+        - hooks/claude-codex-hooks.json
+        - hooks/ponytail-activate.js
+        - hooks/ponytail-config.js
+        - hooks/ponytail-instructions.js
+        - hooks/ponytail-mode-tracker.js
+        - hooks/ponytail-runtime.js
+        - hooks/ponytail-statusline.sh
+        - hooks/ponytail-statusline.ps1
+        - hooks/ponytail-subagent.js
+        - skills/ponytail/SKILL.md
+    - name: opencode-plugin-v1
+      target_types: [opencode]
+      tree_sha256: sha256:70becde0867bbe3f293b28a56744e60950c62b8758cf837dfeb82f780d29a15b
+      transforms:
+        hooks/ponytail-instructions.js: strict-canonical-instructions-v1
+      include:
+        - .opencode/command/ponytail.md
+        - .opencode/command/ponytail-review.md
+        - .opencode/command/ponytail-audit.md
+        - .opencode/command/ponytail-debt.md
+        - .opencode/command/ponytail-gain.md
+        - .opencode/command/ponytail-help.md
+        - .opencode/plugins/ponytail.mjs
+        - .opencode/plugins/ponytail-frontmatter.cjs
+        - hooks/ponytail-config.js
+        - hooks/ponytail-instructions.js
+        - skills/ponytail
+        - skills/ponytail-review
+        - skills/ponytail-audit
+        - skills/ponytail-debt
+        - skills/ponytail-gain
+        - skills/ponytail-help
 ```
+
+Schema 2 capture is deliberately dormant at the current work-unit boundary:
+the two immutable payload snapshots are retained on `bundle:ponytail`, but
+deploy/status/verify still materialize and compare only the existing LICENSE
+support tree. Native runtime installation and registration begin only after
+the target transaction and remote live-path slice lands.
 
 Every include path must be canonical and relative. Discovery must reject
 absolute paths, `.`/`..`, broken or external links, directory links, special

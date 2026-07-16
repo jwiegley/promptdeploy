@@ -21,20 +21,28 @@ from .filetags import parse_filetags
 from .frontmatter import FrontmatterError, parse_frontmatter
 from .imported_tree import (
     BundleSnapshotSession,
+    DirectoryChildKind,
+    ImportedDirectorySnapshot,
+    ImportedFileSnapshot,
     ImportedTreeEntry,
     ImportedTreeSnapshot,
+    framed_tree_sha256,
     validate_imported_tree_snapshot,
 )
 from .manifest import ManifestSource
 from .ponytail import (
+    CLAUDE_CODEX_RUNTIME_PAYLOAD,
     GPTEL_PRESET_TRANSFORM,
+    ONE_SHOT_REVIEW_TRANSFORM,
+    OPENCODE_PLUGIN_PAYLOAD,
     PONYTAIL_ALL_TARGET_TYPES,
     PONYTAIL_NAMES,
     PONYTAIL_REVISION,
     PONYTAIL_VERSION,
+    STRICT_CANONICAL_INSTRUCTIONS_TRANSFORM,
 )
-from .ponytail_transforms import PONYTAIL_TRANSFORMS
-from .source import ItemIdentity, SourceItem, SourceProvenance
+from .ponytail_transforms import PONYTAIL_RUNTIME_TRANSFORMS, PONYTAIL_TRANSFORMS
+from .source import BundlePayload, ItemIdentity, SourceItem, SourceProvenance
 from .yamlutil import load_unique_yaml
 
 SUPPORT_IDENTITY: ItemIdentity = ("bundle", "ponytail")
@@ -50,6 +58,99 @@ _READ_FLAGS = (
     | getattr(os, "O_CLOEXEC", 0)
     | getattr(os, "O_NOFOLLOW", 0)
     | getattr(os, "O_NONBLOCK", 0)
+)
+
+_RUNTIME_INVENTORY: tuple[tuple[str, tuple[str, ...], str], ...] = (
+    (
+        "hooks",
+        (
+            "claude-codex-hooks.json",
+            "copilot-hooks.json",
+            "ponytail-activate.js",
+            "ponytail-config.js",
+            "ponytail-instructions.js",
+            "ponytail-mode-tracker.js",
+            "ponytail-runtime.js",
+            "ponytail-statusline.ps1",
+            "ponytail-statusline.sh",
+            "ponytail-subagent.js",
+            "qoder-hooks.json",
+        ),
+        "file",
+    ),
+    (".opencode", ("command", "plugins"), "directory"),
+    (
+        ".opencode/command",
+        (
+            "ponytail-audit.md",
+            "ponytail-debt.md",
+            "ponytail-gain.md",
+            "ponytail-help.md",
+            "ponytail-review.md",
+            "ponytail.md",
+        ),
+        "file",
+    ),
+    (
+        ".opencode/plugins",
+        ("ponytail-frontmatter.cjs", "ponytail.mjs"),
+        "file",
+    ),
+    ("skills", tuple(sorted(PONYTAIL_NAMES)), "directory"),
+)
+
+_CLAUDE_CODEX_RUNTIME_INCLUDE = (
+    "hooks/claude-codex-hooks.json",
+    "hooks/ponytail-activate.js",
+    "hooks/ponytail-config.js",
+    "hooks/ponytail-instructions.js",
+    "hooks/ponytail-mode-tracker.js",
+    "hooks/ponytail-runtime.js",
+    "hooks/ponytail-statusline.sh",
+    "hooks/ponytail-statusline.ps1",
+    "hooks/ponytail-subagent.js",
+    "skills/ponytail/SKILL.md",
+)
+_OPENCODE_RUNTIME_INCLUDE = (
+    ".opencode/command/ponytail.md",
+    ".opencode/command/ponytail-review.md",
+    ".opencode/command/ponytail-audit.md",
+    ".opencode/command/ponytail-debt.md",
+    ".opencode/command/ponytail-gain.md",
+    ".opencode/command/ponytail-help.md",
+    ".opencode/plugins/ponytail.mjs",
+    ".opencode/plugins/ponytail-frontmatter.cjs",
+    "hooks/ponytail-config.js",
+    "hooks/ponytail-instructions.js",
+    *(f"skills/{name}" for name in PONYTAIL_NAMES),
+)
+
+_RUNTIME_SPECS = (
+    (
+        CLAUDE_CODEX_RUNTIME_PAYLOAD,
+        ("claude", "codex"),
+        _CLAUDE_CODEX_RUNTIME_INCLUDE,
+        (
+            (
+                "hooks/ponytail-instructions.js",
+                STRICT_CANONICAL_INSTRUCTIONS_TRANSFORM,
+            ),
+            ("hooks/ponytail-mode-tracker.js", ONE_SHOT_REVIEW_TRANSFORM),
+        ),
+        "runtime/claude-codex",
+    ),
+    (
+        OPENCODE_PLUGIN_PAYLOAD,
+        ("opencode",),
+        _OPENCODE_RUNTIME_INCLUDE,
+        (
+            (
+                "hooks/ponytail-instructions.js",
+                STRICT_CANONICAL_INSTRUCTIONS_TRANSFORM,
+            ),
+        ),
+        "runtime/opencode",
+    ),
 )
 
 
@@ -91,13 +192,30 @@ class BundleExport:
 
 
 @dataclass(frozen=True, slots=True)
+class BundleRuntimePayload:
+    name: str
+    target_types: frozenset[str]
+    include: tuple[str, ...]
+    transforms: tuple[tuple[str, str], ...]
+    tree_sha256: str
+    logical_root: str
+
+
+@dataclass(frozen=True, slots=True)
+class BundleRuntime:
+    inventory: tuple[tuple[str, tuple[str, ...], str], ...]
+    payloads: tuple[BundleRuntimePayload, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class BundleManifest:
-    schema: Literal[1]
+    schema: Literal[2]
     name: Literal["ponytail"]
     revision: str
     version: BundleVersion
     license: BundleLicense
     exports: tuple[BundleExport, ...]
+    runtime: BundleRuntime
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +295,25 @@ def _exact_string_list(
     if value != list(expected):
         raise BundleSchemaError(f"{where} must be exactly [{', '.join(expected)}]")
     return frozenset(value)
+
+
+def _exact_path_list(
+    value: object,
+    *,
+    expected: Sequence[str],
+    where: str,
+) -> tuple[str, ...]:
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise BundleSchemaError(f"{where} must be a list of paths")
+    paths = tuple(
+        _canonical_relative_path(item, where=f"{where}[{index}]")
+        for index, item in enumerate(value)
+    )
+    if len(paths) != len(set(paths)):
+        raise BundleSchemaError(f"{where} must not contain duplicates")
+    if paths != tuple(expected):
+        raise BundleSchemaError(f"{where} is not the reviewed ordered path list")
+    return paths
 
 
 def _stable_file_key(value: os.stat_result) -> tuple[int, ...]:
@@ -264,14 +401,22 @@ def load_bundle_manifest(bundle: BundleConfig) -> BundleManifest:
     root = _mapping(raw, where=f"{path} root")
     _keys(
         root,
-        required={"schema", "name", "revision", "version", "license", "exports"},
+        required={
+            "schema",
+            "name",
+            "revision",
+            "version",
+            "license",
+            "exports",
+            "runtime",
+        },
         where=f"{path} root",
     )
-    if type(root["schema"]) is not int or root["schema"] != 1:
-        raise BundleSchemaError(f"{path}: schema must be integer 1")
+    if type(root["schema"]) is not int or root["schema"] != 2:
+        raise BundleSchemaError(f"{path}: schema must be integer 2")
     name = _canonical_name(root["name"], where=f"{path} name")
     if name != bundle.name or name != "ponytail":
-        raise BundleSchemaError(f"{path}: schema 1 is only for bundle 'ponytail'")
+        raise BundleSchemaError(f"{path}: schema 2 is only for bundle 'ponytail'")
     revision = _trimmed_string(root["revision"], where=f"{path} revision")
     if revision != PONYTAIL_REVISION:
         raise BundleSchemaError(f"{path}: revision is not the reviewed Ponytail pin")
@@ -295,7 +440,7 @@ def load_bundle_manifest(bundle: BundleConfig) -> BundleManifest:
     raw_license = _mapping(root["license"], where=f"{path} license")
     _keys(raw_license, required={"spdx", "file", "sha256"}, where=f"{path} license")
     if raw_license["spdx"] != "MIT":
-        raise BundleSchemaError(f"{path}: schema 1 supports exactly SPDX MIT")
+        raise BundleSchemaError(f"{path}: schema 2 supports exactly SPDX MIT")
     license_info = BundleLicense(
         spdx="MIT",
         file=_canonical_relative_path(
@@ -387,13 +532,102 @@ def load_bundle_manifest(bundle: BundleConfig) -> BundleManifest:
                 ),
             )
         )
+
+    raw_runtime = _mapping(root["runtime"], where=f"{path} runtime")
+    _keys(
+        raw_runtime,
+        required={"inventory", "payloads"},
+        where=f"{path} runtime",
+    )
+    raw_inventory = _mapping(
+        raw_runtime["inventory"], where=f"{path} runtime.inventory"
+    )
+    _keys(
+        raw_inventory,
+        required={directory for directory, _children, _kind in _RUNTIME_INVENTORY},
+        where=f"{path} runtime.inventory",
+    )
+    for directory, children, _kind in _RUNTIME_INVENTORY:
+        _exact_string_list(
+            raw_inventory[directory],
+            expected=children,
+            where=f"{path} runtime.inventory.{directory}",
+        )
+
+    raw_payloads = raw_runtime["payloads"]
+    if not isinstance(raw_payloads, list) or len(raw_payloads) != len(_RUNTIME_SPECS):
+        raise BundleSchemaError(
+            f"{path}: runtime.payloads must contain exactly two entries"
+        )
+    runtime_payloads: list[BundleRuntimePayload] = []
+    for index, (raw_payload, spec) in enumerate(
+        zip(raw_payloads, _RUNTIME_SPECS, strict=True)
+    ):
+        (
+            expected_name,
+            expected_targets,
+            expected_include,
+            expected_transforms,
+            root_name,
+        ) = spec
+        where = f"{path} runtime.payloads[{index}]"
+        value = _mapping(raw_payload, where=where)
+        _keys(
+            value,
+            required={
+                "name",
+                "target_types",
+                "include",
+                "transforms",
+                "tree_sha256",
+            },
+            where=where,
+        )
+        payload_name = _canonical_name(value["name"], where=f"{where}.name")
+        if payload_name != expected_name:
+            raise BundleSchemaError(f"{where}.name is not in canonical order")
+        targets = _exact_string_list(
+            value["target_types"],
+            expected=expected_targets,
+            where=f"{where}.target_types",
+        )
+        includes = _exact_path_list(
+            value["include"],
+            expected=expected_include,
+            where=f"{where}.include",
+        )
+        raw_transforms = _mapping(value["transforms"], where=f"{where}.transforms")
+        _keys(
+            raw_transforms,
+            required={transform_path for transform_path, _name in expected_transforms},
+            where=f"{where}.transforms",
+        )
+        for transform_path, transform_name in expected_transforms:
+            if raw_transforms[transform_path] != transform_name:
+                raise BundleSchemaError(
+                    f"{where}.transforms.{transform_path} must be {transform_name}"
+                )
+        runtime_payloads.append(
+            BundleRuntimePayload(
+                name=payload_name,
+                target_types=targets,
+                include=includes,
+                transforms=expected_transforms,
+                tree_sha256=_sha256(value["tree_sha256"], where=f"{where}.tree_sha256"),
+                logical_root=root_name,
+            )
+        )
     return BundleManifest(
-        schema=1,
+        schema=2,
         name="ponytail",
         revision=revision,
         version=version,
         license=license_info,
         exports=tuple(exports),
+        runtime=BundleRuntime(
+            inventory=_RUNTIME_INVENTORY,
+            payloads=tuple(runtime_payloads),
+        ),
     )
 
 
@@ -482,37 +716,208 @@ def _skill_md(entries: Sequence[ImportedTreeEntry], logical_root: str) -> bytes:
     return content
 
 
+def _capture_runtime_inventory(
+    session: BundleSnapshotSession,
+    manifest: BundleManifest,
+) -> tuple[ImportedDirectorySnapshot, ...]:
+    snapshots: list[ImportedDirectorySnapshot] = []
+    for directory, children, child_kind in manifest.runtime.inventory:
+        snapshot = session.scan_directory_shallow(directory)
+        expected = tuple(
+            (child, cast(DirectoryChildKind, child_kind)) for child in children
+        )
+        if snapshot.children != expected:
+            raise BundleSchemaError(
+                f"{directory}: runtime inventory mismatch; expected "
+                f"{expected!r}, got {snapshot.children!r}"
+            )
+        snapshots.append(snapshot)
+    return tuple(snapshots)
+
+
+def _snapshot_regular_file(
+    snapshot: ImportedTreeSnapshot,
+    relative_path: str,
+) -> ImportedFileSnapshot:
+    matches = [
+        entry for entry in snapshot.entries if entry.relative_path == relative_path
+    ]
+    if len(matches) != 1 or matches[0].kind not in {"file", "link"}:
+        raise BundleSchemaError(
+            f"{snapshot.logical_root}/{relative_path}: selected runtime file is missing"
+        )
+    entry = matches[0]
+    assert entry.content is not None
+    return ImportedFileSnapshot(
+        f"{snapshot.logical_root}/{relative_path}",
+        entry.normalized_mode,
+        entry.content,
+    )
+
+
+def _assemble_runtime_snapshot(
+    runtime: BundleRuntimePayload,
+    files: Mapping[str, ImportedFileSnapshot],
+    skill_snapshots: Mapping[str, ImportedTreeSnapshot],
+    directory_modes: Mapping[str, int],
+    *,
+    bundle_name: str,
+    version: str,
+    revision: str,
+) -> ImportedTreeSnapshot:
+    entries: dict[str, ImportedTreeEntry] = {}
+    portable_paths: dict[str, str] = {}
+
+    def add(entry: ImportedTreeEntry) -> None:
+        previous = entries.get(entry.relative_path)
+        if previous is not None:
+            if previous != entry:
+                raise BundleSchemaError(
+                    f"{runtime.name}: conflicting runtime path {entry.relative_path!r}"
+                )
+            return
+        folded = entry.relative_path.casefold()
+        previous_path = portable_paths.get(folded)
+        if previous_path is not None and previous_path != entry.relative_path:
+            raise BundleSchemaError(
+                f"{runtime.name}: runtime case-fold collision between "
+                f"{previous_path!r} and {entry.relative_path!r}"
+            )
+        portable_paths[folded] = entry.relative_path
+        entries[entry.relative_path] = entry
+
+    def ensure_directory(relative_path: str) -> None:
+        if relative_path != "." and "/" in relative_path:
+            ensure_directory(relative_path.rsplit("/", 1)[0])
+        elif relative_path != ".":
+            ensure_directory(".")
+        add(
+            ImportedTreeEntry(
+                "directory",
+                relative_path,
+                directory_modes.get(relative_path, 0o755),
+            )
+        )
+
+    ensure_directory(".")
+    transforms = dict(runtime.transforms)
+    for include in runtime.include:
+        skill_snapshot = skill_snapshots.get(include)
+        if skill_snapshot is not None:
+            parent = include.rsplit("/", 1)[0]
+            ensure_directory(parent)
+            for source_entry in skill_snapshot.entries:
+                destination = (
+                    include
+                    if source_entry.relative_path == "."
+                    else f"{include}/{source_entry.relative_path}"
+                )
+                link_target = source_entry.link_target
+                if link_target is not None:
+                    link_target = f"{include}/{link_target}"
+                add(
+                    ImportedTreeEntry(
+                        source_entry.kind,
+                        destination,
+                        source_entry.normalized_mode,
+                        source_entry.content,
+                        link_target,
+                    )
+                )
+            continue
+
+        source_file = files.get(include)
+        if source_file is None:
+            raise BundleSchemaError(f"{runtime.name}: missing runtime input {include}")
+        parent = include.rsplit("/", 1)[0] if "/" in include else "."
+        ensure_directory(parent)
+        content = source_file.content
+        transform = transforms.get(include)
+        if transform is not None:
+            content = PONYTAIL_RUNTIME_TRANSFORMS[transform](
+                content,
+                bundle_name=bundle_name,
+                version=version,
+                revision=revision,
+                logical_path=include,
+            )
+        add(ImportedTreeEntry("file", include, source_file.normalized_mode, content))
+
+    ordered = tuple(sorted(entries.values(), key=lambda entry: entry.relative_path))
+    snapshot = ImportedTreeSnapshot(
+        runtime.logical_root,
+        ordered,
+        framed_tree_sha256(ordered),
+    )
+    validate_imported_tree_snapshot(snapshot)
+    if snapshot.tree_sha256 != runtime.tree_sha256:
+        raise BundleSchemaError(
+            f"{runtime.name}: transformed tree digest mismatch; expected "
+            f"{runtime.tree_sha256}, got {snapshot.tree_sha256}"
+        )
+    return snapshot
+
+
+def _capture_runtime_payloads(
+    session: BundleSnapshotSession,
+    manifest: BundleManifest,
+    skill_snapshots: Mapping[str, ImportedTreeSnapshot],
+    inventory: Sequence[ImportedDirectorySnapshot],
+) -> tuple[BundlePayload, ...]:
+    directory_modes = {
+        snapshot.relative_path: snapshot.normalized_mode for snapshot in inventory
+    }
+    for skill_root, snapshot in skill_snapshots.items():
+        root_entry = next(
+            entry
+            for entry in snapshot.entries
+            if entry.relative_path == "." and entry.kind == "directory"
+        )
+        directory_modes[skill_root] = root_entry.normalized_mode
+    files: dict[str, ImportedFileSnapshot] = {}
+    skill_roots = frozenset(skill_snapshots)
+    selected_files = {
+        include
+        for runtime in manifest.runtime.payloads
+        for include in runtime.include
+        if include not in skill_roots
+    }
+    for relative_path in sorted(selected_files):
+        if relative_path == "skills/ponytail/SKILL.md":
+            files[relative_path] = _snapshot_regular_file(
+                skill_snapshots["skills/ponytail"], "SKILL.md"
+            )
+        else:
+            files[relative_path] = session.read_regular(relative_path)
+
+    payloads: list[BundlePayload] = []
+    for runtime in manifest.runtime.payloads:
+        snapshot = _assemble_runtime_snapshot(
+            runtime,
+            files,
+            skill_snapshots,
+            directory_modes,
+            bundle_name=manifest.name,
+            version=manifest.version.value,
+            revision=manifest.revision,
+        )
+        payloads.append(BundlePayload(runtime.name, runtime.target_types, snapshot))
+    return tuple(payloads)
+
+
 def discover_bundle_items(bundle: BundleConfig) -> tuple[SourceItem, ...]:
     """Emit the support item, six frozen skill trees, and six GPTel prompts."""
     manifest = load_bundle_manifest(bundle)
     root = bundle.binding.source_root
     with BundleSnapshotSession(root) as session:
+        inventory_before = _capture_runtime_inventory(session, manifest)
         license_content = _validate_metadata_files(session, manifest)
         support_digest = _content_sha256(license_content)
-        items: list[SourceItem] = [
-            SourceItem(
-                item_type="bundle",
-                name="ponytail",
-                path=root / manifest.license.file,
-                metadata={
-                    "spdx": manifest.license.spdx,
-                    "file": manifest.license.file,
-                    "sha256": manifest.license.sha256,
-                },
-                content=license_content,
-                provenance=SourceProvenance.imported(
-                    _manifest_source(
-                        bundle,
-                        manifest,
-                        path=manifest.license.file,
-                    ),
-                    input_sha256=support_digest,
-                ),
-                target_types=PONYTAIL_ALL_TARGET_TYPES,
-            )
-        ]
+        items: list[SourceItem] = []
+        skill_snapshots: dict[str, ImportedTreeSnapshot] = {}
         for export in manifest.exports:
             snapshot = session.scan_tree(export.path)
+            skill_snapshots[export.path] = snapshot
             if snapshot.tree_sha256 != export.tree_sha256:
                 raise BundleSchemaError(
                     f"{export.path}: tree digest mismatch; expected "
@@ -586,6 +991,39 @@ def discover_bundle_items(bundle: BundleConfig) -> tuple[SourceItem, ...]:
                         requires=SUPPORT_REQUIREMENT,
                     )
                 )
+        payloads = _capture_runtime_payloads(
+            session,
+            manifest,
+            skill_snapshots,
+            inventory_before,
+        )
+        inventory_after = _capture_runtime_inventory(session, manifest)
+        if inventory_after != inventory_before:
+            raise BundleSchemaError("runtime inventory changed during capture")
+        items.insert(
+            0,
+            SourceItem(
+                item_type="bundle",
+                name="ponytail",
+                path=root / manifest.license.file,
+                metadata={
+                    "spdx": manifest.license.spdx,
+                    "file": manifest.license.file,
+                    "sha256": manifest.license.sha256,
+                },
+                content=license_content,
+                provenance=SourceProvenance.imported(
+                    _manifest_source(
+                        bundle,
+                        manifest,
+                        path=manifest.license.file,
+                    ),
+                    input_sha256=support_digest,
+                ),
+                target_types=PONYTAIL_ALL_TARGET_TYPES,
+                bundle_payloads=payloads,
+            ),
+        )
     return tuple(items)
 
 
@@ -894,6 +1332,15 @@ def catalog_summary(items: Sequence[SourceItem]) -> dict[str, object]:
                     if item.provenance.source is not None
                     else None
                 ),
+                "bundle_payloads": [
+                    {
+                        "name": payload.name,
+                        "target_types": sorted(payload.target_types),
+                        "logical_root": payload.imported_tree.logical_root,
+                        "tree_sha256": payload.imported_tree.tree_sha256,
+                    }
+                    for payload in item.bundle_payloads
+                ],
             }
             for item in items
         ],

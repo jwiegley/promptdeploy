@@ -71,6 +71,28 @@ OUTPUTS = {
         "25660c52476af639f2c62f42dc95967b6ceb62e1fed38f563b0bc113ca66f16c",
     ),
 }
+RUNTIME_INPUTS = {
+    "strict-canonical-instructions-v1": (
+        "hooks/ponytail-instructions.js",
+        5487,
+        "23c050103f28dbe6bad953ae21d98cd06d720a20f33d4716e9de419f947d495e",
+    ),
+    "one-shot-review-v1": (
+        "hooks/ponytail-mode-tracker.js",
+        5318,
+        "5d1a960ff01b73f651ec0242052a8cf1e064cb88147806bf6e13f92798aca251",
+    ),
+}
+RUNTIME_OUTPUTS = {
+    "strict-canonical-instructions-v1": (
+        2309,
+        "1bd4b14c25a1d4b3b88025d4952286e2c248afc907a9856edac1e4d2eaa70801",
+    ),
+    "one-shot-review-v1": (
+        5440,
+        "8b5a17fd5dd24204090dcc2dfbff605c47e21d5dac3274cd48023c1e62c2fe6e",
+    ),
+}
 SCOPE = (
     "> **GPTel preset scope:** Apply this prompt only to the current invocation.\n"
     "> This is a prompt preset, not a native skill: it provides no lifecycle\n"
@@ -86,6 +108,237 @@ def ponytail_root() -> Path:
     if not root.is_dir():
         pytest.fail(f"pinned Ponytail source is unavailable: {root}")
     return root
+
+
+def _render_runtime(root: Path, transform: str) -> bytes:
+    logical_path, _size, _digest = RUNTIME_INPUTS[transform]
+    return transforms.PONYTAIL_RUNTIME_TRANSFORMS[transform](
+        (root / logical_path).read_bytes(),
+        bundle_name="ponytail",
+        version=PONYTAIL_VERSION,
+        revision=PONYTAIL_REVISION,
+        logical_path=logical_path,
+    )
+
+
+@pytest.mark.parametrize("transform", tuple(RUNTIME_INPUTS))
+def test_runtime_transform_byte_and_semantic_goldens(
+    ponytail_root: Path,
+    transform: str,
+) -> None:
+    logical_path, input_size, input_digest = RUNTIME_INPUTS[transform]
+    source = (ponytail_root / logical_path).read_bytes()
+    assert (len(source), hashlib.sha256(source).hexdigest()) == (
+        input_size,
+        input_digest,
+    )
+    output = _render_runtime(ponytail_root, transform)
+    assert (len(output), hashlib.sha256(output).hexdigest()) == RUNTIME_OUTPUTS[
+        transform
+    ]
+    text = output.decode("utf-8")
+    assert "\r" not in text
+    if transform == "strict-canonical-instructions-v1":
+        assert "getFallbackInstructions" not in text
+        assert "return getFallbackInstructions" not in text
+        assert "fs.readFileSync(SKILL_PATH, 'utf8')" in text
+    else:
+        review_branch = text.split("if (cmd === '/ponytail-review'", 1)[1].split(
+            "} else if (cmd === '/ponytail'", 1
+        )[0]
+        assert "getPonytailInstructions('review')" in review_branch
+        assert "return;" in review_branch
+        assert "setMode" not in review_branch
+        assert "clearMode" not in review_branch
+        assert "writeDefaultMode" not in review_branch
+
+
+@pytest.mark.parametrize(
+    ("keyword", "value", "message"),
+    [
+        ("bundle_name", "other", "requires bundle ponytail"),
+        ("version", "4.8.5", "requires ponytail@4.8.4"),
+        ("revision", "0" * 40, "requires revision"),
+    ],
+)
+def test_runtime_transform_rejects_wrong_source_identity(
+    ponytail_root: Path,
+    keyword: str,
+    value: str,
+    message: str,
+) -> None:
+    transform = "strict-canonical-instructions-v1"
+    logical_path, _size, _digest = RUNTIME_INPUTS[transform]
+    kwargs = {
+        "bundle_name": "ponytail",
+        "version": PONYTAIL_VERSION,
+        "revision": PONYTAIL_REVISION,
+        "logical_path": logical_path,
+    }
+    kwargs[keyword] = value
+    with pytest.raises(BundleSchemaError, match=message):
+        transforms.PONYTAIL_RUNTIME_TRANSFORMS[transform](
+            (ponytail_root / logical_path).read_bytes(),
+            **kwargs,
+        )
+
+
+def test_runtime_transform_rejects_path_length_and_digest_drift(
+    ponytail_root: Path,
+) -> None:
+    transform = "strict-canonical-instructions-v1"
+    logical_path, _size, _digest = RUNTIME_INPUTS[transform]
+    source = (ponytail_root / logical_path).read_bytes()
+    kwargs = {
+        "bundle_name": "ponytail",
+        "version": PONYTAIL_VERSION,
+        "revision": PONYTAIL_REVISION,
+    }
+    with pytest.raises(BundleSchemaError, match="requires input"):
+        transforms.PONYTAIL_RUNTIME_TRANSFORMS[transform](
+            source,
+            logical_path="hooks/other.js",
+            **kwargs,
+        )
+    with pytest.raises(BundleSchemaError, match="length mismatch"):
+        transforms.PONYTAIL_RUNTIME_TRANSFORMS[transform](
+            source + b"\n",
+            logical_path=logical_path,
+            **kwargs,
+        )
+    changed = bytes([source[0] ^ 1]) + source[1:]
+    with pytest.raises(BundleSchemaError, match="digest mismatch"):
+        transforms.PONYTAIL_RUNTIME_TRANSFORMS[transform](
+            changed,
+            logical_path=logical_path,
+            **kwargs,
+        )
+
+
+@pytest.mark.parametrize(
+    ("transform", "old", "new", "message"),
+    [
+        (
+            "strict-canonical-instructions-v1",
+            b"function getFallbackInstructions",
+            b"function getFallbackInstructionx",
+            "embedded fallback function",
+        ),
+        (
+            "one-shot-review-v1",
+            b"mode = 'review';",
+            b"mode = 'reviex';",
+            "persistent review branch",
+        ),
+    ],
+)
+def test_runtime_transform_structure_guards_survive_digest_guard_update(
+    ponytail_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    transform: str,
+    old: bytes,
+    new: bytes,
+    message: str,
+) -> None:
+    logical_path, _size, _digest = RUNTIME_INPUTS[transform]
+    changed = (ponytail_root / logical_path).read_bytes().replace(old, new, 1)
+    guard = transforms._RUNTIME_TRANSFORM_GUARDS[transform]
+    monkeypatch.setitem(
+        transforms._RUNTIME_TRANSFORM_GUARDS,
+        transform,
+        replace(
+            guard,
+            byte_count=len(changed),
+            sha256=f"sha256:{hashlib.sha256(changed).hexdigest()}",
+        ),
+    )
+    with pytest.raises(BundleSchemaError, match=message):
+        transforms.PONYTAIL_RUNTIME_TRANSFORMS[transform](
+            changed,
+            bundle_name="ponytail",
+            version=PONYTAIL_VERSION,
+            revision=PONYTAIL_REVISION,
+            logical_path=logical_path,
+        )
+
+
+@pytest.mark.parametrize("transform", tuple(RUNTIME_INPUTS))
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        ("invalid-utf8", "must be valid UTF-8"),
+        ("bom", "must not start with a UTF-8 BOM"),
+        ("crlf", "must use LF line endings"),
+        ("missing-final-lf", "must end with an LF"),
+    ],
+)
+def test_runtime_transform_text_envelope_survives_digest_guard_update(
+    ponytail_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    transform: str,
+    mutation: str,
+    message: str,
+) -> None:
+    logical_path, _size, _digest = RUNTIME_INPUTS[transform]
+    source = (ponytail_root / logical_path).read_bytes()
+    if mutation == "invalid-utf8":
+        changed = b"\xff" + source[1:]
+    elif mutation == "bom":
+        changed = b"\xef\xbb\xbf" + source
+    elif mutation == "crlf":
+        changed = source.replace(b"\n", b"\r\n", 1)
+    else:
+        assert mutation == "missing-final-lf"
+        assert source.endswith(b"\n")
+        changed = source[:-1]
+    guard = transforms._RUNTIME_TRANSFORM_GUARDS[transform]
+    monkeypatch.setitem(
+        transforms._RUNTIME_TRANSFORM_GUARDS,
+        transform,
+        replace(
+            guard,
+            byte_count=len(changed),
+            sha256=f"sha256:{hashlib.sha256(changed).hexdigest()}",
+        ),
+    )
+
+    with pytest.raises(transforms.PonytailTransformError, match=message):
+        transforms.PONYTAIL_RUNTIME_TRANSFORMS[transform](
+            changed,
+            bundle_name="ponytail",
+            version=PONYTAIL_VERSION,
+            revision=PONYTAIL_REVISION,
+            logical_path=logical_path,
+        )
+
+
+def test_strict_transform_rejects_a_surviving_fallback_reference(
+    ponytail_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transform = "strict-canonical-instructions-v1"
+    logical_path, _size, _digest = RUNTIME_INPUTS[transform]
+    source = (ponytail_root / logical_path).read_bytes()
+    changed = source + b"\n// getFallbackInstructions must not survive\n"
+    guard = transforms._RUNTIME_TRANSFORM_GUARDS[transform]
+    monkeypatch.setitem(
+        transforms._RUNTIME_TRANSFORM_GUARDS,
+        transform,
+        replace(
+            guard,
+            byte_count=len(changed),
+            sha256=f"sha256:{hashlib.sha256(changed).hexdigest()}",
+        ),
+    )
+
+    with pytest.raises(BundleSchemaError, match="survived transform"):
+        transforms.PONYTAIL_RUNTIME_TRANSFORMS[transform](
+            changed,
+            bundle_name="ponytail",
+            version=PONYTAIL_VERSION,
+            revision=PONYTAIL_REVISION,
+            logical_path=logical_path,
+        )
 
 
 def _source(root: Path, name: str) -> bytes:

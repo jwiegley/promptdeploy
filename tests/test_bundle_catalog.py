@@ -21,6 +21,7 @@ from promptdeploy.bundles import (
     BundleSourceBinding,
 )
 from promptdeploy.imported_tree import (
+    ImportedFileSnapshot,
     ImportedTreeEntry,
     ImportedTreeSnapshot,
     capture_imported_tree,
@@ -100,8 +101,11 @@ def _minimal_source(source: Path, destination: Path) -> Path:
     shutil.copy2(source / "package.json", destination / "package.json")
     shutil.copy2(source / "LICENSE", destination / "LICENSE")
     (destination / "skills").mkdir()
+    (destination / "skills").chmod((source / "skills").stat().st_mode | 0o700)
     for name in PONYTAIL_NAMES:
         shutil.copytree(source / "skills" / name, destination / "skills" / name)
+    shutil.copytree(source / "hooks", destination / "hooks")
+    shutil.copytree(source / ".opencode", destination / ".opencode")
     for path in (destination, *destination.rglob("*")):
         mode = path.stat().st_mode
         path.chmod(mode | (0o700 if path.is_dir() else 0o600))
@@ -117,10 +121,14 @@ def test_manifest_and_catalog_are_exact_and_deterministic(
     ponytail_root: Path, items: tuple[SourceItem, ...]
 ) -> None:
     manifest = catalog.load_bundle_manifest(_bundle(ponytail_root))
-    assert manifest.schema == 1
+    assert manifest.schema == 2
     assert manifest.revision == REVISION
     assert manifest.version.value == "4.8.4"
     assert tuple(export.name for export in manifest.exports) == PONYTAIL_NAMES
+    assert [payload.name for payload in manifest.runtime.payloads] == [
+        "claude-codex-runtime-v1",
+        "opencode-plugin-v1",
+    ]
     expected = ["bundle:ponytail"]
     for name in PONYTAIL_NAMES:
         expected.extend((f"skill:{name}", f"prompt:{name}"))
@@ -137,6 +145,27 @@ def test_target_matrix_dependency_and_provenance(
     assert support.provenance.source == ManifestSource(
         "ponytail", "LICENSE", "4.8.4", None, None, True, None, "MIT"
     )
+    assert [payload.name for payload in support.bundle_payloads] == [
+        "claude-codex-runtime-v1",
+        "opencode-plugin-v1",
+    ]
+    assert [payload.target_types for payload in support.bundle_payloads] == [
+        frozenset({"claude", "codex"}),
+        frozenset({"opencode"}),
+    ]
+    assert [
+        (payload.imported_tree.logical_root, payload.imported_tree.tree_sha256)
+        for payload in support.bundle_payloads
+    ] == [
+        (
+            "runtime/claude-codex",
+            "sha256:a2f4bbac93ba0359f7325621b1a7c7fb049c5b1244c21d9c0c37a89b47bc9894",
+        ),
+        (
+            "runtime/opencode",
+            "sha256:70becde0867bbe3f293b28a56744e60950c62b8758cf837dfeb82f780d29a15b",
+        ),
+    ]
     for name in PONYTAIL_NAMES:
         skill = by_identity[("skill", name)]
         prompt = by_identity[("prompt", name)]
@@ -154,6 +183,218 @@ def test_target_matrix_dependency_and_provenance(
         assert prompt.imported_tree is None
 
 
+def test_runtime_payloads_are_closed_transformed_snapshots(
+    items: tuple[SourceItem, ...],
+) -> None:
+    support = items[0]
+    assert catalog.compute_imported_source_hash(support) == (
+        "sha256:6cc78d369c83391cb9aee7a4f58fc626831782915bf1e0d01677a820863bdbb4"
+    )
+    payloads = {
+        payload.name: payload.imported_tree for payload in support.bundle_payloads
+    }
+    claude = payloads["claude-codex-runtime-v1"]
+    opencode = payloads["opencode-plugin-v1"]
+    claude_entries = {entry.relative_path: entry for entry in claude.entries}
+    opencode_entries = {entry.relative_path: entry for entry in opencode.entries}
+
+    assert len(claude_entries) == 14
+    assert len(opencode_entries) == 28
+    assert "hooks/copilot-hooks.json" not in claude_entries
+    assert "hooks/qoder-hooks.json" not in claude_entries
+    assert "hooks/ponytail-mode-tracker.js" not in opencode_entries
+    assert not any(
+        "node_modules" in path for path in (*claude_entries, *opencode_entries)
+    )
+    strict = claude_entries["hooks/ponytail-instructions.js"]
+    assert strict == opencode_entries["hooks/ponytail-instructions.js"]
+    assert strict.content is not None
+    assert b"getFallbackInstructions" not in strict.content
+    tracker = claude_entries["hooks/ponytail-mode-tracker.js"]
+    assert tracker.content is not None
+    assert b"getPonytailInstructions('review')" in tracker.content
+    for name in PONYTAIL_NAMES:
+        assert f"skills/{name}" in opencode_entries
+        assert f"skills/{name}/SKILL.md" in opencode_entries
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "kind"),
+    [
+        ("hooks/new-runtime.js", "file"),
+        (".opencode/command/new-command.md", "file"),
+        (".opencode/plugins/new-plugin.mjs", "file"),
+        ("skills/seventh", "directory"),
+    ],
+)
+def test_runtime_inventory_rejects_unlisted_adapter_nodes_without_importing_them(
+    ponytail_root: Path,
+    tmp_path: Path,
+    relative_path: str,
+    kind: str,
+) -> None:
+    source = _minimal_source(ponytail_root, tmp_path / "source")
+    path = source / relative_path
+    if kind == "directory":
+        path.mkdir()
+    else:
+        path.write_bytes(b"must not enter payload")
+
+    with pytest.raises(BundleSchemaError, match="runtime inventory mismatch"):
+        catalog.discover_bundle_items(_bundle(source))
+
+
+def test_runtime_selected_byte_drift_fails_before_catalog_emission(
+    ponytail_root: Path,
+    tmp_path: Path,
+) -> None:
+    source = _minimal_source(ponytail_root, tmp_path / "source")
+    selected = source / "hooks" / "ponytail-runtime.js"
+    selected.write_bytes(selected.read_bytes() + b"\n")
+
+    with pytest.raises(BundleSchemaError, match="transformed tree digest mismatch"):
+        catalog.discover_bundle_items(_bundle(source))
+
+
+@pytest.mark.parametrize("relative_path", ["missing", "."])
+def test_runtime_file_selection_requires_one_regular_snapshot_entry(
+    relative_path: str,
+) -> None:
+    entries = (
+        ImportedTreeEntry("directory", ".", 0o755),
+        ImportedTreeEntry("file", "file", 0o644, b"value"),
+    )
+    snapshot = ImportedTreeSnapshot(
+        "skills/demo",
+        entries,
+        framed_tree_sha256(entries),
+    )
+    with pytest.raises(BundleSchemaError, match="runtime file is missing"):
+        catalog._snapshot_regular_file(snapshot, relative_path)
+
+
+def _runtime_manifest(
+    include: tuple[str, ...],
+    tree_sha256: str = "sha256:" + "0" * 64,
+) -> catalog.BundleRuntimePayload:
+    return catalog.BundleRuntimePayload(
+        "test-runtime-v1",
+        frozenset({"claude"}),
+        include,
+        (),
+        tree_sha256,
+        "runtime/test",
+    )
+
+
+def _assemble_test_runtime(
+    runtime: catalog.BundleRuntimePayload,
+    files: dict[str, ImportedFileSnapshot],
+    skills: dict[str, ImportedTreeSnapshot] | None = None,
+) -> ImportedTreeSnapshot:
+    return catalog._assemble_runtime_snapshot(
+        runtime,
+        files,
+        skills or {},
+        {"skills": 0o755},
+        bundle_name="ponytail",
+        version="4.8.4",
+        revision=REVISION,
+    )
+
+
+def test_runtime_assembler_rejects_conflicts_casefolds_and_missing_inputs() -> None:
+    skill_entries = (
+        ImportedTreeEntry("directory", ".", 0o755),
+        ImportedTreeEntry("file", "SKILL.md", 0o644, b"skill"),
+    )
+    skill = ImportedTreeSnapshot(
+        "skills/demo",
+        skill_entries,
+        framed_tree_sha256(skill_entries),
+    )
+    conflicting = _runtime_manifest(("skills/demo", "skills/demo/SKILL.md"))
+    with pytest.raises(BundleSchemaError, match="conflicting runtime path"):
+        _assemble_test_runtime(
+            conflicting,
+            {
+                "skills/demo/SKILL.md": ImportedFileSnapshot(
+                    "skills/demo/SKILL.md", 0o644, b"different"
+                )
+            },
+            {"skills/demo": skill},
+        )
+
+    casefold = _runtime_manifest(("Name", "name"))
+    with pytest.raises(BundleSchemaError, match="case-fold collision"):
+        _assemble_test_runtime(
+            casefold,
+            {
+                "Name": ImportedFileSnapshot("Name", 0o644, b"one"),
+                "name": ImportedFileSnapshot("name", 0o644, b"two"),
+            },
+        )
+
+    with pytest.raises(BundleSchemaError, match="missing runtime input"):
+        _assemble_test_runtime(_runtime_manifest(("missing",)), {})
+
+
+def test_runtime_assembler_preserves_complete_skill_tree_and_rebases_links() -> None:
+    skill_entries = (
+        ImportedTreeEntry("directory", ".", 0o750),
+        ImportedTreeEntry("link", "alias", 0o644, b"value", "target"),
+        ImportedTreeEntry("directory", "assets", 0o700),
+        ImportedTreeEntry("directory", "assets/empty", 0o711),
+        ImportedTreeEntry("file", "assets/helper.sh", 0o755, b"#!/bin/sh\n"),
+        ImportedTreeEntry("file", "target", 0o644, b"value"),
+    )
+    skill = ImportedTreeSnapshot(
+        "skills/demo",
+        skill_entries,
+        framed_tree_sha256(skill_entries),
+    )
+    expected = (
+        ImportedTreeEntry("directory", ".", 0o755),
+        ImportedTreeEntry("directory", "skills", 0o755),
+        ImportedTreeEntry("directory", "skills/demo", 0o750),
+        ImportedTreeEntry(
+            "link", "skills/demo/alias", 0o644, b"value", "skills/demo/target"
+        ),
+        ImportedTreeEntry("directory", "skills/demo/assets", 0o700),
+        ImportedTreeEntry("directory", "skills/demo/assets/empty", 0o711),
+        ImportedTreeEntry(
+            "file", "skills/demo/assets/helper.sh", 0o755, b"#!/bin/sh\n"
+        ),
+        ImportedTreeEntry("file", "skills/demo/target", 0o644, b"value"),
+    )
+    runtime = _runtime_manifest(("skills/demo",), framed_tree_sha256(expected))
+
+    snapshot = _assemble_test_runtime(runtime, {}, {"skills/demo": skill})
+
+    assert snapshot.entries == expected
+
+
+def test_runtime_inventory_change_during_bundle_capture_is_rejected(
+    ponytail_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = catalog._capture_runtime_inventory
+    calls = 0
+
+    def changing_inventory(*args: Any, **kwargs: Any):
+        nonlocal calls
+        calls += 1
+        captured = original(*args, **kwargs)
+        if calls == 2:
+            first = replace(captured[0], identity=(*captured[0].identity, 1))
+            return (first, *captured[1:])
+        return captured
+
+    monkeypatch.setattr(catalog, "_capture_runtime_inventory", changing_inventory)
+    with pytest.raises(BundleSchemaError, match="inventory changed"):
+        catalog.discover_bundle_items(_bundle(ponytail_root))
+
+
 def test_catalog_items_retain_no_live_source_authority(
     ponytail_root: Path, tmp_path: Path
 ) -> None:
@@ -163,6 +404,7 @@ def test_catalog_items_retain_no_live_source_authority(
         (item.item_type, item.name): (
             item.content,
             item.imported_tree,
+            item.bundle_payloads,
             catalog.compute_imported_source_hash(item),
         )
         for item in discovered
@@ -172,6 +414,7 @@ def test_catalog_items_retain_no_live_source_authority(
         (item.item_type, item.name): (
             item.content,
             item.imported_tree,
+            item.bundle_payloads,
             catalog.compute_imported_source_hash(item),
         )
         for item in discovered
@@ -199,7 +442,7 @@ def test_immutable_binding_emits_exact_pin(ponytail_root: Path) -> None:
     ("mutation", "value"),
     [
         (("schema",), True),
-        (("schema",), 2),
+        (("schema",), 1),
         (("name",), "other"),
         (("revision",), "0" * 40),
         (("version", "value"), "4.8.5"),
@@ -218,6 +461,15 @@ def test_immutable_binding_emits_exact_pin(ponytail_root: Path) -> None:
         (("exports", 0, "projections", 0, "name"), "other"),
         (("exports", 0, "projections", 0, "target_types"), ["codex"]),
         (("exports", 0, "projections", 0, "transform"), "other"),
+        (("runtime", "inventory", "hooks"), ["other"]),
+        (("runtime", "payloads", 0, "name"), "other"),
+        (("runtime", "payloads", 0, "target_types"), ["claude"]),
+        (("runtime", "payloads", 0, "include", 0), "../hooks.json"),
+        (
+            ("runtime", "payloads", 0, "transforms", "hooks/ponytail-instructions.js"),
+            "other",
+        ),
+        (("runtime", "payloads", 0, "tree_sha256"), "bad"),
     ],
 )
 def test_manifest_rejects_wrong_reviewed_values(
@@ -259,6 +511,15 @@ def test_manifest_scalar_helpers_reject_wrong_shapes(
             function(value, where="test")
 
 
+def test_runtime_path_list_is_closed_ordered_and_unique() -> None:
+    with pytest.raises(BundleSchemaError, match="list of paths"):
+        catalog._exact_path_list("path", expected=("path",), where="test")
+    with pytest.raises(BundleSchemaError, match="duplicates"):
+        catalog._exact_path_list(["path", "path"], expected=("path",), where="test")
+    with pytest.raises(BundleSchemaError, match="reviewed ordered"):
+        catalog._exact_path_list(["other"], expected=("path",), where="test")
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -275,6 +536,17 @@ def test_manifest_scalar_helpers_reject_wrong_shapes(
         lambda data: data["exports"][0].update(
             target_types=["claude", "claude", "droid"]
         ),
+        lambda data: data.pop("runtime"),
+        lambda data: data["runtime"].update(extra=True),
+        lambda data: data["runtime"]["inventory"].pop("hooks"),
+        lambda data: data["runtime"]["inventory"].update(extra=[]),
+        lambda data: data["runtime"].update(payloads=[]),
+        lambda data: data["runtime"]["payloads"][0].pop("include"),
+        lambda data: data["runtime"]["payloads"][0].update(extra=True),
+        lambda data: data["runtime"]["payloads"][0].update(
+            include=data["runtime"]["payloads"][0]["include"] * 2
+        ),
+        lambda data: data["runtime"]["payloads"][0]["transforms"].update(extra="other"),
     ],
 )
 def test_manifest_closed_schema_rejects_missing_unknown_and_duplicate_lists(
@@ -311,7 +583,7 @@ def test_manifest_root_and_nested_values_must_be_mappings(
 @pytest.mark.parametrize(
     "replacement",
     [
-        "schema: 1\nschema: 1",
+        "schema: 2\nschema: 2",
         "name: ponytail\nname: ponytail",
     ],
 )
@@ -332,6 +604,7 @@ def test_manifest_rejects_duplicate_yaml_keys(
         (("version", "file"), "../package.json"),
         (("license", "file"), "/LICENSE"),
         (("exports", 0, "path"), "skills\\ponytail"),
+        (("runtime", "payloads", 0, "include", 0), "/hooks.json"),
     ],
 )
 def test_manifest_paths_are_canonical(

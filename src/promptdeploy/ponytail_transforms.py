@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .bundles import BundleSchemaError
 from .frontmatter import FrontmatterError, parse_frontmatter
 from .ponytail import (
     GPTEL_PRESET_TRANSFORM,
+    ONE_SHOT_REVIEW_TRANSFORM,
     PONYTAIL_REVISION,
     PONYTAIL_VERSION,
+    STRICT_CANONICAL_INSTRUCTIONS_TRANSFORM,
 )
 
 
@@ -25,6 +28,13 @@ class _TransformGuard:
     metadata_keys: frozenset[str]
     source_h1: str | None
     headings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class _RuntimeTransformGuard:
+    logical_path: str
+    byte_count: int
+    sha256: str
 
 
 _TRANSFORM_GUARDS: dict[str, _TransformGuard] = {
@@ -77,6 +87,19 @@ _TRANSFORM_GUARDS: dict[str, _TransformGuard] = {
         frozenset({"name", "description"}),
         "# Ponytail Help",
         ("Levels", "Skills", "Deactivate", "Configure Default Mode", "Update", "More"),
+    ),
+}
+
+_RUNTIME_TRANSFORM_GUARDS = {
+    STRICT_CANONICAL_INSTRUCTIONS_TRANSFORM: _RuntimeTransformGuard(
+        "hooks/ponytail-instructions.js",
+        5487,
+        "sha256:23c050103f28dbe6bad953ae21d98cd06d720a20f33d4716e9de419f947d495e",
+    ),
+    ONE_SHOT_REVIEW_TRANSFORM: _RuntimeTransformGuard(
+        "hooks/ponytail-mode-tracker.js",
+        5318,
+        "sha256:5d1a960ff01b73f651ec0242052a8cf1e064cb88147806bf6e13f92798aca251",
     ),
 }
 
@@ -141,6 +164,194 @@ _HELP_OUTPUT = (
 
 def _content_sha256(content: bytes) -> str:
     return f"sha256:{hashlib.sha256(content).hexdigest()}"
+
+
+def _guard_runtime_input(
+    source: bytes,
+    logical_path: str,
+    transform: str,
+    *,
+    bundle_name: str,
+    version: str,
+    revision: str,
+) -> str:
+    if bundle_name != "ponytail":
+        raise PonytailTransformError(
+            f"{logical_path}: {transform} requires bundle ponytail"
+        )
+    if version != PONYTAIL_VERSION:
+        raise PonytailTransformError(
+            f"{logical_path}: {transform} requires ponytail@{PONYTAIL_VERSION}"
+        )
+    if revision != PONYTAIL_REVISION:
+        raise PonytailTransformError(
+            f"{logical_path}: {transform} requires revision {PONYTAIL_REVISION}"
+        )
+    guard = _RUNTIME_TRANSFORM_GUARDS[transform]
+    if logical_path != guard.logical_path:
+        raise PonytailTransformError(
+            f"{logical_path}: {transform} requires input {guard.logical_path}"
+        )
+    if len(source) != guard.byte_count:
+        raise PonytailTransformError(
+            f"{logical_path}: guarded input length mismatch; expected "
+            f"{guard.byte_count} bytes, got {len(source)}"
+        )
+    actual = _content_sha256(source)
+    if actual != guard.sha256:
+        raise PonytailTransformError(
+            f"{logical_path}: guarded input digest mismatch; expected "
+            f"{guard.sha256}, got {actual}"
+        )
+    try:
+        text = source.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise PonytailTransformError(
+            f"{logical_path}: {transform} input must be valid UTF-8"
+        ) from exc
+    if text.startswith("\ufeff"):
+        raise PonytailTransformError(
+            f"{logical_path}: {transform} input must not start with a UTF-8 BOM"
+        )
+    if "\r" in text:
+        raise PonytailTransformError(
+            f"{logical_path}: {transform} input must use LF line endings"
+        )
+    if not text.endswith("\n"):
+        raise PonytailTransformError(
+            f"{logical_path}: {transform} input must end with an LF"
+        )
+    return text
+
+
+def _replace_once(
+    text: str,
+    old: str,
+    new: str,
+    *,
+    logical_path: str,
+    description: str,
+) -> str:
+    if text.count(old) != 1:
+        raise PonytailTransformError(
+            f"{logical_path}: expected exactly one {description}"
+        )
+    return text.replace(old, new)
+
+
+def _remove_between_once(
+    text: str,
+    start: str,
+    end: str,
+    *,
+    logical_path: str,
+    description: str,
+) -> str:
+    if text.count(start) != 1 or text.count(end) != 1:
+        raise PonytailTransformError(
+            f"{logical_path}: expected exactly one {description}"
+        )
+    prefix, remainder = text.split(start, 1)
+    _removed, suffix = remainder.split(end, 1)
+    return prefix + end + suffix
+
+
+def render_strict_canonical_instructions_v1(
+    source: bytes,
+    *,
+    bundle_name: str,
+    version: str,
+    revision: str,
+    logical_path: str,
+) -> bytes:
+    """Remove Ponytail's embedded rules fallback from the reviewed runtime."""
+    text = _guard_runtime_input(
+        source,
+        logical_path,
+        STRICT_CANONICAL_INSTRUCTIONS_TRANSFORM,
+        bundle_name=bundle_name,
+        version=version,
+        revision=revision,
+    )
+    text = _remove_between_once(
+        text,
+        "\nfunction getFallbackInstructions(mode) {",
+        "\nfunction getPonytailInstructions(mode) {",
+        logical_path=logical_path,
+        description="embedded fallback function",
+    )
+    text = _replace_once(
+        text,
+        """  try {
+    return 'PONYTAIL MODE ACTIVE — level: ' + effectiveMode + '\\n\\n' +
+      filterSkillBodyForMode(fs.readFileSync(SKILL_PATH, 'utf8'), effectiveMode);
+  } catch (e) {
+    return getFallbackInstructions(effectiveMode);
+  }
+""",
+        """  return 'PONYTAIL MODE ACTIVE — level: ' + effectiveMode + '\\n\\n' +
+    filterSkillBodyForMode(fs.readFileSync(SKILL_PATH, 'utf8'), effectiveMode);
+""",
+        logical_path=logical_path,
+        description="fallback try/catch",
+    )
+    text = _replace_once(
+        text,
+        "  getFallbackInstructions,\n",
+        "",
+        logical_path=logical_path,
+        description="fallback export",
+    )
+    if "getFallbackInstructions" in text:
+        raise PonytailTransformError(
+            f"{logical_path}: embedded fallback reference survived transform"
+        )
+    return text.encode("utf-8")
+
+
+def render_one_shot_review_v1(
+    source: bytes,
+    *,
+    bundle_name: str,
+    version: str,
+    revision: str,
+    logical_path: str,
+) -> bytes:
+    """Handle Ponytail review as one invocation without persisting its mode."""
+    text = _guard_runtime_input(
+        source,
+        logical_path,
+        ONE_SHOT_REVIEW_TRANSFORM,
+        bundle_name=bundle_name,
+        version=version,
+        revision=revision,
+    )
+    old_branch = (
+        "      if (cmd === '/ponytail-review' || "
+        "cmd === '/ponytail:ponytail-review') {\n"
+        "        mode = 'review';\n"
+        "      } else if (cmd === '/ponytail' || "
+        "cmd === '/ponytail:ponytail') {\n"
+    )
+    new_branch = (
+        "      if (cmd === '/ponytail-review' || "
+        "cmd === '/ponytail:ponytail-review') {\n"
+        "        writeHookOutput(\n"
+        "          'UserPromptSubmit',\n"
+        "          'review',\n"
+        "          getPonytailInstructions('review'),\n"
+        "        );\n"
+        "        return;\n"
+        "      } else if (cmd === '/ponytail' || "
+        "cmd === '/ponytail:ponytail') {\n"
+    )
+    return _replace_once(
+        text,
+        old_branch,
+        new_branch,
+        logical_path=logical_path,
+        description="persistent review branch",
+    ).encode("utf-8")
 
 
 def _split_sections(
@@ -381,3 +592,7 @@ def render_gptel_preset_v1(
 
 
 PONYTAIL_TRANSFORMS = {GPTEL_PRESET_TRANSFORM: render_gptel_preset_v1}
+PONYTAIL_RUNTIME_TRANSFORMS: dict[str, Callable[..., bytes]] = {
+    STRICT_CANONICAL_INSTRUCTIONS_TRANSFORM: render_strict_canonical_instructions_v1,
+    ONE_SHOT_REVIEW_TRANSFORM: render_one_shot_review_v1,
+}
