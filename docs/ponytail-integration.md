@@ -439,6 +439,12 @@ and verified rather than silent rewrites.
   with corrected 12-task agentic figures of roughly 54% less code, 20% lower
   cost, and 27% faster. The full skill is retained verbatim and this mismatch
   is disclosed until fixed upstream.
+- The native `ponytail` and `ponytail-help` text still describes persistent
+  modes, plugin configuration and updates, and host-specific slash-command
+  behavior. The proportional static tier preserves those upstream bytes but
+  installs none of that lifecycle machinery; users invoke the six skills
+  through each host's ordinary skill surface. GPTel's guarded projections
+  replace the claims with its one-shot prompt contract.
 - Upstream's tracker persists a hidden `review` state and its instruction
   builder can substitute a hardcoded rules copy. The dormant runtime transforms
   contain pinned corrections, but the current static integration invokes

@@ -723,10 +723,12 @@ advertised no-follow form regardless of the current runner.
 - Claude, Codex, Droid, and OpenCode now select all six complete imported skill
   trees. GPTel retains the six deterministic `gptel-preset-v1` projections.
   Runtime payloads remain dormant.
-- The focused gate passes 216 tests. The complete eight-check
-  `nix flake check --print-build-logs` passes 2,837 tests with 100% statement
-  and branch coverage, strict mypy, Ruff, both Home Manager checks, package
-  build, and packaged-binding validation.
+- The focused gate passed 216 tests. A pre-documentation complete eight-check
+  `nix flake check --print-build-logs` passed 2,837 tests. For the exact tree
+  committed as `e638d1d`, the user explicitly waived the unrelated PowerShell
+  hook test: all seven other Nix checks passed, and a replacement Nix pytest
+  derivation passed 2,836 tests with that one case deselected and 100%
+  statement/branch coverage. Runtime code and tests were not changed.
 - Isolated deployment and strict verification passed all 13 exact selectors
   across all 21 configured target IDs at
   `/private/var/tmp/promptdeploy-ponytail-proof.fRTm5M`: 120 native
@@ -734,12 +736,18 @@ advertised no-follow form regardless of the current runner.
   settings, hook, OpenCode plugin-config, or runtime paths. The first attempt
   used symlinked `/var/tmp` and correctly failed before mutation; the canonical
   `/private/var/tmp` retry passed.
+- The required independent audit for `e638d1d` is
+  `/var/tmp/wg-ponytail-static/fess-e638d1d/report.md`. Its documentation and
+  test-invocation findings are corrected in the current fess-remediation unit;
+  the waived full-flake gap is recorded rather than hidden. A committed-source
+  local dry-run reports exactly 42 additions across the six Hera targets with
+  no updates, removals, or collisions.
 
 Next, under the corrected scope:
 
-1. commit and independently audit the proportional static integration;
+1. commit the fess documentation remediation;
 2. deploy and strictly verify only the current host's named local targets;
-3. run the final gate, independent final audit, observation cleanup, and local
+3. run the final waived gate, observation cleanup, and local
    rebase. Do not resume settings CAS, recovery, runtime publication, lifecycle
    hooks, mode persistence, or remote rollout in this task.
 
@@ -756,8 +764,10 @@ Next, under the corrected scope:
   suite progress. The third retry used `--max-jobs 1 --cores 1` and reproduced
   the same signature. No PowerShell process remained afterward; system memory
   was ample, while host load was elevated. Stop count: 3 consecutive attempts.
-  The proportional integration remains staged; do not change or weaken the
-  optional runtime test without explicit authority.
+  The user then explicitly said to skip PowerShell tests. Commit `e638d1d` was
+  created with the hook bypassed after all seven non-pytest Nix checks and the
+  2,836-test replacement gate passed; exactly the named PowerShell case was
+  deselected. Do not modify the optional runtime test under this waiver.
 - Scope-correction baseline: `nix flake check --print-build-logs` passed all
   seven checks on attempt 1 with 2,833 tests and 100% statement/branch
   coverage. The `e35a829` pre-commit agnix gate reported zero errors.

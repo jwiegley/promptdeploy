@@ -80,6 +80,10 @@ direnv allow
 nix run . -- --dry-run
 nix run .
 
+# Direct Python runs that load the root deploy.yaml need a Ponytail checkout.
+# Nix checks supply the locked source automatically.
+export PONYTAIL_TEST_SOURCE=/absolute/path/to/ponytail
+
 # Run all tests (100% line+branch coverage enforced in pyproject.toml)
 PYTHONPATH=src python -m pytest tests/ --cov --cov-report=term-missing
 

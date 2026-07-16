@@ -42,6 +42,13 @@ automatically. Claude, Codex, Droid, and OpenCode receive the six complete
 skill trees; GPTel receives six one-shot prompt projections. This selection
 does not install hooks, persistent modes, or an OpenCode plugin.
 
+The native skill trees retain the pinned upstream text. In this static tier,
+invoke them through each host's ordinary skill mechanism. The upstream
+`Persistence`, `Configure Default Mode`, `Update`, and OpenCode slash-command
+claims in `ponytail` and `ponytail-help` require the optional plugin/runtime
+and do not apply here. GPTel's one-shot projections replace those claims with
+its actual prompt-only capability boundary.
+
 Use an isolated target root to prove every configured target without SSH or
 live configuration changes:
 
