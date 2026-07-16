@@ -302,11 +302,16 @@ def test_bundle_parent_creation_handles_race_and_write_failure(
     target = ClaudeTarget("claude", root)
     original_mkdir = Path.mkdir
 
-    def racing_mkdir(path: Path, *args: object, **kwargs: object) -> None:
+    def racing_mkdir(
+        path: Path,
+        mode: int = 0o777,
+        parents: bool = False,
+        exist_ok: bool = False,
+    ) -> None:
         if path == root / ".promptdeploy":
             original_mkdir(path)
             raise FileExistsError("raced")
-        original_mkdir(path, *args, **kwargs)  # type: ignore[arg-type]
+        original_mkdir(path, mode=mode, parents=parents, exist_ok=exist_ok)
 
     monkeypatch.setattr(Path, "mkdir", racing_mkdir)
     target.deploy_bundle("ponytail", b"license")
@@ -316,10 +321,15 @@ def test_bundle_parent_creation_handles_race_and_write_failure(
     shutil.rmtree(root)
     root.mkdir()
 
-    def failing_mkdir(path: Path, *args: object, **kwargs: object) -> None:
+    def failing_mkdir(
+        path: Path,
+        mode: int = 0o777,
+        parents: bool = False,
+        exist_ok: bool = False,
+    ) -> None:
         if path == root / ".promptdeploy":
             raise PermissionError("denied")
-        original_mkdir(path, *args, **kwargs)  # type: ignore[arg-type]
+        original_mkdir(path, mode=mode, parents=parents, exist_ok=exist_ok)
 
     monkeypatch.setattr(Path, "mkdir", failing_mkdir)
     with pytest.raises(UnsafeManagedBundlePath, match="safely writable"):
