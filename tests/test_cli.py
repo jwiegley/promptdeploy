@@ -969,11 +969,14 @@ class TestTargetRootArgParsing:
         assert args.target_root is None
 
     def test_global_bundle_binding_flags(self, tmp_path):
+        config = tmp_path / "deploy.yaml"
         descriptor = tmp_path / "bindings.json"
         first = tmp_path / "first"
         second = tmp_path / "second"
         args = self._parse(
             [
+                "--config",
+                str(config),
                 "--bundle-bindings-file",
                 str(descriptor),
                 "--bundle-source",
@@ -984,6 +987,7 @@ class TestTargetRootArgParsing:
                 "validate",
             ]
         )
+        assert args.config == config
         assert args.bundle_bindings_file == descriptor
         assert args.bundle_source == [
             f"ponytail={first}",
@@ -1005,7 +1009,9 @@ def test_load_config_forwards_explicit_bundle_authority(
 
     monkeypatch.setattr("promptdeploy.cli.load_config", fake_load_config)
     descriptor = tmp_path / "bindings.json"
+    config_path = tmp_path / "deploy.yaml"
     args = argparse.Namespace(
+        config=config_path,
         bundle_bindings_file=descriptor,
         bundle_source=["ponytail=/absolute/source"],
         require_immutable_bundles=True,
@@ -1013,6 +1019,7 @@ def test_load_config_forwards_explicit_bundle_authority(
 
     assert _load_config_or_exit(args) is expected
     assert observed == {
+        "config_path": config_path,
         "bundle_bindings_file": descriptor,
         "bundle_source_overrides": ("ponytail=/absolute/source",),
         "require_immutable_bundles": True,

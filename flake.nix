@@ -44,18 +44,46 @@
         revision = self.rev or null;
         ponytailVersion =
           (builtins.fromJSON (builtins.readFile "${ponytail}/package.json")).version;
-        ponytailBindings = pkgs.writeText "promptdeploy-bundle-bindings.json" (
-          builtins.toJSON {
-            schema = 1;
-            bindings.ponytail = {
-              path = toString ponytail;
-              revision = ponytail.rev;
-              narHash = ponytail.narHash;
-              version = ponytailVersion;
+        # External projects enter the deployment through one explicit mapping.
+        # Their adapter manifests remain small, reviewed files in this repo.
+        deploymentSources = {
+          ponytail = {
+            source = ponytail;
+            destination = "sources/ponytail";
+            revision = ponytail.rev;
+            narHash = ponytail.narHash;
+            version = ponytailVersion;
+          };
+        };
+        deploymentBindings = builtins.toJSON {
+          schema = 1;
+          bindings = pkgs.lib.mapAttrs (
+            _name: mapping: {
+              path = "@deployment@/${mapping.destination}";
+              inherit (mapping) revision narHash version;
               mutable = false;
-            };
-          }
+            }
+          ) deploymentSources;
+        };
+        copyDeploymentSources = pkgs.lib.concatStringsSep "\n" (
+          pkgs.lib.mapAttrsToList (
+            _name: mapping: ''
+              destination=${pkgs.lib.escapeShellArg mapping.destination}
+              mkdir -p "$out/$destination"
+              cp -R ${mapping.source}/. "$out/$destination/"
+            ''
+          ) deploymentSources
         );
+        deployment = pkgs.runCommand "promptdeploy-deployment" { } ''
+          mkdir -p "$out"
+          cp -R ${src}/. "$out/"
+          ${copyDeploymentSources}
+          mkdir -p "$out/.promptdeploy"
+          printf '%s\n' ${pkgs.lib.escapeShellArg deploymentBindings} \
+            >"$out/.promptdeploy/bundle-bindings.json"
+          substituteInPlace "$out/.promptdeploy/bundle-bindings.json" \
+            --replace-fail '@deployment@' "$out"
+        '';
 
         promptdeploy = python.pkgs.buildPythonApplication {
           pname = "promptdeploy";
@@ -78,12 +106,11 @@
           doCheck = false;
 
           passthru = {
-            promptdeploySource = src;
+            promptdeployCodeSource = src;
+            promptdeployDeployment = deployment;
+            # Compatibility alias for the Home Manager module's former name.
+            promptdeploySource = deployment;
             promptdeployRevision = revision;
-            ponytailSource = ponytail;
-            ponytailRevision = ponytail.rev;
-            ponytailNarHash = ponytail.narHash;
-            inherit ponytailBindings ponytailVersion;
           };
 
           # Remote deployment shells out to rsync/ssh (src/promptdeploy/ssh.py),
@@ -100,9 +127,6 @@
               pkgs.rsync
               pkgs.openssh
             ]}"
-            "--set-default"
-            "PROMPTDEPLOY_BUNDLE_BINDINGS_FILE"
-            "${ponytailBindings}"
           ];
 
           meta = {
@@ -111,23 +135,38 @@
           };
         };
 
+        deploymentPromptdeploy = pkgs.writeShellScriptBin "promptdeploy" ''
+          exec ${pkgs.lib.getExe promptdeploy} \
+            --config ${deployment}/deploy.yaml \
+            --bundle-bindings-file ${deployment}/.promptdeploy/bundle-bindings.json \
+            --require-immutable-bundles \
+            "$@"
+        '';
         promptdeployDeploy = pkgs.writeShellScriptBin "promptdeploy-deploy" ''
-          exec ${pkgs.lib.getExe promptdeploy} deploy "$@"
+          exec ${deploymentPromptdeploy}/bin/promptdeploy deploy "$@"
         '';
       in
       {
-        packages.default = promptdeploy;
+        packages = {
+          default = promptdeploy;
+          inherit promptdeploy deployment;
+        };
 
         apps = {
           default = {
             type = "app";
             program = "${promptdeployDeploy}/bin/promptdeploy-deploy";
-            meta.description = "Run promptdeploy deploy in the packaged Nix environment";
+            meta.description = "Deploy from the composed immutable store deployment";
           };
           promptdeploy = {
             type = "app";
+            program = "${deploymentPromptdeploy}/bin/promptdeploy";
+            meta.description = "Run the promptdeploy CLI against the composed store deployment";
+          };
+          raw = {
+            type = "app";
             program = pkgs.lib.getExe promptdeploy;
-            meta.description = "Run the promptdeploy CLI in the packaged Nix environment";
+            meta.description = "Run the raw promptdeploy CLI against an explicit mutable source";
           };
         };
 
@@ -174,11 +213,53 @@
 
           hm-activation = pkgs.callPackage ./nix/hm-activation-test.nix { };
 
-          ponytail-binding = pkgs.runCommand "ponytail-binding" { } ''
+          deployment = pkgs.runCommand "promptdeploy-deployment-check" {
+            nativeBuildInputs = [ pkgs.jq ];
+          } ''
             export HOME="$TMPDIR/home"
             mkdir -p "$HOME"
-            cd ${src}
-            ${pkgs.lib.getExe promptdeploy} validate
+            deployment_root=${deployment}
+            ponytail_root="$deployment_root/sources/ponytail"
+            test -f "$deployment_root/deploy.yaml"
+            test -f "$deployment_root/bundles/ponytail.yaml"
+            test ! -L "$ponytail_root"
+            test -f "$ponytail_root/hooks/ponytail-activate.js"
+            for name in \
+              ponytail ponytail-review ponytail-audit \
+              ponytail-debt ponytail-gain ponytail-help; do
+              test -f "$ponytail_root/skills/$name/SKILL.md"
+            done
+            jq -e \
+              --arg path "$ponytail_root" \
+              --arg revision ${pkgs.lib.escapeShellArg ponytail.rev} \
+              --arg narHash ${pkgs.lib.escapeShellArg ponytail.narHash} \
+              --arg version ${pkgs.lib.escapeShellArg ponytailVersion} \
+              '.schema == 1 and .bindings.ponytail == {
+                path: $path,
+                revision: $revision,
+                narHash: $narHash,
+                version: $version,
+                mutable: false
+              }' \
+              "$deployment_root/.promptdeploy/bundle-bindings.json"
+
+            caller="$TMPDIR/caller"
+            preview="$TMPDIR/preview"
+            mkdir -p "$caller" "$preview"
+            printf '%s\n' 'invalid: [caller config' >"$caller/deploy.yaml"
+            cd "$caller"
+            ${deploymentPromptdeploy}/bin/promptdeploy validate
+            ${promptdeployDeploy}/bin/promptdeploy-deploy \
+              --target claude-personal \
+              --target-root "$preview" \
+              --only-item bundle:ponytail \
+              --only-item skill:ponytail
+            ${deploymentPromptdeploy}/bin/promptdeploy verify \
+              --target claude-personal \
+              --target-root "$preview" \
+              --only-item bundle:ponytail \
+              --only-item skill:ponytail
+            test -f "$preview/claude-personal/skills/ponytail/SKILL.md"
             touch $out
           '';
 

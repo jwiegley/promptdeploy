@@ -37,10 +37,18 @@ The deploy pipeline works like this: discover all source items, filter by target
 
 ### Ponytail skills
 
-The packaged Nix CLI pins Ponytail and supplies its source binding
-automatically. Claude, Codex, Droid, and OpenCode receive the six complete
+The flake pins Ponytail, copies it into a composed deployment derivation, and
+generates its immutable source binding inside that same store tree. `nix run
+.` deploys from `/nix/store/<hash>-promptdeploy-deployment`, never from the
+working checkout. Claude, Codex, Droid, and OpenCode receive the six complete
 skill trees; GPTel receives six one-shot prompt projections. This selection
 does not install hooks, persistent modes, or an OpenCode plugin.
+
+The mapping is declared once in `flake.nix`: this repository is copied to the
+deployment root and the pinned Ponytail input is copied to
+`sources/ponytail`. `bundles/ponytail.yaml` maps that input onto the supported
+agent surfaces. `nix build .#deployment` exposes the complete source tree for
+inspection.
 
 The native skill trees retain the pinned upstream text. In this static tier,
 invoke them through each host's ordinary skill mechanism. The upstream
@@ -76,8 +84,23 @@ nix run '.#promptdeploy' -- deploy --local-only "${local_targets[@]}" "${ponytai
 nix run '.#promptdeploy' -- verify --local-only "${local_targets[@]}" "${ponytail_items[@]}"
 ```
 
-For development against the mutable Desktop checkout, add the global option
-`--bundle-source ponytail=/Users/johnw/Desktop/ponytail` before the subcommand.
+The resulting files live here:
+
+| Surface | Installed Ponytail files |
+|---|---|
+| Claude personal/Positron | `~/.config/claude/{personal,positron}/skills/ponytail*/` |
+| Codex | `~/.agents/skills/ponytail*/` |
+| Factory Droid | `~/.factory/skills/ponytail*/` |
+| OpenCode | `~/.config/opencode/skills/ponytail*/` |
+| GPTel | `~/.emacs.d/prompts/ponytail*.md` |
+
+For development against a mutable checkout, use the deliberately raw app from
+this repository and bind the source explicitly:
+
+```zsh
+nix run '.#raw' -- \
+  --bundle-source ponytail=/Users/johnw/Desktop/ponytail validate
+```
 
 ### Targets
 
@@ -112,7 +135,7 @@ For Codex, set `path` to your home directory (recommended) or directly to `~/.co
 
 ### Environment variables
 
-API keys and other secrets use `${VAR}` syntax in MCP and model definitions, resolved from your shell environment plus a `.env` file at the repo root (which never overrides exported variables). When and how strictly they expand depends on the target. Claude Code targets strictly expand MCP `env` and `headers` references at deploy time and write the resolved values to mode-`0600` `.claude.json`; remote targets use the same rule in their SSH-stdin merge. Codex maps simple MCP `${VAR}` references to `env_vars`, `env_http_headers`, or `bearer_token_env_var` in `config.toml`; complex embedded references are written literally with a warning. Droid also copies MCP definitions verbatim and leniently expands only model `api_key` values -- an unset variable stays as literal `${VAR}` with a warning. OpenCode expands model `api_key` and MCP `env`/`headers` values strictly at deploy time -- a missing variable aborts the deploy -- since OpenCode runs from a directory where your shell variables won't be set. `promptdeploy validate` warns when an MCP definition references a variable not declared in `.env.example`. See `.env.example` for the full list.
+API keys and other secrets use `${VAR}` syntax in MCP and model definitions. Store-backed apps resolve them from the process environment; secrets are never copied into the Nix store. The raw development app additionally loads `.env` from its mutable source root without overriding exported variables. When and how strictly values expand depends on the target. Claude Code targets strictly expand MCP `env` and `headers` references at deploy time and write the resolved values to mode-`0600` `.claude.json`; remote targets use the same rule in their SSH-stdin merge. Codex maps simple MCP `${VAR}` references to `env_vars`, `env_http_headers`, or `bearer_token_env_var` in `config.toml`; complex embedded references are written literally with a warning. Droid also copies MCP definitions verbatim and leniently expands only model `api_key` values -- an unset variable stays as literal `${VAR}` with a warning. OpenCode expands model `api_key` and MCP `env`/`headers` values strictly at deploy time -- a missing variable aborts the deploy -- since OpenCode runs from a directory where your shell variables won't be set. `promptdeploy validate` warns when an MCP definition references a variable not declared in `.env.example`. See `.env.example` for the full list.
 
 Codex model providers are opt-in from `models.yaml`: add a `codex:` mapping under a provider to write `[model_providers.<id>]` into `.codex/config.toml`. If the provider's `api_key` is a plain `${VAR}` reference, promptdeploy emits `env_key = "VAR"` rather than writing a secret.
 
@@ -168,6 +191,9 @@ promptdeploy deploy --dry-run
 ```bash
 nix build
 ./result/bin/promptdeploy --help
+
+# Inspect the immutable source tree used by nix run .
+nix build .#deployment
 ```
 
 ## Development
@@ -191,7 +217,7 @@ ruff check src/ tests/
 PYTHONPATH=src mypy src/ tests/
 ```
 
-CI runs `nix flake check` on every push and PR. It exercises seven checks: ruff format, ruff lint, mypy, pytest with coverage, Home Manager module evaluation, activation-driver behavior, and the Nix package build.
+CI runs `nix flake check` on every push and PR. It exercises eight checks: ruff format, ruff lint, mypy, pytest with coverage, Home Manager module evaluation, activation-driver behavior, composed-deployment validation, and the Nix package build.
 
 ## Nix integration
 
@@ -219,10 +245,10 @@ the pinned promptdeploy configuration on every `home-manager switch`:
 }
 ```
 
-The package, immutable source, and expected Git revision default to the same
-pinned `inputs.promptdeploy` revision. The module rejects mutable source
-paths, missing revision metadata, or a package and source from different
-revisions.
+The package, composed immutable deployment, and expected Git revision default
+to the same pinned `inputs.promptdeploy` revision. The module rejects mutable
+deployment paths, a missing in-tree binding descriptor, missing revision
+metadata, or a package and deployment from different revisions.
 
 Activation unsets `PROMPTDEPLOY_HOST`, then runs a forced
 `deploy --local-only` and strict verification with both operations restricted
@@ -247,6 +273,11 @@ The driver never steals an existing lock. After a crashed activation, inspect
 activation or promptdeploy process is still running on any machine sharing the
 state directory. Only then remove `owner` and use `rmdir` on
 `activation.lock`; do not remove the lock recursively.
+
+The composed deployment never contains `.env` or other secrets. Store-backed
+apps receive deployment secrets only from the process environment. Use
+`apps.raw` when intentionally developing from a mutable checkout whose local
+`.env` should be loaded.
 
 ## Acknowledgements
 

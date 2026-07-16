@@ -77,8 +77,18 @@ nix develop
 direnv allow
 
 # Run deployment through the flake
+# Both commands use the composed Nix-store deployment, not this checkout.
 nix run . -- --dry-run
 nix run .
+
+# Run another command against that same immutable deployment.
+nix run .#promptdeploy -- validate
+
+# Use the mutable checkout deliberately (development only).
+nix run .#raw -- --bundle-source ponytail=/absolute/path/to/ponytail validate
+
+# Materialize the exact deployment source tree for inspection.
+nix build .#deployment
 
 # Direct Python runs that load the root deploy.yaml need a Ponytail checkout.
 # Nix checks supply the locked source automatically.
@@ -105,11 +115,11 @@ pip install -e ".[dev]"
 
 The Nix dev shell also provides `mypy` and `ruff`. The gates are strict: mypy runs in `strict` mode (relaxed only for `tests.*`), ruff enforces a curated lint baseline (`E`, `F`, `W`, `I`, `UP`, `B`, `SIM`, `C4`, `RUF`), and coverage measures branches as well as lines (`branch = true`, `fail_under = 100`) -- all configured in `pyproject.toml` and enforced via `nix flake check`.
 
-The flake exports `homeManagerModules.default` (`nix/hm-module.nix`), an exact, fail-closed activation tied to one pinned flake revision. The default package, immutable source, and expected revision must agree. Activation unsets `PROMPTDEPLOY_HOST`, serializes through the shared state-directory lock, and restricts both `deploy --local-only --force --quiet` and strict `verify --local-only` to the configured `exactItems`. This keeps unrelated items and their deployment-time secrets outside the activation transaction. Empty `targets` means all targets owned by the runtime host; remote targets are always excluded. Any deploy, verification, lock, or transaction failure aborts activation. Output is retained in the private, tail-bounded `$XDG_STATE_HOME/promptdeploy/deploy.log`; an abandoned lock is never stolen automatically and must be removed only after checking its owner metadata and confirming the recorded process is gone.
+The flake exports `packages.deployment`, a copied Nix-store tree composed from this repository plus mapped external inputs. `apps.default` deploys from that tree, `apps.promptdeploy` runs arbitrary read-only/deploy/verify commands against it, and `apps.raw` retains deliberate mutable-checkout operation. The Home Manager module (`nix/hm-module.nix`) defaults to the same composed deployment. Its package, deployment, and expected revision must agree. Activation unsets `PROMPTDEPLOY_HOST`, serializes through the shared state-directory lock, and restricts both `deploy --local-only --force --quiet` and strict `verify --local-only` to the configured `exactItems`. This keeps unrelated items and their deployment-time secrets outside the activation transaction. Empty `targets` means all targets owned by the runtime host; remote targets are always excluded. Any deploy, verification, lock, or transaction failure aborts activation. Output is retained in the private, tail-bounded `$XDG_STATE_HOME/promptdeploy/deploy.log`; an abandoned lock is never stolen automatically and must be removed only after checking its owner metadata and confirming the recorded process is gone.
 
 ## CI
 
-`.github/workflows/ci.yml` runs `nix flake check`, which executes all 8 checks defined in `flake.nix`: `ruff format --check`, `ruff check` (curated `select` baseline), `mypy` (strict), `pytest` with the 100% line+branch coverage gate, Home Manager module evaluation, activation-driver behavior, packaged Ponytail-binding validation, and `nix build`. `lefthook.yml` mirrors those as pre-commit checks with fast staged-file feedback, plus `nix flake check` as the authoritative full-tree gate, plus an `agnix` lint pass over Markdown/YAML/JSON/TOML files -- an additional gate that is not part of the flake checks.
+`.github/workflows/ci.yml` runs `nix flake check`, which executes all 8 checks defined in `flake.nix`: `ruff format --check`, `ruff check` (curated `select` baseline), `mypy` (strict), `pytest` with the 100% line+branch coverage gate, Home Manager module evaluation, activation-driver behavior, composed deployment/CWD-isolation validation, and `nix build`. `lefthook.yml` mirrors those as pre-commit checks with fast staged-file feedback, plus `nix flake check` as the authoritative full-tree gate, plus an `agnix` lint pass over Markdown/YAML/JSON/TOML files -- an additional gate that is not part of the flake checks.
 
 ## deploy.yaml
 

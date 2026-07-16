@@ -6,6 +6,12 @@ rejected the runtime-heavy expansion and clarified that the goal is to bring
 Ponytail into the current working environment through promptdeploy. Already
 committed work is preserved, but it does not enlarge this scope.
 
+The user subsequently clarified the Nix boundary: normal `nix run` operation
+must not deploy from the working checkout or a separately read input. It must
+run against one composed deployment derivation in the Nix store, with explicit
+flake-input-to-deployment mappings. This raises criterion 4 without reviving
+any optional runtime requirement.
+
 ## Completion criteria
 
 1. **Reproducible reference.** Ponytail is pinned at a reviewed revision and
@@ -18,18 +24,23 @@ committed work is preserved, but it does not enlarge this scope.
    the six native skill trees through their existing promptdeploy skill paths.
    GPTel receives six deterministic prompt projections because it has no native
    skill surface. Remote target definitions use the same mapping as local ones.
-4. **Easy operator path.** The repository declares Ponytail, the packaged Nix
-   CLI supplies its immutable source binding automatically, and concise
-   documentation gives one copyable Ponytail-only preview/deploy/verify path.
+4. **Easy operator path.** The repository declares Ponytail; Nix copies the
+   repository and mapped external input into one inspectable
+   `packages.deployment` store tree; normal apps select that tree's config and
+   immutable binding explicitly; and concise documentation gives one copyable
+   Ponytail-only preview/deploy/verify path. A separate raw app is development
+   only.
 5. **Current environment.** An isolated `--target-root` run proves every
    configured target mapping. After that proof, only the current host's local
    target group is deployed and strictly verified; no remote fleet rollout is
    implied or authorized.
 6. **Independent verification.** Focused tests cover the pin, six-tree target
-   matrix, GPTel projections, packaged binding, and operator path. The full
-   `nix flake check` passes, the final commit receives an independent fess
-   audit, observations are drained, and the branch is locally current with
-   `origin/main`.
+   matrix, GPTel projections, composed deployment, CWD isolation, Home Manager
+   default, and operator path. Every flake check passes except the one
+   PowerShell-specific test the user explicitly waived; the replacement pytest
+   gate retains full line and branch coverage. The final commit receives an
+   independent fess audit, observations are drained, and the branch is locally
+   current with `origin/main`.
 
 ## Explicitly optional follow-up
 

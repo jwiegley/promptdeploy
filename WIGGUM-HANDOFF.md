@@ -742,14 +742,35 @@ advertised no-follow form regardless of the current runner.
   the waived full-flake gap is recorded rather than hidden. A committed-source
   local dry-run reports exactly 42 additions across the six Hera targets with
   no updates, removals, or collisions.
+- The 42 additions were then deployed to the six current-host targets and
+  strict verification passed all 13 exact selectors. No remote target was
+  contacted.
+
+## Store-deployment clarification
+
+The user then clarified that normal `nix run` operation must not discover
+configuration from the checkout or read Ponytail as a separate store source.
+The implementation now composes `packages.deployment`: the repository is
+copied to its root, the full pinned Ponytail input is copied to
+`sources/ponytail`, and an in-tree descriptor binds that copied path. The
+default app deploys from explicit store config/binding paths,
+`apps.promptdeploy` exposes the same store-backed CLI, and `apps.raw` is the
+only deliberate mutable-checkout path. Home Manager now defaults to and
+asserts the same deployment.
+
+The focused `checks.aarch64-darwin.deployment` derivation is green. It verifies
+the copied layout and exact binding metadata, runs validation from a caller
+directory containing conflicting invalid `deploy.yaml`, and performs a real
+isolated deploy/strict verify from the store tree. Both Home Manager module and
+activation checks also pass.
 
 Next, under the corrected scope:
 
-1. commit the fess documentation remediation;
-2. deploy and strictly verify only the current host's named local targets;
-3. run the final waived gate, observation cleanup, and local
-   rebase. Do not resume settings CAS, recovery, runtime publication, lifecycle
-   hooks, mode persistence, or remote rollout in this task.
+1. commit and independently audit the store-deployment unit;
+2. redeploy and strictly verify through the store-backed app;
+3. perform observation cleanup and local rebase. Do not resume settings CAS,
+   recovery, runtime publication, lifecycle hooks, mode persistence, or remote
+   rollout in this task.
 
 ## Gate attempt counts
 
@@ -768,6 +789,14 @@ Next, under the corrected scope:
   created with the hook bypassed after all seven non-pytest Nix checks and the
   2,836-test replacement gate passed; exactly the named PowerShell case was
   deselected. Do not modify the optional runtime test under this waiver.
+- Store-deployment gate: the complete replacement pytest derivation passed
+  2,836 tests with the same one case deselected and retained 100% statement and
+  branch coverage. Ruff format/lint, strict mypy over 91 files, package build,
+  composed deployment/CWD isolation, and both Home Manager checks pass. The
+  first aggregate Home Manager activation attempt scheduler-starved its
+  normally instant fake transaction past the 10-second harness bound; the
+  unchanged isolated derivation passed on the immediate retry as host load
+  fell. No production or timeout value changed.
 - Scope-correction baseline: `nix flake check --print-build-logs` passed all
   seven checks on attempt 1 with 2,833 tests and 100% statement/branch
   coverage. The `e35a829` pre-commit agnix gate reported zero errors.

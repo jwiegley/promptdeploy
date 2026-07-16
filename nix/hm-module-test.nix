@@ -8,12 +8,14 @@ let
   revision = "0123456789abcdef0123456789abcdef01234567";
   wrongRevision = "89abcdef0123456789abcdef0123456789abcdef";
   fixtureSource = pkgs.runCommand "promptdeploy-module-source" { } ''
-    mkdir -p "$out"
+    mkdir -p "$out/.promptdeploy"
     touch "$out/deploy.yaml"
+    printf '%s\n' '{"schema":1,"bindings":{}}' >"$out/.promptdeploy/bundle-bindings.json"
   '';
   otherSource = pkgs.runCommand "promptdeploy-other-source" { } ''
-    mkdir -p "$out"
+    mkdir -p "$out/.promptdeploy"
     touch "$out/deploy.yaml"
+    printf '%s\n' '{"schema":1,"bindings":{}}' >"$out/.promptdeploy/bundle-bindings.json"
   '';
   packageBase = pkgs.writeShellApplication {
     name = "promptdeploy";
@@ -21,20 +23,23 @@ let
   };
   package = packageBase.overrideAttrs (old: {
     passthru = (old.passthru or { }) // {
-      promptdeploySource = fixtureSource;
+      promptdeployDeployment = fixtureSource;
       promptdeployRevision = revision;
     };
   });
   wrongSourcePackage = packageBase.overrideAttrs (old: {
     passthru = (old.passthru or { }) // {
-      promptdeploySource = otherSource;
+      promptdeployDeployment = otherSource;
       promptdeployRevision = revision;
     };
   });
   fakeSelf = {
     outPath = fixtureSource;
     rev = revision;
-    packages.${pkgs.stdenv.hostPlatform.system}.default = package;
+    packages.${pkgs.stdenv.hostPlatform.system} = {
+      default = package;
+      deployment = fixtureSource;
+    };
   };
   module = import ./hm-module.nix { self = fakeSelf; };
   mkConfiguration =

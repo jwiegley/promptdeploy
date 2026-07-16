@@ -4,8 +4,9 @@
 
 let
   fixtureSource = pkgs.runCommand "promptdeploy-activation-source" { } ''
-    mkdir -p "$out"
+    mkdir -p "$out/.promptdeploy"
     touch "$out/deploy.yaml"
+    printf '%s\n' '{"schema":1,"bindings":{}}' >"$out/.promptdeploy/bundle-bindings.json"
   '';
 
   fakePromptdeploy = pkgs.writeShellApplication {
@@ -23,6 +24,7 @@ let
         line="$line|$argument"
       done
       line="$line|host=''${PROMPTDEPLOY_HOST-unset}"
+      line="$line|bindings=''${PROMPTDEPLOY_BUNDLE_BINDINGS_FILE-unset}"
       printf '%s\n' "$line" >>"$trace"
 
       if [ -n "''${PROMPTDEPLOY_TEST_EVENTS:-}" ]; then
@@ -123,9 +125,10 @@ pkgs.runCommand "promptdeploy-hm-activation-test"
       PROMPTDEPLOY_TEST_TAG=exact \
       PROMPTDEPLOY_HOST=must-be-unset \
       ${exactDriver}/bin/promptdeploy-home-activation
+    bindings=${fixtureSource}/.promptdeploy/bundle-bindings.json
     printf '%s\n' \
-      'exact|deploy|--local-only|--force|--quiet|--target|claude-hera|--target|codex-local|--only-item|mcp:anvil|--only-item|mcp:anvil-tools|--only-item|skill:anvil|host=unset' \
-      'exact|verify|--local-only|--target|claude-hera|--target|codex-local|--only-item|mcp:anvil|--only-item|mcp:anvil-tools|--only-item|skill:anvil|host=unset' \
+      "exact|deploy|--local-only|--force|--quiet|--target|claude-hera|--target|codex-local|--only-item|mcp:anvil|--only-item|mcp:anvil-tools|--only-item|skill:anvil|host=unset|bindings=$bindings" \
+      "exact|verify|--local-only|--target|claude-hera|--target|codex-local|--only-item|mcp:anvil|--only-item|mcp:anvil-tools|--only-item|skill:anvil|host=unset|bindings=$bindings" \
       >"$TMPDIR/exact.expected"
     cmp "$TMPDIR/exact.expected" "$exact_trace"
     test ! -e "$state_root/exact/activation.lock"
@@ -140,7 +143,7 @@ pkgs.runCommand "promptdeploy-hm-activation-test"
     status=$?
     set -e
     test "$status" -eq 41
-    grep -Fqx 'case|deploy|--local-only|--force|--quiet|--only-item|mcp:anvil|--only-item|mcp:anvil-tools|--only-item|skill:anvil|host=unset' "$TMPDIR/deploy-failure.trace"
+    grep -Fqx "case|deploy|--local-only|--force|--quiet|--only-item|mcp:anvil|--only-item|mcp:anvil-tools|--only-item|skill:anvil|host=unset|bindings=$bindings" "$TMPDIR/deploy-failure.trace"
     ! grep -Fq 'verify' "$TMPDIR/deploy-failure.trace"
     grep -Fq 'DEPLOY_SECRET_MUST_STAY_PRIVATE' "$state_root/deploy-failure/deploy.log"
     ! grep -Fq 'DEPLOY_SECRET_MUST_STAY_PRIVATE' "$TMPDIR/deploy-failure.console"

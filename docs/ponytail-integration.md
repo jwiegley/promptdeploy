@@ -1,6 +1,6 @@
 # Ponytail integration study and architecture
 
-- Status: proportional static integration in progress; runtime design is optional
+- Status: store-backed proportional static integration in progress; runtime design is optional
 - Reference checkout: `/Users/johnw/Desktop/ponytail`
 - Upstream: `https://github.com/DietrichGebert/ponytail`
 - Reviewed revision: `16f29800fd2681bdf24f3eb4ccffe38be3baec6b`
@@ -15,14 +15,23 @@
 
 ## Decision
 
-Ponytail will be integrated as a named, allowlisted external bundle. During
-development, an explicit CLI binding may point that logical bundle at the
-Desktop checkout. Production and Home Manager activation will bind the same
-logical name to a pinned, non-flake Nix input in the immutable store.
+Ponytail is integrated as a named, allowlisted external bundle. During
+development, the raw CLI may bind that logical bundle explicitly to the
+Desktop checkout. Production, normal flake apps, and Home Manager activation
+use one composed deployment derivation: this repository is copied to its root,
+the pinned non-flake Ponytail input is copied to `sources/ponytail`, and the
+binding descriptor names that in-tree store path.
 
 The promptdeploy repository will contain the adapter manifest and the expected
 upstream provenance, not a machine-local symlink, submodule, or hand-maintained
 copy of the third-party payload.
+
+`packages.deployment` is the inspectable store source. `apps.default` runs
+`deploy` with its `deploy.yaml` and binding descriptor explicitly selected;
+`apps.promptdeploy` exposes the other commands against the same tree. The raw
+package/app remains separate for intentional mutable development. An explicit
+config path is used instead of changing directory, so caller-relative output
+paths retain their meaning.
 
 This is the smallest design that preserves all of these properties at once:
 
@@ -172,7 +181,7 @@ acceptance rule.
 | Git submodule | Rejected as canonical. Flake sources omit submodule contents unless every consumer opts in, and an adapter manifest is still required. |
 | Vendored or generated committed copy | Rejected as canonical. It duplicates ownership, imports irrelevant project material, and invites silent drift. |
 | Client marketplaces/packages only | Optional supplement. They are network/trust/client-state dependent and cannot prove a common fleet pin. |
-| Named bundle manifest + explicit source binding | Accepted control plane. |
+| Named bundle manifest + copied store deployment mapping | Accepted control plane. The flake maps each external input into `packages.deployment`; the manifest maps its selected files to agent surfaces. |
 | Named bundle + pinned non-flake Nix input | Accepted production binding. |
 
 ## Bundle model

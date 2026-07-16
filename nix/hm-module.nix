@@ -12,7 +12,7 @@ let
   system = pkgs.stdenv.hostPlatform.system;
   defaultRevision = self.rev or "";
   packagePassthru = cfg.package.passthru or { };
-  packageSource = packagePassthru.promptdeploySource or null;
+  packageDeployment = packagePassthru.promptdeployDeployment or null;
   packageRevision = packagePassthru.promptdeployRevision or null;
   sourceString = toString cfg.source;
   validTarget = target: builtins.match "[A-Za-z0-9][A-Za-z0-9._-]*" target != null;
@@ -44,9 +44,9 @@ in
 
     source = lib.mkOption {
       type = lib.types.path;
-      default = self.outPath;
-      defaultText = lib.literalExpression "self.outPath";
-      description = "Immutable promptdeploy source from the same pinned flake revision.";
+      default = self.packages.${system}.deployment;
+      defaultText = lib.literalExpression "self.packages.\${pkgs.system}.deployment";
+      description = "Composed immutable promptdeploy deployment tree.";
     };
 
     expectedRevision = lib.mkOption {
@@ -117,12 +117,17 @@ in
         message = "programs.promptdeploy.source must contain deploy.yaml";
       }
       {
-        assertion = packageSource != null;
-        message = "programs.promptdeploy.package must expose passthru.promptdeploySource";
+        assertion = builtins.pathExists "${sourceString}/.promptdeploy/bundle-bindings.json";
+        message = "programs.promptdeploy.source must contain its bundle bindings";
       }
       {
-        assertion = packageSource != null && toString packageSource == sourceString;
-        message = "programs.promptdeploy.package and source must come from the same flake source";
+        assertion = packageDeployment != null;
+        message = "programs.promptdeploy.package must expose passthru.promptdeployDeployment";
+      }
+      {
+        assertion =
+          packageDeployment != null && toString packageDeployment == sourceString;
+        message = "programs.promptdeploy.package and source must use the same deployment";
       }
       {
         assertion = packageRevision != null;

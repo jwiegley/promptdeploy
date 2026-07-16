@@ -26,18 +26,21 @@ def _load_source_dotenv(path: Path) -> None:
 def _load_config_or_exit(args: argparse.Namespace | None = None) -> Config:
     """Load deploy.yaml, exiting with a clean error if it is invalid."""
     try:
+        config_path = getattr(args, "config", None)
         bundle_bindings_file = getattr(args, "bundle_bindings_file", None)
         bundle_source_overrides = tuple(getattr(args, "bundle_source", None) or ())
         require_immutable_bundles = bool(
             getattr(args, "require_immutable_bundles", False)
         )
         if (
-            bundle_bindings_file is None
+            config_path is None
+            and bundle_bindings_file is None
             and not bundle_source_overrides
             and not require_immutable_bundles
         ):
             return load_config()
         return load_config(
+            config_path=config_path,
             bundle_bindings_file=bundle_bindings_file,
             bundle_source_overrides=bundle_source_overrides,
             require_immutable_bundles=require_immutable_bundles,
@@ -79,6 +82,12 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             "Deploy prompts, agents, skills, and MCP servers to multiple tools."
         ),
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        metavar="FILE",
+        help="Load deployment configuration from FILE instead of searching the CWD",
     )
     parser.add_argument(
         "--bundle-bindings-file",

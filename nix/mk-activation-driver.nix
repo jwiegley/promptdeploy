@@ -21,6 +21,9 @@ let
   transaction = pkgs.writeShellScript "promptdeploy-home-transaction" ''
     set -euo pipefail
     unset PROMPTDEPLOY_HOST
+    export PROMPTDEPLOY_BUNDLE_BINDINGS_FILE=${
+      lib.escapeShellArg "${toString source}/.promptdeploy/bundle-bindings.json"
+    }
     cd -- ${lib.escapeShellArg (toString source)}
     ${lib.getExe package} deploy --local-only --force --quiet ${targetArgs} ${itemArgs}
     ${lib.getExe package} verify --local-only ${targetArgs} ${itemArgs}
